@@ -40,7 +40,7 @@ void FrameMonitor::drawAverage() {
 
     sprintf(test, "Loop time: %fms", avg);
 
-    ImGui::GetOverlayDrawList()->AddText(ImGui::GetCursorScreenPos() + ImVec2(800.0f, -100.0f), 0x80FFFFFF, test, test + strlen(test));
+    ImGui::GetOverlayDrawList()->AddText(ImGui::GetCursorScreenPos() + ImVec2(800.0f, -50.0f), 0x80FFFFFF, test, test + strlen(test));
 }
 
 void FrameMonitor::startFrame() {

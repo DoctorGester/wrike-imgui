@@ -44,6 +44,7 @@ struct Id8 {
 
 bool load_png_from_disk(const char* path, Memory_Image& out);
 
+#define MIN(a, b) (a) < (b) ? (a) : (b)
 #define MAX(a, b) (a) > (b) ? (a) : (b)
 #define ARRAY_SIZE(array) (sizeof(array) / sizeof(array[0]))
 

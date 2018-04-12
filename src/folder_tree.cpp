@@ -24,6 +24,7 @@ u32 total_nodes;
 u32 total_starred = 0;
 
 void folder_tree_init() {
+    // TODO Probably need some kind of heuristics to determine a good bucket count
     hash_map_init(&folder_id_to_node_map, 2048);
 }
 
@@ -49,7 +50,7 @@ static void add_parent_child_pair(String& parent_id, String& child_id) {
     pair->child_hash = hash_string(child_id);
 }
 
-static void process_folder_tree_data_object(jsmntok_t*& token) {
+static void process_folder_tree_data_object(char* json, jsmntok_t*& token) {
     jsmntok_t* object_token = token++;
 
     assert(object_token->type == JSMN_OBJECT);
@@ -70,18 +71,18 @@ static void process_folder_tree_data_object(jsmntok_t*& token) {
         jsmntok_t* value_token = token;
 
         // TODO string comparison there is inefficient, can be faster
-        if (json_string_equals(json_content, property_token, "title")) {
-            json_token_to_string(json_content, value_token, name);
-        } else if (json_string_equals(json_content, property_token, "id")) {
-            json_token_to_string(json_content, value_token, id);
+        if (json_string_equals(json, property_token, "title")) {
+            json_token_to_string(json, value_token, name);
+        } else if (json_string_equals(json, property_token, "id")) {
+            json_token_to_string(json, value_token, id);
 
             has_id = true;
-        } else if (json_string_equals(json_content, property_token, "scope")) {
-            json_token_to_string(json_content, value_token, scope);
-        } else if (json_string_equals(json_content, property_token, "starred")) {
+        } else if (json_string_equals(json, property_token, "scope")) {
+            json_token_to_string(json, value_token, scope);
+        } else if (json_string_equals(json, property_token, "starred")) {
             assert(value_token->type == JSMN_PRIMITIVE);
-            is_starred = *(json_content + value_token->start) == 't';
-        } else if (json_string_equals(json_content, property_token, "childIds")) {
+            is_starred = *(json + value_token->start) == 't';
+        } else if (json_string_equals(json, property_token, "childIds")) {
             assert(value_token->type == JSMN_ARRAY);
             assert(has_id);
 
@@ -94,7 +95,7 @@ static void process_folder_tree_data_object(jsmntok_t*& token) {
 
                 String child_id;
 
-                json_token_to_string(json_content, id_token, child_id);
+                json_token_to_string(json, id_token, child_id);
                 add_parent_child_pair(id, child_id);
             }
         } else {
@@ -157,13 +158,17 @@ static void process_folder_tree_data(char* json, u32 data_size, jsmntok_t*& toke
     current_node = 0;
 
     for (u32 array_index = 0; array_index < data_size; array_index++) {
-        process_folder_tree_data_object(token);
+        process_folder_tree_data_object(json, token);
     }
 }
 
 // TODO not a good signature, should we be leaving those in globals?
 // TODO also we are managing char* json there, but not managing tokens!
 void process_folder_tree_request(char* json, jsmntok_t* tokens, u32 num_tokens) {
+    if (json_content) {
+        free(json_content);
+    }
+
     json_content = json;
 
     process_json_data_segment(json, tokens, num_tokens, process_folder_tree_data);
