@@ -7,8 +7,9 @@
 #include <stdio.h>
 #include <assert.h>
 
-static Parent_Child_Pair parent_child_pairs[8192 * 16];
+static Parent_Child_Pair* parent_child_pairs = NULL;
 static u32 parent_child_pairs_count = 0;
+static u32 parent_child_pairs_watermark = 0;
 
 static Hash_Map<Folder_Tree_Node*> folder_id_to_node_map;
 
@@ -31,13 +32,21 @@ inline Folder_Tree_Node* find_folder_tree_node_by_id(String& id, u32 hash) {
 }
 
 static void add_parent_child_pair(String& parent_id, String& child_id) {
-    Parent_Child_Pair* pair = &parent_child_pairs[parent_child_pairs_count];
+    if (parent_child_pairs_count == parent_child_pairs_watermark) {
+        if (parent_child_pairs_watermark == 0) {
+            parent_child_pairs_watermark = 64;
+        } else {
+            parent_child_pairs_watermark *= 2;
+        }
+
+        parent_child_pairs = (Parent_Child_Pair*) realloc(parent_child_pairs, sizeof(Parent_Child_Pair) * parent_child_pairs_watermark);
+    }
+
+    Parent_Child_Pair* pair = &parent_child_pairs[parent_child_pairs_count++];
     pair->parent = parent_id;
     pair->child = child_id;
     pair->parent_hash = hash_string(parent_id);
     pair->child_hash = hash_string(child_id);
-
-    parent_child_pairs_count++;
 }
 
 static void process_folder_tree_data_object(jsmntok_t*& token) {
@@ -52,8 +61,6 @@ static void process_folder_tree_data_object(jsmntok_t*& token) {
     bool is_starred = false;
 
     bool has_id = false;
-
-    //printf("scope: '%.*s'\n", scope_token.end - scope_token.start, json_content + scope_token.start);
 
     for (u32 propety_index = 0; propety_index < object_token->size; propety_index++, token++) {
         jsmntok_t* property_token = token++;
