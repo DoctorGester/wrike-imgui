@@ -11,7 +11,8 @@ bool Draw::init()
 {
     EmscriptenWebGLContextAttributes attrs;
     emscripten_webgl_init_context_attributes(&attrs);
- 
+    attrs.antialias = false;
+
     EMSCRIPTEN_WEBGL_CONTEXT_HANDLE context = emscripten_webgl_create_context(nullptr, &attrs);
     if(context > 0)
     {

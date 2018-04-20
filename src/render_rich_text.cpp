@@ -1,6 +1,6 @@
 #include <imgui.h>
 #include <imgui_internal.h>
-#include "ui.h"
+#include "render_rich_text.h"
 #include "rich_text.h"
 #include "funimgui.h"
 

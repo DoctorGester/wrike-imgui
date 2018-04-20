@@ -7,7 +7,6 @@
 #include <cmath>
 #include <chrono>
 #include <imgui_internal.h>
-#include <html_entities.h>
 #include <jsmn.h>
 
 #include "download.h"
@@ -17,148 +16,67 @@
 #include "json.h"
 #include "temporary_storage.h"
 #include "rich_text.h"
-#include "ui.h"
+#include "render_rich_text.h"
 #include "hash_map.h"
+#include "task_list.h"
+#include "accounts.h"
+#include "task_view.h"
 
 #define PRINTLIKE(string_index, first_to_check) __attribute__((__format__ (__printf__, string_index, first_to_check)))
 
-typedef signed long Request_Id;
-
 static Draw GDraw;
 static FrameMonitor* gFrameMonitor = nullptr;
-static Download* gDownload = nullptr;
 
-static const Request_Id NO_REQUEST = -1;
+typedef signed long Request_Id;
+
+const Request_Id NO_REQUEST = -1;
+
 static Request_Id request_id_counter = 0;
 
-static Request_Id folder_tree_request = NO_REQUEST;
-static Request_Id folder_header_request = NO_REQUEST;
-static Request_Id folder_contents_request = NO_REQUEST;
-static Request_Id task_request = NO_REQUEST;
-static Request_Id contacts_request = NO_REQUEST;
-static Request_Id accounts_request = NO_REQUEST;
-static Request_Id workflows_request = NO_REQUEST;
+Request_Id folder_tree_request = NO_REQUEST;
+Request_Id folder_header_request = NO_REQUEST;
+Request_Id folder_contents_request = NO_REQUEST;
+Request_Id task_request = NO_REQUEST;
+Request_Id contacts_request = NO_REQUEST;
+Request_Id accounts_request = NO_REQUEST;
+Request_Id workflows_request = NO_REQUEST;
 
-static bool had_last_selected_folder_so_doesnt_need_to_load_the_root_folder = false;
+bool had_last_selected_folder_so_doesnt_need_to_load_the_root_folder = false;
+
 static bool draw_side_menu = true;
-
-bool are_ids_equal(Id16* a, Id16* b) {
-    return memcmp(a->id, b->id, ID_16_LENGTH) == 0;
-}
-
-bool are_ids_equal(Id8* a, Id8* b) {
-    return memcmp(a->id, b->id, ID_8_LENGTH) == 0;
-}
 
 // TODO use temporary storage there
 static char temporary_request_buffer[512];
 
-enum Status_Group {
-    Status_Group_Invalid,
-    Status_Group_Active,
-    Status_Group_Completed,
-    Status_Group_Deferred,
-    Status_Group_Cancelled
-};
-
-struct Custom_Field_Value {
-    Id16 field_id;
-    String value;
-};
-
-struct Folder_Task {
-    Id16 id;
-    Id16 custom_status_id;
-    String title;
-    Custom_Field_Value custom_field_values[8]; // TODO Carlito this is like, limiting, you know
-    u32 num_custom_field_values;
-};
-
-struct User {
-    Id8 id;
-    String firstName;
-    String lastName;
-};
-
-// Do we need this struct?
-struct Task {
-    String title;
-    String permalink;
-    Rich_Text_String* description = NULL;
-    u32 description_strings = 0;
-    String description_text{};
-
-    Id8* assignees = NULL;
-    u32 num_assignees = 0;
-};
-
-struct Folder_Header {
-    Id16* custom_columns;
-    u32 num_custom_columns;
-};
-
-struct Account {
-    Id8 id;
-};
-
-struct Custom_Status {
-    Id16 id;
-    String name;
-    u32 id_hash;
-    u32 color;
-};
-
-struct Custom_Field {
-    Id16 id;
-    String title;
-    u32 id_hash;
-};
-
 static Memory_Image logo;
 
-static Id16 selected_folder_task_id;
+Id16 selected_folder_task_id;
+
 static Folder_Tree_Node* selected_node = NULL; // TODO should be a Task_Id
 
-static Folder_Header current_folder{};
-static Task current_task{};
+Task current_task{};
 
-static char* folder_header_json_content = NULL;
-static char* folder_tasks_json_content = NULL;
-static Folder_Task* folder_tasks = NULL;
-static u32 folder_task_count = 0;
+User* users = NULL;
+u32 users_count = 0;
 
 static char* task_json_content = NULL;
-
 static char* users_json_content = NULL;
-static User* users = NULL;
-static u32 users_count = 0;
-
 static char* accounts_json_content = NULL;
-static Account* accounts = NULL;
-static u32 accounts_count = 0;
-
-// TODO those are per account, do we even care about that?
-static Custom_Field* custom_fields = NULL;
-static u32 custom_fields_count = 0;
-
-static Hash_Map<Custom_Field*> id_to_custom_field = { 0 };
-
+static char* folder_tasks_json_content = NULL;
 static char* workflows_json_content = NULL;
-static Custom_Status* custom_statuses = NULL;
-static u32 custom_statuses_count = 0;
-static Hash_Map<Custom_Status*> id_to_custom_status = { 0 };
+static char* folder_header_json_content = NULL;
 
+u32 tick = 0;
 
-static u32 tick = 0;
-static u32 started_loading_folder_contents_at = 0;
-static u32 finished_loading_folder_contents_at = 0;
-static u32 finished_loading_folder_header_at = 0;
+u32 started_loading_folder_contents_at = 0;
+u32 finished_loading_folder_contents_at = 0;
+u32 finished_loading_folder_header_at = 0;
 
-static u32 started_loading_task_at = 0;
-static u32 finished_loading_task_at = 0;
+u32 started_loading_task_at = 0;
+u32 finished_loading_task_at = 0;
 
-static u32 started_loading_statuses_at = 0;
-static u32 finished_loading_statuses_at = 0;
+u32 started_loading_statuses_at = 0;
+u32 finished_loading_statuses_at = 0;
 
 PRINTLIKE(2, 3) static void api_request(Request_Id& request_id, const char* format, ...) {
     va_list args;
@@ -171,323 +89,6 @@ PRINTLIKE(2, 3) static void api_request(Request_Id& request_id, const char* form
     EM_ASM({ api_get(Pointer_stringify($0), $1) }, &temporary_request_buffer[0], request_id_counter);
 
     request_id = request_id_counter++;
-}
-
-static inline void json_token_to_id(char* json, jsmntok_t* token, Id16& id) {
-    memcpy(id.id, json + token->start, ID_16_LENGTH);
-}
-
-static inline void json_token_to_id(char* json, jsmntok_t* token, Id8& id) {
-    memcpy(id.id, json + token->start, ID_8_LENGTH);
-}
-
-static u32 color_name_to_color_argb(String &color_name) {
-    char c = *color_name.start;
-
-    switch (color_name.length) {
-        // Red
-        case 3: return 0xFFE91E63;
-
-        case 4: {
-            if (c == 'B'/*lue*/) return 0xFF2196F3; else
-            if (c == 'G'/*ray*/) return 0xFF9E9E9E;
-
-            break;
-        }
-
-        case 5: {
-            if (c == 'B'/*rown*/) return 0xFF795548; else
-            if (c == 'G'/*reen*/) return 0xFF8BC34A;
-
-            break;
-        }
-
-        case 6: {
-            if (c == 'Y'/*ellow*/) return 0xFFFFEB3B; else
-            if (c == 'P'/*urple*/) return 0xFF9C27B0; else
-            if (c == 'O'/*range*/) return 0xFFFF9800; else
-            if (c == 'I'/*ndigo*/) return 0xFF673AB7;
-
-            break;
-        }
-
-        case 8: {
-            c = *(color_name.start + 4);
-
-            if (c == /*Dark*/'B'/*lue*/) return 0xFF3F51B5; else
-            if (c == /*Dark*/'C'/*yan*/) return 0xFF009688;
-
-            break;
-        }
-
-        // Turquoise
-        case 9: return 0xFF00BCD4;
-
-        // YellowGreen
-        case 11: return 0xFFCDDC39;
-    }
-
-    printf("Got unknown color: %.*s\n", color_name.length, color_name.start);
-    return 0xFF000000;
-}
-
-static Status_Group status_group_name_to_status_group(String& name) {
-    if (name.length < 2) {
-        return Status_Group_Invalid;
-    }
-
-    switch (*name.start) {
-        case 'A'/*ctive*/: return Status_Group_Active;
-        case 'C': {
-            switch (*(name.start + 1)) {
-                case /*C*/'o'/*mpleted*/: return Status_Group_Completed;
-                case /*C*/'a'/*ncelled*/: return Status_Group_Cancelled;
-            }
-
-            break;
-        }
-
-        case 'D'/*eferred*/: return Status_Group_Deferred;
-    }
-
-    return Status_Group_Invalid;
-}
-
-static u32 status_group_to_color(Status_Group group) {
-    switch (group) {
-        case Status_Group_Active: return 0xFF2196F3;
-        case Status_Group_Completed: return 0xFF8BC34A;
-        case Status_Group_Cancelled:
-        case Status_Group_Deferred:
-            return 0xFF9E9E9E;
-
-        default: return 0xFF000000;
-    }
-}
-
-static void process_folder_task_custom_field(Custom_Field_Value* custom_field_value, char* json, jsmntok_t*& token) {
-    jsmntok_t* object_token = token++;
-
-    assert(object_token->type == JSMN_OBJECT);
-
-    for (u32 propety_index = 0; propety_index < object_token->size; propety_index++, token++) {
-        jsmntok_t* property_token = token++;
-
-        assert(property_token->type == JSMN_STRING);
-
-        jsmntok_t* next_token = token;
-
-        if (json_string_equals(json, property_token, "id")) {
-            json_token_to_id(json, next_token, custom_field_value->field_id);
-        } else if (json_string_equals(json, property_token, "value")) {
-            json_token_to_string(json, next_token, custom_field_value->value);
-        } else {
-            eat_json(token);
-            token--;
-        }
-    }
-}
-
-static void process_folder_contents_data_object(char* json, jsmntok_t*& token) {
-    jsmntok_t* object_token = token++;
-
-    assert(object_token->type == JSMN_OBJECT);
-
-    Folder_Task* folder_task = &folder_tasks[folder_task_count++];
-    folder_task->num_custom_field_values = 0;
-
-    for (u32 propety_index = 0; propety_index < object_token->size; propety_index++, token++) {
-        jsmntok_t* property_token = token++;
-
-        assert(property_token->type == JSMN_STRING);
-
-        jsmntok_t* next_token = token;
-
-        if (json_string_equals(json, property_token, "title")) {
-            json_token_to_string(json, next_token, folder_task->title);
-        } else if (json_string_equals(json, property_token, "id")) {
-            json_token_to_id(json, next_token, folder_task->id);
-        } else if (json_string_equals(json, property_token, "customStatusId")) {
-            json_token_to_id(json, next_token, folder_task->custom_status_id);
-        } else if (json_string_equals(json, property_token, "customFields")) {
-            assert(next_token->type == JSMN_ARRAY);
-
-            token++;
-
-            for (u32 field_index = 0; field_index < next_token->size; field_index++) {
-                // TODO REMOVE THE LIMITER
-                if (folder_task->num_custom_field_values == 8) {
-                    eat_json(token);
-
-                    continue;
-                }
-
-                Custom_Field_Value* value = &folder_task->custom_field_values[folder_task->num_custom_field_values++];
-
-                process_folder_task_custom_field(value, json, token);
-            }
-
-            token--;
-        } else {
-            eat_json(token);
-            token--;
-        }
-    }
-}
-
-static void process_task_data(char* json, u32 data_size, jsmntok_t*& token) {
-    // We only request singular tasks now
-    assert(data_size == 1);
-    assert(token->type == JSMN_OBJECT);
-
-    jsmntok_t* object_token = token++;
-
-    String description{};
-
-    for (u32 propety_index = 0; propety_index < object_token->size; propety_index++, token++) {
-        jsmntok_t* property_token = token++;
-
-        assert(property_token->type == JSMN_STRING);
-
-        jsmntok_t* next_token = token;
-
-#define IS_PROPERTY(s) json_string_equals(json, property_token, (s))
-#define TOKEN_TO_STRING(s) json_token_to_string(json, next_token, (s))
-
-        if (IS_PROPERTY("title")) {
-            TOKEN_TO_STRING(current_task.title);
-        } else if (IS_PROPERTY("description")) {
-            TOKEN_TO_STRING(description);
-        } else if (IS_PROPERTY("permalink")) {
-            TOKEN_TO_STRING(current_task.permalink);
-        } else if (IS_PROPERTY("responsibleIds")) {
-            assert(next_token->type == JSMN_ARRAY);
-
-            if (current_task.num_assignees < next_token->size) {
-                current_task.assignees = (Id8*) realloc(current_task.assignees, sizeof(Id8) * next_token->size);
-            }
-
-            current_task.num_assignees = 0;
-
-            for (u32 array_index = 0; array_index < next_token->size; array_index++) {
-                jsmntok_t* id_token = ++token;
-
-                assert(id_token->type == JSMN_STRING);
-
-                json_token_to_id(task_json_content, id_token, current_task.assignees[current_task.num_assignees++]);
-            }
-        } else {
-            eat_json(token);
-            token--;
-        }
-    }
-
-#undef IS_PROPERTY
-#undef TOKEN_TO_STRING
-
-    if (current_task.description) {
-        free(current_task.description);
-    }
-
-    current_task.description_strings = 0;
-
-    parse_rich_text(description, current_task.description, current_task.description_strings);
-
-    u32 total_text_length = 0;
-
-    for (u32 index = 0; index < current_task.description_strings; index++) {
-        total_text_length += current_task.description[index].text.length;
-    }
-
-    String& description_text = current_task.description_text;
-    description_text.start = (char*) realloc(description_text.start, total_text_length);
-    description_text.length = total_text_length;
-
-    char* current_location = description_text.start;
-
-    for (u32 index = 0; index < current_task.description_strings; index++) {
-        Rich_Text_String& rich_text_string = current_task.description[index];
-        String& text = rich_text_string.text;
-
-        if (rich_text_string.text.length > 0) {
-            size_t new_length = decode_html_entities_utf8(current_location, text.start, text.start + text.length);
-
-            text.start = current_location;
-            text.length = new_length;
-
-            current_location += new_length;
-        } else {
-            text.start = current_location;
-        }
-    }
-
-    printf("Parsed description with a total length of %lu\n", total_text_length);
-}
-
-static void process_folder_header_data(char* json, u32 data_size, jsmntok_t*& token) {
-    // We only request singular folders now
-    assert(data_size == 1);
-    assert(token->type == JSMN_OBJECT);
-
-    jsmntok_t* object_token = token++;
-
-    for (u32 propety_index = 0; propety_index < object_token->size; propety_index++, token++) {
-        jsmntok_t* property_token = token++;
-
-        assert(property_token->type == JSMN_STRING);
-
-        jsmntok_t* next_token = token;
-
-        if (json_string_equals(json, property_token, "customColumnIds")) {
-            current_folder.custom_columns = (Id16*) realloc(current_folder.custom_columns, sizeof(Id16) * next_token->size);
-            current_folder.num_custom_columns = 0;
-
-            for (u32 array_index = 0; array_index < next_token->size; array_index++) {
-                jsmntok_t* id_token = ++token;
-
-                assert(id_token->type == JSMN_STRING);
-
-                json_token_to_id(json, id_token, current_folder.custom_columns[current_folder.num_custom_columns++]);
-            }
-        } else {
-            eat_json(token);
-            token--;
-        }
-    }
-}
-
-static void process_folder_contents_data(char* json, u32 data_size, jsmntok_t*& token) {
-    if (folder_task_count < data_size) {
-        folder_tasks = (Folder_Task*) realloc(folder_tasks, sizeof(Folder_Task) * data_size);
-    }
-
-    folder_task_count = 0;
-
-    for (u32 array_index = 0; array_index < data_size; array_index++) {
-        process_folder_contents_data_object(json, token);
-    }
-}
-
-static void process_folder_contents_request(char* json, jsmntok_t* tokens, u32 num_tokens) {
-    if (folder_tasks_json_content) {
-        free(folder_tasks_json_content);
-    }
-
-    folder_tasks_json_content = json;
-    finished_loading_folder_contents_at = tick;
-
-    process_json_data_segment(json, tokens, num_tokens, process_folder_contents_data);
-}
-
-static void process_task_request(char* json, jsmntok_t* tokens, u32 num_tokens) {
-    if (task_json_content) {
-        free(task_json_content);
-    }
-
-    task_json_content = json;
-    finished_loading_task_at = tick;
-
-    process_json_data_segment(json, tokens, num_tokens, process_task_data);
 }
 
 static void process_users_data_object(char* json, jsmntok_t*&token) {
@@ -517,6 +118,16 @@ static void process_users_data_object(char* json, jsmntok_t*&token) {
     }
 }
 
+static void process_json_content(char*& json_reference, Data_Process_Callback callback, char* json, jsmntok_t* tokens, u32 num_tokens) {
+    if (json_reference) {
+        free(json_reference);
+    }
+
+    json_reference = json;
+
+    process_json_data_segment(json, tokens, num_tokens, callback);
+}
+
 static void process_users_data(char* json, u32 data_size, jsmntok_t*&token) {
     if (users_count < data_size) {
         users = (User*) realloc(users, sizeof(User) * data_size);
@@ -527,264 +138,6 @@ static void process_users_data(char* json, u32 data_size, jsmntok_t*&token) {
     for (u32 array_index = 0; array_index < data_size; array_index++) {
         process_users_data_object(json, token);
     }
-}
-
-static void process_folder_header_request(char* json, jsmntok_t* tokens, u32 num_tokens) {
-    if (folder_header_json_content) {
-        free(folder_header_json_content);
-    }
-
-    folder_header_json_content = json;
-    finished_loading_folder_header_at = tick;
-
-    process_json_data_segment(json, tokens, num_tokens, process_folder_header_data);
-}
-
-static void process_contacts_request(char* json, jsmntok_t* tokens, u32 num_tokens) {
-    if (users_json_content) {
-        free(users_json_content);
-    }
-
-    users_json_content = json;
-
-    process_json_data_segment(json, tokens, num_tokens, process_users_data);
-}
-
-static void process_custom_field(char* json, jsmntok_t*& token) {
-    jsmntok_t* object_token = token++;
-
-    assert(object_token->type == JSMN_OBJECT);
-
-    Custom_Field* custom_field = &custom_fields[custom_fields_count++];
-
-    for (u32 propety_index = 0; propety_index < object_token->size; propety_index++, token++) {
-        jsmntok_t* property_token = token++;
-
-        assert(property_token->type == JSMN_STRING);
-
-        jsmntok_t* next_token = token;
-
-        if (json_string_equals(json, property_token, "id")) {
-            json_token_to_id(json, next_token, custom_field->id);
-        } else if (json_string_equals(json, property_token, "title")) {
-            json_token_to_string(json, next_token, custom_field->title);
-        } else {
-            eat_json(token);
-            token--;
-        }
-    }
-
-    String id_as_string;
-    id_as_string.start = custom_field->id.id;
-    id_as_string.length = ID_16_LENGTH;
-
-    custom_field->id_hash = hash_string(id_as_string);
-
-    hash_map_put(&id_to_custom_field, custom_field, custom_field->id_hash);
-}
-
-static void process_accounts_data(char* json, u32 data_size, jsmntok_t*&token) {
-    if (accounts_count < data_size) {
-        accounts = (Account*) realloc(accounts, sizeof(Account) * data_size);
-    }
-
-    accounts_count = 0;
-
-    bool has_already_requested_a_folder = had_last_selected_folder_so_doesnt_need_to_load_the_root_folder;
-
-    for (u32 array_index = 0; array_index < data_size; array_index++) {
-        jsmntok_t* object_token = token++;
-
-        assert(object_token->type == JSMN_OBJECT);
-
-        Account* account = &accounts[accounts_count++];
-
-        for (u32 propety_index = 0; propety_index < object_token->size; propety_index++, token++) {
-            jsmntok_t* property_token = token++;
-
-            assert(property_token->type == JSMN_STRING);
-
-            jsmntok_t* next_token = token;
-
-            if (json_string_equals(json, property_token, "id")) {
-                json_token_to_id(json, next_token, account->id);
-            } else if (!has_already_requested_a_folder && json_string_equals(json, property_token, "rootFolderId")) {
-                void request_folder_contents(String &folder_id);
-
-                String folder_id;
-                json_token_to_string(json, next_token, folder_id);
-
-                request_folder_contents(folder_id);
-
-                has_already_requested_a_folder = true;
-            } else if (json_string_equals(json, property_token, "customFields")) {
-                assert(next_token->type == JSMN_ARRAY);
-
-                token++;
-
-                // TODO broken with more than 1 account!
-                custom_fields = (Custom_Field*) malloc(sizeof(Custom_Field) * next_token->size);
-                hash_map_init(&id_to_custom_field, (u32) next_token->size);
-
-                for (u32 field_index = 0; field_index < next_token->size; field_index++) {
-                    process_custom_field(json, token);
-                }
-
-                token--;
-            } else {
-                eat_json(token);
-                token--;
-            }
-        }
-    }
-}
-
-static void process_accounts_request(char* json, jsmntok_t* tokens, u32 num_tokens) {
-    if (accounts_json_content) {
-        free(accounts_json_content);
-    }
-
-    accounts_json_content = json;
-
-    process_json_data_segment(json, tokens, num_tokens, process_accounts_data);
-}
-
-static void process_custom_status(char* json, jsmntok_t*& token) {
-    jsmntok_t* object_token = token++;
-
-    assert(object_token->type == JSMN_OBJECT);
-
-    Custom_Status* custom_status = &custom_statuses[custom_statuses_count++];
-
-    // TODO unused
-    bool is_standard = false;
-    Status_Group group = Status_Group_Invalid;
-
-    custom_status->color = 0;
-
-    for (u32 propety_index = 0; propety_index < object_token->size; propety_index++, token++) {
-        jsmntok_t* property_token = token++;
-
-        assert(property_token->type == JSMN_STRING);
-
-        jsmntok_t* next_token = token;
-
-        if (json_string_equals(json, property_token, "id")) {
-            json_token_to_id(json, next_token, custom_status->id);
-        } else if (json_string_equals(json, property_token, "name")) {
-            json_token_to_string(json, next_token, custom_status->name);
-        } else if (json_string_equals(json, property_token, "standard")) {
-            is_standard = *(json + next_token->start) == 't';
-        } else if (json_string_equals(json, property_token, "color")) {
-            String color_name;
-            json_token_to_string(json, next_token, color_name);
-
-            custom_status->color = argb_to_agbr(color_name_to_color_argb(color_name));
-        } else if (json_string_equals(json, property_token, "group")) {
-            String group_name;
-            json_token_to_string(json, next_token, group_name);
-
-            group = status_group_name_to_status_group(group_name);
-        } else {
-            eat_json(token);
-            token--;
-        }
-    }
-
-    String id_as_string;
-    id_as_string.start = custom_status->id.id;
-    id_as_string.length = ID_16_LENGTH;
-
-    if (!custom_status->color) {
-        custom_status->color = argb_to_agbr(status_group_to_color(group));
-    }
-
-    custom_status->id_hash = hash_string(id_as_string);
-
-//    printf("Got status %.*s with hash %lu\n", custom_status->name.length, custom_status->name.start, custom_status->id_hash);
-
-    hash_map_put(&id_to_custom_status, custom_status, custom_status->id_hash);
-}
-
-static void process_workflows_data(char* json, u32 data_size, jsmntok_t*&token) {
-    jsmntok_t* json_start = token;
-
-    u32 total_statuses = 0;
-
-    for (u32 array_index = 0; array_index < data_size; array_index++) {
-        jsmntok_t* object_token = token++;
-
-        assert(object_token->type == JSMN_OBJECT);
-
-        for (u32 propety_index = 0; propety_index < object_token->size; propety_index++, token++) {
-            jsmntok_t* property_token = token++;
-
-            assert(property_token->type == JSMN_STRING);
-
-            jsmntok_t* next_token = token;
-
-            if (json_string_equals(json, property_token, "customStatuses")) {
-                total_statuses += next_token->size;
-            }
-
-            eat_json(token);
-            token--;
-        }
-    }
-
-    token = json_start;
-
-    // TODO hacky, we need to clear the map when it's populated too
-    if (id_to_custom_status.size == 0) {
-        hash_map_init(&id_to_custom_status, total_statuses);
-    }
-
-    if (custom_statuses_count < total_statuses) {
-        custom_statuses = (Custom_Status*) realloc(custom_statuses, sizeof(Custom_Status) * total_statuses);
-    }
-
-    custom_statuses_count = 0;
-
-    for (u32 array_index = 0; array_index < data_size; array_index++) {
-        jsmntok_t* object_token = token++;
-
-        assert(object_token->type == JSMN_OBJECT);
-
-        for (u32 propety_index = 0; propety_index < object_token->size; propety_index++, token++) {
-            jsmntok_t* property_token = token++;
-
-            assert(property_token->type == JSMN_STRING);
-
-            jsmntok_t* next_token = token;
-
-            if (json_string_equals(json, property_token, "customStatuses")) {
-                assert(next_token->type == JSMN_ARRAY);
-
-                token++;
-
-                for (u32 status_index = 0; status_index < next_token->size; status_index++) {
-                    process_custom_status(json, token);
-                }
-
-                token--;
-            } else {
-                eat_json(token);
-                token--;
-            }
-        }
-    }
-}
-
-static void process_workflows_request(char* json, jsmntok_t* tokens, u32 num_tokens) {
-    if (workflows_json_content) {
-        free(workflows_json_content);
-    }
-
-    workflows_json_content = json;
-
-    process_json_data_segment(json, tokens, num_tokens, process_workflows_data);
-
-    finished_loading_statuses_at = tick;
 }
 
 static void request_workflows_for_each_account() {
@@ -805,29 +158,36 @@ void api_request_success(Request_Id request_id, char* content_json) {
     u32 parsed_tokens;
     jsmntok_t* json_tokens = parse_json_into_tokens(content_json, parsed_tokens);
 
+    // TODO simplify, beautify! 3 last arguments are the same, can be a struct
     if (request_id == folder_tree_request) {
         folder_tree_request = NO_REQUEST;
         process_folder_tree_request(content_json, json_tokens, parsed_tokens);
     } else if (request_id == folder_contents_request) {
         folder_contents_request = NO_REQUEST;
-        process_folder_contents_request(content_json, json_tokens, parsed_tokens);
+
+        process_json_content(folder_tasks_json_content, process_folder_contents_data, content_json, json_tokens, parsed_tokens);
+        finished_loading_folder_contents_at = tick;
     } else if (request_id == folder_header_request) {
         folder_header_request = NO_REQUEST;
-        process_folder_header_request(content_json, json_tokens, parsed_tokens);
+
+        process_json_content(folder_header_json_content, process_folder_header_data, content_json, json_tokens, parsed_tokens);
+        finished_loading_folder_header_at = tick;
     } else if (request_id == task_request) {
         task_request = NO_REQUEST;
-        process_task_request(content_json, json_tokens, parsed_tokens);
+
+        process_json_content(task_json_content, process_task_data, content_json, json_tokens, parsed_tokens);
+        finished_loading_task_at = tick;
     } else if (request_id == contacts_request) {
         contacts_request = NO_REQUEST;
-        process_contacts_request(content_json, json_tokens, parsed_tokens);
+        process_json_content(users_json_content, process_users_data, content_json, json_tokens, parsed_tokens);
     } else if (request_id == accounts_request) {
         accounts_request = NO_REQUEST;
-        process_accounts_request(content_json, json_tokens, parsed_tokens);
+        process_json_content(accounts_json_content, process_accounts_data, content_json, json_tokens, parsed_tokens);
 
         request_workflows_for_each_account();
     } else if (request_id == workflows_request) {
         workflows_request = NO_REQUEST;
-        process_workflows_request(content_json, json_tokens, parsed_tokens);
+        process_json_content(workflows_json_content, process_workflows_data, content_json, json_tokens, parsed_tokens);
     }
 }
 
@@ -948,31 +308,6 @@ void draw_folder_tree_node(Folder_Tree_Node* tree_node) {
 
 char search_buffer[128];
 
-char* string_to_temporary_null_terminated_string(String& string) {
-    char* node_name_null_terminated = (char*) talloc(string.length + 1);
-    sprintf(node_name_null_terminated, "%.*s", string.length, string.start);
-
-    return node_name_null_terminated;
-}
-
-static float lerp(float time_from, float time_to, float scale_to, float max) {
-    float delta = (time_to - time_from);
-
-    if (delta > max) {
-        delta = max;
-    }
-
-    return ((scale_to / max) * delta);
-}
-
-struct Image {
-
-};
-
-namespace ImGui {
-    void LoadingIndicator(u32 started_showing_at);
-    void Image(Memory_Image& image);
-}
 
 void ImGui::LoadingIndicator(u32 started_showing_at) {
     float scale = (float) emscripten_get_device_pixel_ratio();
@@ -1060,120 +395,6 @@ void search_folder_tree() {
 
     printf("Took %llu to sort %lu elements\n", time, total_nodes);
     //qsort(sorted_nodes, total_nodes, sizeof(Sorted_Node), compare_nodes2);
-}
-
-void draw_task_contents() {
-    float wrap_width = ImGui::GetColumnWidth(-1) - 30.0f; // Accommodate for scroll bar
-
-    ImGuiID task_content_id = ImGui::GetID("task_content");
-    ImGui::BeginChildFrame(task_content_id, ImVec2(-1, -1), ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
-
-    float alpha = lerp(finished_loading_task_at, tick, 1.0f, 8);
-
-    ImVec4 title_color = ImVec4(0, 0, 0, alpha);
-
-    float wrap_pos = ImGui::GetCursorPosX() + wrap_width;
-    ImGui::PushTextWrapPos(wrap_pos);
-    ImGui::PushFont(font_header);
-    ImGui::TextColored(title_color, "%.*s", current_task.title.length, current_task.title.start);
-    ImGui::PopFont();
-    ImGui::PopTextWrapPos();
-
-    for (u32 index = 0; index < current_task.num_assignees; index++) {
-        bool is_last = index == (current_task.num_assignees - 1);
-
-        // TODO temporary code, use a hash map!
-        for (u32 user_index = 0; user_index < users_count; user_index++) {
-            User* user = &users[user_index];
-
-            if (are_ids_equal(&user->id, &current_task.assignees[index])) {
-                const char* pattern_last = "%.*s %.*s";
-                const char* pattern_preceding = "%.*s %.*s,";
-
-                ImGui::TextColored(title_color, is_last ? pattern_last : pattern_preceding,
-                            user->firstName.length, user->firstName.start,
-                            user->lastName.length, user->lastName.start
-                );
-
-                if (!is_last) {
-                    ImGui::SameLine();
-                }
-
-                break;
-            }
-        }
-    }
-
-    if (ImGui::Button("Open in Wrike")) {
-        EM_ASM({ window.open(Pointer_stringify($0, $1), '_blank'); },
-               current_task.permalink.start, current_task.permalink.length);
-    }
-
-    ImGui::Separator();
-
-    ImGui::BeginChild("task_description_and_comments", ImVec2(-1, -1));
-    if (current_task.description_strings > 0) {
-        Rich_Text_String* text_start = current_task.description;
-        Rich_Text_String* text_end = text_start + current_task.description_strings - 1;
-
-        for (Rich_Text_String* paragraph_end = text_start, *paragraph_start = paragraph_end; paragraph_end <= text_end; paragraph_end++) {
-            bool is_newline = paragraph_end->text.length == 0;
-            bool should_flush_text = is_newline || paragraph_end == text_end;
-
-            char* string_start = paragraph_start->text.start;
-            char* string_end = paragraph_end->text.start + paragraph_end->text.length;
-
-            if (is_newline && (string_end - string_start) == 0) {
-                ImGui::NewLine();
-                paragraph_start = paragraph_end + 1;
-                continue;
-            }
-
-            if (should_flush_text && paragraph_end - paragraph_start) {
-#if 0
-                const char* check_mark = "\u2713";
-                const char* check_box = "\u25A1";
-
-                if (paragraph_start->text.length >= 4) {
-                    bool is_check_mark = strncmp(check_mark, paragraph_start->text.start + 1, strlen(check_mark)) == 0;
-                    bool is_check_box = strncmp(check_box, paragraph_start->text.start + 1, strlen(check_box)) == 0;
-
-                    if (is_check_mark || is_check_box) {
-                        ImGui::Checkbox("", &is_check_mark);
-                        ImGui::SameLine();
-                    }
-                }
-#endif
-
-                float indent = paragraph_start->style.list_depth * 15.0f;
-
-                if (indent) {
-                    ImGui::Indent(indent);
-                    ImGui::Bullet();
-                    ImGui::SameLine();
-                }
-
-                add_rich_text(
-                        ImGui::GetWindowDrawList(),
-                        ImGui::GetCursorScreenPos(),
-                        paragraph_start,
-                        paragraph_end,
-                        wrap_width,
-                        alpha
-                );
-
-                if (indent) {
-                    ImGui::Unindent(indent);
-                }
-
-                paragraph_start = paragraph_end + 1;
-            }
-        }
-    }
-
-    ImGui::EndChild();
-
-    ImGui::EndChildFrame();
 }
 
 void draw_folder_tree_search_input() {
@@ -1315,104 +536,6 @@ void draw_side_menu_toggle_button(const ImVec2& size) {
                              color, rounding);
 }
 
-void draw_task_in_task_list(Folder_Task* task, float alpha) {
-    ImGui::PushID(task->id.id, task->id.id + ID_16_LENGTH);
-
-    // TODO slow, could compare hashes if that becomes an issue
-    bool is_selected = are_ids_equal(&task->id, &selected_folder_task_id);
-    bool clicked = ImGui::Selectable("##dummy_task", is_selected);
-
-    ImGui::PopID();
-
-    // TODO Pretty slow to hash like that every time
-    if (id_to_custom_status.size > 0) {
-        String id_as_string;
-        id_as_string.start = task->custom_status_id.id;
-        id_as_string.length = ID_16_LENGTH;
-
-        Custom_Status* custom_status = hash_map_get(&id_to_custom_status, id_as_string, hash_string(id_as_string));
-
-        if (custom_status) {
-            ImGui::SameLine();
-            ImVec4 color = ImGui::ColorConvertU32ToFloat4(custom_status->color);
-            color.w = alpha;
-
-            ImGui::TextColored(color, "[%.*s]", custom_status->name.length, custom_status->name.start);
-        }
-    }
-
-    ImGui::SameLine();
-    ImGui::TextColored(ImVec4(0, 0, 0, alpha), "%.*s", task->title.length, task->title.start);
-
-    for (u32 i = 0; i < current_folder.num_custom_columns; i++) {
-        Id16* custom_field_id = &current_folder.custom_columns[i];
-        String id_as_string;
-        id_as_string.start = custom_field_id->id;
-        id_as_string.length = ID_16_LENGTH;
-
-        Custom_Field* custom_field = hash_map_get(&id_to_custom_field, id_as_string, hash_string(id_as_string));
-
-        if (custom_field) {
-            for (u32 j = 0; j < task->num_custom_field_values; j++) {
-                Custom_Field_Value* value = &task->custom_field_values[j];
-
-                if (are_ids_equal(&value->field_id, custom_field_id)) {
-                    ImGui::SameLine();
-                    ImGui::TextColored(ImVec4(0, 0, 0, alpha), "[%.*s]", value->value.length, value->value.start);
-                }
-            }
-        }
-    }
-
-    if (clicked) {
-        request_task(task->id);
-    }
-}
-
-void draw_task_column(Folder_Task* task, u32 column, Custom_Field* custom_field_or_null, float alpha) {
-    if (column == 0) {
-        ImGui::PushID(task->id.id, task->id.id + ID_16_LENGTH);
-
-        // TODO slow, could compare hashes if that becomes an issue
-        bool is_selected = are_ids_equal(&task->id, &selected_folder_task_id);
-        bool clicked = ImGui::Selectable("##dummy_task", is_selected, ImGuiSelectableFlags_SpanAllColumns);
-
-        ImGui::PopID();
-
-        ImGui::SameLine();
-        ImGui::TextColored(ImVec4(0, 0, 0, alpha), "%.*s", task->title.length, task->title.start);
-
-        if (clicked) {
-            request_task(task->id);
-        }
-    } else if (column == 1 && id_to_custom_status.size > 0) {
-        // TODO Pretty slow to hash like that every time
-        String id_as_string;
-        id_as_string.start = task->custom_status_id.id;
-        id_as_string.length = ID_16_LENGTH;
-
-        Custom_Status* custom_status = hash_map_get(&id_to_custom_status, id_as_string,
-                                                    hash_string(id_as_string));
-
-        if (custom_status) {
-            ImVec4 color = ImGui::ColorConvertU32ToFloat4(custom_status->color);
-            color.w = alpha;
-
-            ImGui::TextColored(color, "[%.*s]", custom_status->name.length, custom_status->name.start);
-        }
-    } else if (custom_field_or_null) {
-        // TODO seems slow, any better way?
-        for (u32 j = 0; j < task->num_custom_field_values; j++) {
-            Custom_Field_Value* value = &task->custom_field_values[j];
-
-            if (are_ids_equal(&value->field_id, &custom_field_or_null->id)) {
-                ImGui::TextColored(ImVec4(0, 0, 0, alpha), "%.*s", value->value.length, value->value.start);
-                break;
-            }
-        }
-    }
-}
-
 extern "C"
 EMSCRIPTEN_KEEPALIVE
 char* handle_clipboard_copy() {
@@ -1479,109 +602,7 @@ void loop()
         ImGui::NextColumn();
     }
 
-    ImGui::ListBoxHeader("##tasks", ImVec2(-1, -1));
-
-    const bool custom_statuses_loaded = custom_statuses_count > 0;
-    const bool is_folder_data_loading = folder_contents_request != NO_REQUEST || folder_header_request != NO_REQUEST;
-
-    if (!is_folder_data_loading && custom_statuses_loaded) {
-        u32 loading_end_time = MAX(finished_loading_folder_header_at, MAX(finished_loading_folder_contents_at, finished_loading_statuses_at));
-
-        float alpha = lerp(loading_end_time, tick, 1.0f, 8);
-
-        // TODO we could put those into a clipper as well
-#if 0
-        if (selected_node) {
-            for (u32 i = 0; i < selected_node->num_children; i++) {
-                Folder_Tree_Node* child_folder = selected_node->children[i];
-
-                ImGui::PushID(child_folder);
-
-                bool clicked = ImGui::Selectable("##dummy_folder");
-                ImGui::SameLine();
-                ImGui::TextColored(ImVec4(0, 0, 0, alpha), string_to_temporary_null_terminated_string(child_folder->name));
-
-                if (clicked) {
-                    select_folder_node_and_request_contents_if_necessary(child_folder);
-                }
-
-                ImGui::PopID();
-            }
-        }
-#endif
-
-        float view_width = ImGui::GetContentRegionAvailWidth();
-        u32 total_columns = current_folder.num_custom_columns + 2;
-        float custom_column_width = (view_width * 0.4f);
-
-        if (current_folder.num_custom_columns) {
-            custom_column_width /= current_folder.num_custom_columns;
-        }
-
-        ImGui::BeginColumns("table_view_columns", total_columns);
-
-        Custom_Field** column_to_custom_field = (Custom_Field**) talloc(sizeof(Custom_Field*) * current_folder.num_custom_columns);
-
-        float scale = (float) emscripten_get_device_pixel_ratio();
-
-        ImGui::SetColumnWidth(0, view_width * 0.4f);
-        ImGui::SetColumnWidth(1, view_width * 0.2f);
-
-        for (u32 column = 0; column < current_folder.num_custom_columns; column++) {
-            Id16* custom_field_id = &current_folder.custom_columns[column];
-            String id_as_string;
-            id_as_string.start = custom_field_id->id;
-            id_as_string.length = ID_16_LENGTH;
-
-            // TODO hash cache!
-            Custom_Field* custom_field = hash_map_get(&id_to_custom_field, id_as_string, hash_string(id_as_string));
-
-            column_to_custom_field[column] = custom_field;
-
-            ImGui::SetColumnWidth(2 + column, custom_column_width);
-        }
-
-        for (u32 column = 0; column < total_columns; column++) {
-            String column_title;
-
-            Custom_Field* custom_field = column >= 2 ? column_to_custom_field[column - 2] : NULL;
-
-            if (column == 0) {
-                column_title.start = (char*) "Name";
-                column_title.length = strlen(column_title.start);
-            } else if (column == 1) {
-                column_title.start = (char*) "Status";
-                column_title.length = strlen(column_title.start);
-            } else {
-                column_title = custom_field->title;
-            }
-
-            ImGui::TextUnformatted(column_title.start, column_title.start + column_title.length);
-
-            //ImGuiListClipper clipper(folder_task_count, ImGui::GetTextLineHeightWithSpacing());
-
-            //while (clipper.Step()) {
-                for (int index = 0; index < folder_task_count; index++) {
-                    Folder_Task* task = &folder_tasks[index];
-
-                    draw_task_column(task, column, custom_field, alpha);
-                }
-            //}
-
-            //clipper.End();
-
-            if (column + 1 < total_columns) {
-                ImGui::NextColumn();
-            }
-        }
-
-        ImGui::EndColumns();
-
-    } else {
-        ImGui::LoadingIndicator(MIN(started_loading_folder_contents_at, started_loading_statuses_at));
-    }
-
-    ImGui::ListBoxFooter();
+    draw_task_list();
 
     ImGui::NextColumn();
 
@@ -1651,7 +672,6 @@ bool init()
     initializeEmFunGImGui();
     FunImGui::init();
     gFrameMonitor = new FrameMonitor;
-    gDownload = new Download;
 
     load_png_from_disk("resources/wrike_logo.png", logo);
 

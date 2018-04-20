@@ -91,19 +91,10 @@ void FunImGui::init()
     style->FrameRounding = 4.0f;
     style->ScaleAllSizes((float) emscripten_get_device_pixel_ratio());
 
-//    EmscriptenWebGLContextAttributes context_attributes;
-//
-//    emscripten_webgl_init_context_attributes(&context_attributes);
-//    context_attributes.antialias = false;
-
-//    EMSCRIPTEN_WEBGL_CONTEXT_HANDLE context = emscripten_webgl_create_context("canvas", &context_attributes);
-//    emscripten_webgl_make_context_current(context);
-
     //io.MouseDrawCursor = true;
     emscripten_set_mousemove_callback(nullptr, nullptr, false, &FunImGui::mouseCallback);
     emscripten_set_mousedown_callback(nullptr, nullptr, false, &FunImGui::mouseCallback);
     emscripten_set_mouseup_callback(nullptr, nullptr, false, &FunImGui::mouseCallback);
-    emscripten_set_wheel_callback("canvas", nullptr, false, &FunImGui::wheelCallback);
     emscripten_set_wheel_callback("canvas", nullptr, false, &FunImGui::wheelCallback);
     emscripten_set_touchstart_callback(nullptr, nullptr, false, &FunImGui::touchCallback);
     emscripten_set_touchmove_callback(nullptr, nullptr, false, &FunImGui::touchCallback);
@@ -116,9 +107,6 @@ void FunImGui::init()
 
     //emscripten_request_pointerlock(nullptr, true);
     printf("pixel ratio: %f\n", emscripten_get_device_pixel_ratio());
-
-    /*frame_buffer_texture = create_texture(frame_buffer_width, frame_buffer_height);
-    frame_buffer = create_frame_buffer(frame_buffer_texture);*/
 
     init_sdf();
 }
@@ -319,10 +307,10 @@ void FunImGui::initFont()
 
 #define LOAD_FONT(name, size) io.Fonts->AddFontFromFileTTF((name), (size) * scale, &font_config, io.Fonts->GetGlyphRangesCyrillic())
 
-    const float default_font_size = 20.0f;
+    const float default_font_size = 16.0f;
 
     font_regular = LOAD_FONT("resources/OpenSans-Regular.ttf", default_font_size);
-    font_header = LOAD_FONT("resources/OpenSans-Regular.ttf", 32.0f);
+    font_header = LOAD_FONT("resources/OpenSans-Regular.ttf", 28.0f);
     font_bold = LOAD_FONT("resources/OpenSans-Bold.ttf", default_font_size);
     font_italic = LOAD_FONT("resources/OpenSans-Italic.ttf", default_font_size);
     font_bold_italic = LOAD_FONT("resources/OpenSans-BoldItalic.ttf", default_font_size);
@@ -366,7 +354,7 @@ int FunImGui::touchCallback(int eventType, const EmscriptenTouchEvent *touchEven
     float scale = (float) emscripten_get_device_pixel_ratio();
     ImGuiIO& io = ImGui::GetIO();
 
-    if (touchEvent->numTouches > 0) {
+    if (touchEvent->numTouches > 0 || eventType == EMSCRIPTEN_EVENT_TOUCHEND) {
         const EmscriptenTouchPoint& touch = touchEvent->touches[0];
         io.MousePos = ImVec2((float)touch.canvasX * scale, (float)touch.canvasY * scale);
         io.MouseDown[0] = true;

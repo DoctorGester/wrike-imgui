@@ -42,6 +42,24 @@ struct Id8 {
     char id[ID_8_LENGTH];
 };
 
+inline bool are_ids_equal(Id16* a, Id16* b) {
+    return memcmp(a->id, b->id, ID_16_LENGTH) == 0;
+}
+
+inline bool are_ids_equal(Id8* a, Id8* b) {
+    return memcmp(a->id, b->id, ID_8_LENGTH) == 0;
+}
+
+inline float lerp(float time_from, float time_to, float scale_to, float max) {
+    float delta = (time_to - time_from);
+
+    if (delta > max) {
+        delta = max;
+    }
+
+    return ((scale_to / max) * delta);
+}
+
 bool load_png_from_disk(const char* path, Memory_Image& out);
 
 #define MIN(a, b) (a) < (b) ? (a) : (b)
@@ -67,6 +85,8 @@ inline bool are_strings_equal(String& a, Id16& b) {
 inline u32 hash_string(String& string) {
     return XXH32(string.start, string.length, hash_seed);
 }
+
+s32 string_atoi(String& string);
 
 static inline ImVec2 operator*(const ImVec2& lhs, const float rhs)              { return ImVec2(lhs.x*rhs, lhs.y*rhs); }
 static inline ImVec2 operator/(const ImVec2& lhs, const float rhs)              { return ImVec2(lhs.x/rhs, lhs.y/rhs); }

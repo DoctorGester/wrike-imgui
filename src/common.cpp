@@ -13,6 +13,24 @@ u32 argb_to_agbr(u32 argb) {
     return a | (r >> 16) | g | (b << 16);
 }
 
+s32 string_atoi(String& string) {
+    char* buf = string.start;
+    u32 len = string.length;
+
+    s32 n = 0, sign = 1;
+
+    if (len)
+        switch (*buf) {
+            case '-': sign = -1;
+            case '+': --len, ++buf;
+        }
+
+    while (len-- && isdigit(*buf))
+        n = n * 10 + *buf++ - '0';
+
+    return n * sign;
+}
+
 char* read_file(const char* file_name) {
     char* buffer = 0;
     long length;
