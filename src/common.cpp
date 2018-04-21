@@ -13,9 +13,9 @@ u32 argb_to_agbr(u32 argb) {
     return a | (r >> 16) | g | (b << 16);
 }
 
-s32 string_atoi(String& string) {
-    char* buf = string.start;
-    u32 len = string.length;
+s32 string_atoi(String* string) {
+    char* buf = string->start;
+    u32 len = string->length;
 
     s32 n = 0, sign = 1;
 

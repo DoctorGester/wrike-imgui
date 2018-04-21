@@ -86,7 +86,11 @@ inline u32 hash_string(String& string) {
     return XXH32(string.start, string.length, hash_seed);
 }
 
-s32 string_atoi(String& string);
+inline u32 hash_id(Id16& id) {
+    return XXH32(id.id, ID_16_LENGTH, hash_seed);
+}
+
+s32 string_atoi(String* string);
 
 static inline ImVec2 operator*(const ImVec2& lhs, const float rhs)              { return ImVec2(lhs.x*rhs, lhs.y*rhs); }
 static inline ImVec2 operator/(const ImVec2& lhs, const float rhs)              { return ImVec2(lhs.x/rhs, lhs.y/rhs); }

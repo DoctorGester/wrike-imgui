@@ -29,6 +29,19 @@ static void process_custom_field(char* json, jsmntok_t*& token) {
             json_token_to_id(json, next_token, custom_field->id);
         } else if (json_string_equals(json, property_token, "title")) {
             json_token_to_string(json, next_token, custom_field->title);
+        } else if (json_string_equals(json, property_token, "type")) {
+
+            if (json_string_equals(json, next_token, "Text")) {
+                custom_field->type = Custom_Field_Type_Text;
+            } else if (json_string_equals(json, next_token, "Numeric")) {
+                custom_field->type = Custom_Field_Type_Numeric;
+            } else if (json_string_equals(json, next_token, "DropDown")) {
+                custom_field->type = Custom_Field_Type_DropDown;
+            } else {
+                // TODO all other cases, preferably with a more efficient comparison
+                custom_field->type = Custom_Field_Type_None;
+            }
+
         } else {
             eat_json(token);
             token--;

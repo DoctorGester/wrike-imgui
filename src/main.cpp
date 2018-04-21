@@ -252,7 +252,7 @@ void request_folder_contents(String &folder_id) {
            folder_id.length
     );
 
-    api_request(folder_contents_request, "folders/%.*s/tasks%s", (int) folder_id.length, folder_id.start, "?fields=['customFields']");
+    api_request(folder_contents_request, "folders/%.*s/tasks%s", (int) folder_id.length, folder_id.start, "?fields=['customFields']&subTasks=true");
     api_request(folder_header_request, "folders/%.*s%s", (int) folder_id.length, folder_id.start, "?fields=['customColumnIds']");
 
     started_loading_folder_contents_at = tick;
