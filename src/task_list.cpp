@@ -1,6 +1,5 @@
 #include <jsmn.h>
 #include <cstdio>
-#include <emscripten.h>
 #include <imgui.h>
 #include <imgui_internal.h>
 #include "hash_map.h"
@@ -301,9 +300,9 @@ static void sort_by_field(Task_List_Sort_Field sort_by) {
 
     sort_field = sort_by;
 
-    double start = emscripten_get_now();
+    float start = platform_get_now();
     qsort(sorted_folder_tasks, folder_task_count, sizeof(Sorted_Folder_Task), compare_folder_tasks_based_on_current_sort_and_their_ids);
-    printf("Sorting %lu elements by %i took %fms\n", folder_task_count, sort_by, emscripten_get_now() - start);
+    printf("Sorting %lu elements by %i took %fms\n", folder_task_count, sort_by, platform_get_now() - start);
 }
 
 static void sort_by_custom_field(Id16& field_id) {
@@ -327,9 +326,9 @@ static void sort_by_custom_field(Id16& field_id) {
     sort_custom_field_id = field_id;
     sort_custom_field = hash_map_get(&id_to_custom_field, id_as_string, hash_string(id_as_string));
 
-    double start = emscripten_get_now();
+    float start = platform_get_now();
     qsort(sorted_folder_tasks, folder_task_count, sizeof(Sorted_Folder_Task), compare_folder_tasks_based_on_current_sort_and_their_ids);
-    printf("Sorting %lu elements by %.16s took %fms\n", folder_task_count, field_id.id, emscripten_get_now() - start);
+    printf("Sorting %lu elements by %.16s took %fms\n", folder_task_count, field_id.id, platform_get_now() - start);
 }
 
 void draw_task_column(Sorted_Folder_Task* sorted_task, u32 column, Custom_Field* custom_field_or_null, float alpha) {
@@ -461,6 +460,50 @@ void draw_task_list_header(float view_width, float custom_column_width, Custom_F
     ImGui::EndColumns();
 }
 
+void map_columns_to_custom_fields(Custom_Field** column_to_custom_field) {
+    for (u32 column = 0; column < current_folder.num_custom_columns; column++) {
+        Id16* custom_field_id = &current_folder.custom_columns[column];
+
+        // TODO ugly! We need to find a way to use ID as hash map key
+        String id_as_string;
+        id_as_string.start = custom_field_id->id;
+        id_as_string.length = ID_16_LENGTH;
+
+        // TODO hash cache!
+        Custom_Field* custom_field = hash_map_get(&id_to_custom_field, id_as_string, hash_string(id_as_string));
+
+        column_to_custom_field[column] = custom_field;
+    }
+}
+
+void draw_all_task_columns(Custom_Field** column_to_custom_field, u32 total_columns, float alpha) {
+    for (u32 column = 0; column < total_columns; column++) {
+        Custom_Field* custom_field = column >= custom_columns_start_index ?
+                                     column_to_custom_field[column - custom_columns_start_index] :
+                                     NULL;
+
+        //ImGuiListClipper clipper(folder_task_count, ImGui::GetTextLineHeightWithSpacing());
+
+        //while (clipper.Step()) {
+        for (int index = 0; index < folder_task_count; index++) {
+            Sorted_Folder_Task* task = &sorted_folder_tasks[index];
+
+            if (show_only_active_tasks && task->cached_status->group != Status_Group_Active) {
+                continue;
+            }
+
+            draw_task_column(task, column, custom_field, alpha);
+        }
+        //}
+
+        //clipper.End();
+
+        if (column + 1 < total_columns) {
+            ImGui::NextColumn();
+        }
+    }
+}
+
 void draw_task_list() {
     ImGuiID task_list = ImGui::GetID("task_list");
     ImGui::BeginChildFrame(task_list, ImVec2(-1, -1), ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
@@ -514,19 +557,7 @@ void draw_task_list() {
 
         Custom_Field** column_to_custom_field = (Custom_Field**) talloc(sizeof(Custom_Field*) * current_folder.num_custom_columns);
 
-        for (u32 column = 0; column < current_folder.num_custom_columns; column++) {
-            Id16* custom_field_id = &current_folder.custom_columns[column];
-
-            // TODO ugly! We need to find a way to use ID as hash map key
-            String id_as_string;
-            id_as_string.start = custom_field_id->id;
-            id_as_string.length = ID_16_LENGTH;
-
-            // TODO hash cache!
-            Custom_Field* custom_field = hash_map_get(&id_to_custom_field, id_as_string, hash_string(id_as_string));
-
-            column_to_custom_field[column] = custom_field;
-        }
+        map_columns_to_custom_fields(column_to_custom_field);
 
         draw_task_list_header(view_width, custom_column_width, column_to_custom_field, total_columns);
 
@@ -541,31 +572,7 @@ void draw_task_list() {
             ImGui::SetColumnWidth(custom_columns_start_index + column, custom_column_width);
         }
 
-        for (u32 column = 0; column < total_columns; column++) {
-            Custom_Field* custom_field = column >= custom_columns_start_index ?
-                                         column_to_custom_field[column - custom_columns_start_index] :
-                                         NULL;
-
-            //ImGuiListClipper clipper(folder_task_count, ImGui::GetTextLineHeightWithSpacing());
-
-            //while (clipper.Step()) {
-            for (int index = 0; index < folder_task_count; index++) {
-                Sorted_Folder_Task* task = &sorted_folder_tasks[index];
-
-                if (show_only_active_tasks && task->cached_status->group != Status_Group_Active) {
-                    continue;
-                }
-
-                draw_task_column(task, column, custom_field, alpha);
-            }
-            //}
-
-            //clipper.End();
-
-            if (column + 1 < total_columns) {
-                ImGui::NextColumn();
-            }
-        }
+        draw_all_task_columns(column_to_custom_field, total_columns, alpha);
 
         ImGui::EndColumns();
         ImGui::EndChild();
@@ -581,6 +588,8 @@ static void process_folder_task_custom_field(Custom_Field_Value* custom_field_va
 
     assert(object_token->type == JSMN_OBJECT);
 
+    bool has_id = false;
+
     for (u32 propety_index = 0; propety_index < object_token->size; propety_index++, token++) {
         jsmntok_t* property_token = token++;
 
@@ -590,12 +599,17 @@ static void process_folder_task_custom_field(Custom_Field_Value* custom_field_va
 
         if (json_string_equals(json, property_token, "id")) {
             json_token_to_id(json, next_token, custom_field_value->field_id);
+            has_id = true;
         } else if (json_string_equals(json, property_token, "value")) {
             json_token_to_string(json, next_token, custom_field_value->value);
         } else {
             eat_json(token);
             token--;
         }
+    }
+
+    if (!has_id) {
+        printf("Custom field has no id...\n");
     }
 }
 

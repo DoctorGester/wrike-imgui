@@ -1,15 +1,15 @@
 #include "framemonitor.h"
 #include "imgui.h"
-#include <emscripten/emscripten.h>
 #include <string>
 #include <numeric>
 #define IMGUI_DEFINE_MATH_OPERATORS
 #include "imgui_internal.h"
+#include "platform.h"
 
 FrameMonitor::FrameMonitor()
 {
     values.resize(60,0);
-    lastTime = emscripten_get_now();
+    lastTime = platform_get_now();
 }
 
 void FrameMonitor::debugDraw()
@@ -44,14 +44,14 @@ void FrameMonitor::drawAverage() {
 }
 
 void FrameMonitor::startFrame() {
-    lastTime = emscripten_get_now();
+    lastTime = platform_get_now();
 }
 
 void FrameMonitor::endFrame()
 {
     if(bShow)
     {
-        double newTime = emscripten_get_now();
+        double newTime = platform_get_now();
         values[frame++%values.size()] = newTime - lastTime;
         //lastTime = newTime;
     }

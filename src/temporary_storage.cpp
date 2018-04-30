@@ -22,6 +22,8 @@ void clear_temporary_storage() {
 void* talloc(size_t size) {
     assert((pointer_current - pointer_initial) + size < available_memory_bytes);
 
+    size = (size + 4) & ~0x03; // Align, &~0x03 simply sets two trailing bits to 0
+
     pointer_previous = pointer_current;
     pointer_current += size;
 

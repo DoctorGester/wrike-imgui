@@ -1,7 +1,6 @@
 #pragma once
 
 #include <imgui.h>
-#include <emscripten/html5.h>
 #include "common.h"
 
 class ImDrawData;
@@ -11,17 +10,11 @@ class EmscriptenKeyboardEvent;
 class FunImGui {
 public:
     static void init();
-    static void BeginFrame();
-    static void initGraphics();
+    static void initGraphics(const char* vertex_shader_source, const char* fragment_shader_source);
     static void initFont();
     static void RenderDrawLists(ImDrawData* drawData);
     static const char* GetClipboardText(void*);
     static void SetClipboardText(void*, const char* text);
-    static int mouseCallback(int eventType, const EmscriptenMouseEvent* mouseEvent, void* userData);
-    static int wheelCallback(int eventType, const EmscriptenWheelEvent* wheelEvent, void* userData);
-    static int keyboardCallback(int eventType, const EmscriptenKeyboardEvent* keyEvent, void* userData);
-    static const char* vertexShader;
-    static const char* fragmentShader;
     static int m_shaderHandle;
     static int m_texture;
     static int m_projectionMatrix;
@@ -32,8 +25,6 @@ public:
     static unsigned int m_vbo;
     static unsigned int m_elements;
     static unsigned int m_fontTexture;
-
-    static int touchCallback(int eventType, const EmscriptenTouchEvent* touchEvent, void* userData);
 };
 
 extern ImFont* font_header;

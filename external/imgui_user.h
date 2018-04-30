@@ -1,9 +1,9 @@
 #pragma once
 
-#define GImGui emfun_GImGui
 struct ImGuiContext;
-extern ImGuiContext* emfun_GImGui;
+#define GImGui global_imgui_context
+extern ImGuiContext* global_imgui_context;
 
-void initializeEmFunGImGui();
+void create_imgui_context();
 
 

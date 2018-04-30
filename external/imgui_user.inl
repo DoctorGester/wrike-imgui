@@ -1,5 +1,6 @@
-ImGuiContext* emfun_GImGui = nullptr; 
-void initializeEmFunGImGui()
+ImGuiContext* global_imgui_context = nullptr;
+
+void create_imgui_context()
 {
-    emfun_GImGui = ImGui::CreateContext();
+    global_imgui_context = ImGui::CreateContext();
 }

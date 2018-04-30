@@ -4,9 +4,9 @@
 #include "funimgui.h"
 #include "rich_text.h"
 #include "render_rich_text.h"
+#include "platform.h"
 
 #include <imgui.h>
-#include <emscripten/em_asm.h>
 #include <cstdlib>
 #include <html_entities.h>
 
@@ -53,8 +53,7 @@ void draw_task_contents() {
     }
 
     if (ImGui::Button("Open in Wrike")) {
-        EM_ASM({ window.open(Pointer_stringify($0, $1), '_blank'); },
-               current_task.permalink.start, current_task.permalink.length);
+        platform_open_in_wrike(current_task.permalink);
     }
 
     ImGui::Separator();

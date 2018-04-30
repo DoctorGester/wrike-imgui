@@ -8,6 +8,11 @@ bool init();
 extern "C"
 void loop();
 
+typedef signed long Request_Id;
+
+extern "C"
+void api_request_success(Request_Id request_id, char* content_json);
+
 struct Task {
     String title;
     String permalink;
@@ -28,7 +33,6 @@ struct User {
 extern User* users;
 extern u32 users_count;
 
-typedef signed long Request_Id;
 
 // TODO make this a define?
 extern const Request_Id NO_REQUEST;

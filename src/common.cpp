@@ -1,6 +1,10 @@
 #include <cstdio>
 #include <lodepng.h>
+#if EMSCRIPTEN
 #include <GLES2/gl2.h>
+#else
+#include <SDL2/SDL_opengl.h>
+#endif
 #include "common.h"
 #include "temporary_storage.h"
 
@@ -67,6 +71,7 @@ template <typename T>
 void test_template2(T t) {
     printf("%i", sizeof(t));
 }
+
 static void load_image_into_gpu_memory(Memory_Image& image, void* pixels) {
     GLuint texture_id = 0;
 

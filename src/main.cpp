@@ -1,15 +1,13 @@
 #include "main.h"
-#include "draw.h"
 #include "funimgui.h"
 #include <imgui.h>
 #include "framemonitor.h"
-#include <emscripten/emscripten.h>
 #include <cmath>
 #include <chrono>
+#define IMGUI_DEFINE_MATH_OPERATORS
 #include <imgui_internal.h>
 #include <jsmn.h>
 
-#include "download.h"
 #include "jsmn.h"
 #include "folder_tree.h"
 #include "common.h"
@@ -21,13 +19,11 @@
 #include "task_list.h"
 #include "accounts.h"
 #include "task_view.h"
+#include "platform.h"
 
 #define PRINTLIKE(string_index, first_to_check) __attribute__((__format__ (__printf__, string_index, first_to_check)))
 
-static Draw GDraw;
-static FrameMonitor* gFrameMonitor = nullptr;
-
-typedef signed long Request_Id;
+static FrameMonitor* frame_monitor = nullptr;
 
 const Request_Id NO_REQUEST = -1;
 
@@ -86,9 +82,9 @@ PRINTLIKE(2, 3) static void api_request(Request_Id& request_id, const char* form
 
     va_end(args);
 
-    EM_ASM({ api_get(Pointer_stringify($0), $1) }, &temporary_request_buffer[0], request_id_counter);
-
     request_id = request_id_counter++;
+
+    platform_api_get(request_id, temporary_request_buffer);
 }
 
 static void process_users_data_object(char* json, jsmntok_t*&token) {
@@ -151,7 +147,7 @@ static void request_workflows_for_each_account() {
 }
 
 extern "C"
-EMSCRIPTEN_KEEPALIVE
+EXPORT
 void api_request_success(Request_Id request_id, char* content_json) {
     printf("Got request %lu with content at %p\n", request_id, (void*) content_json);
 
@@ -246,13 +242,10 @@ int levenshtein(const char* a, const char* b, u32 a_length, u32 b_length) {
 }
 
 void request_folder_contents(String &folder_id) {
-    EM_ASM({ local_storage_set(Pointer_stringify($0), Pointer_stringify($1, $2)) },
-           "last_selected_folder",
-           folder_id.start,
-           folder_id.length
-    );
+    platform_local_storage_set("last_selected_folder", folder_id);
 
-    api_request(folder_contents_request, "folders/%.*s/tasks%s", (int) folder_id.length, folder_id.start, "?fields=['customFields']&subTasks=true");
+    // TODO folders/id request is not permitted for a logical folder
+    api_request(folder_contents_request, "folders/%.*s/tasks%s", (int) folder_id.length, folder_id.start, "?fields=['customFields','superTaskIds','responsibleIds']&subTasks=true");
     api_request(folder_header_request, "folders/%.*s%s", (int) folder_id.length, folder_id.start, "?fields=['customColumnIds']");
 
     started_loading_folder_contents_at = tick;
@@ -267,11 +260,11 @@ void select_folder_node_and_request_contents_if_necessary(Folder_Tree_Node* fold
 void request_task(Id16& task_id) {
     selected_folder_task_id = task_id;
 
-    EM_ASM({ local_storage_set(Pointer_stringify($0), Pointer_stringify($1, $2)) },
-           "last_selected_task",
-           task_id.id,
-           ID_16_LENGTH
-    );
+    String task_id_as_string;
+    task_id_as_string.start = task_id.id;
+    task_id_as_string.length = ID_16_LENGTH;
+
+    platform_local_storage_set("last_selected_task", task_id_as_string);
 
     api_request(task_request, "tasks/%.*s", ID_16_LENGTH, task_id.id);
     started_loading_task_at = tick;
@@ -291,7 +284,7 @@ void draw_folder_tree_node(Folder_Tree_Node* tree_node) {
         String& id = child_node->id;
 
         ImGui::PushID(id.start, id.start + id.length);
-        bool node_open = ImGui::TreeNodeEx((char*) NULL, node_flags, "%.*s", child_node->name.length, child_node->name.start);
+        bool node_open = ImGui::TreeNodeEx(child_node, node_flags, "%.*s", child_node->name.length, child_node->name.start);
         ImGui::PopID();
 
         if (ImGui::IsItemClicked()) {
@@ -310,7 +303,7 @@ char search_buffer[128];
 
 
 void ImGui::LoadingIndicator(u32 started_showing_at) {
-    float scale = (float) emscripten_get_device_pixel_ratio();
+    float scale = platform_get_pixel_ratio();
     ImVec2 cursor = ImGui::GetCursorScreenPos() + (ImVec2(12, 12) * scale);
     const float speed_scale = 10.0f;
     float cos = cosf(tick / speed_scale);
@@ -331,7 +324,7 @@ void ImGui::LoadingIndicator(u32 started_showing_at) {
 ImVec2 get_scaled_image_size(Memory_Image& image) {
     // Assume original image is retina-sized
     ImVec2 size{ (float) image.width, (float) image.height };
-    return size / 2.0f * emscripten_get_device_pixel_ratio();
+    return size / 2.0f * platform_get_pixel_ratio();
 }
 
 void ImGui::Image(Memory_Image& image) {
@@ -503,7 +496,7 @@ void draw_folder_tree() {
 }
 
 void draw_side_menu_toggle_button(const ImVec2& size) {
-    float scale = (float) emscripten_get_device_pixel_ratio();
+    float scale = platform_get_pixel_ratio();
 
     ImDrawList* draw_list = ImGui::GetWindowDrawList();
 
@@ -589,7 +582,7 @@ void loop()
 
     draw_side_menu_toggle_button(toggle_button_size);
 
-    gFrameMonitor->drawAverage();
+    frame_monitor->drawAverage();
 
     ImGui::Columns(draw_side_menu_this_frame ? 3 : 2);
 
@@ -629,27 +622,12 @@ void loop()
     Draw::clear();
     ImGui::Render();
 
-    gFrameMonitor->endFrame();
+    frame_monitor->endFrame();
 }
 
-EMSCRIPTEN_KEEPALIVE
-bool init()
-{
-    init_temporary_storage();
-
-    api_request(accounts_request, "accounts?fields=['customFields']");
-    api_request(folder_tree_request, "folders?fields=['starred']");
-    api_request(contacts_request, "contacts");
-
-    folder_tree_init();
-
-    memset(search_buffer, 0, sizeof(search_buffer));
-
-    char* last_selected_folder
-            = (char*) EM_ASM_INT({ return local_storage_get_string(Pointer_stringify($0)) }, "last_selected_folder");
-
-    char* last_selected_task
-            = (char*) EM_ASM_INT({ return local_storage_get_string(Pointer_stringify($0)) }, "last_selected_task");
+void load_persisted_settings() {
+    char* last_selected_folder = platform_local_storage_get("last_selected_folder");
+    char* last_selected_task = platform_local_storage_get("last_selected_task");
 
     if (last_selected_folder) {
         String folder_id;
@@ -667,21 +645,40 @@ bool init()
 
         request_task(task_id);
     }
+}
 
-    bool result = GDraw.init();
-    initializeEmFunGImGui();
-    FunImGui::init();
-    gFrameMonitor = new FrameMonitor;
+EXPORT
+bool init()
+{
+    init_temporary_storage();
+    create_imgui_context();
+
+    bool result = platform_init();
+
+    api_request(accounts_request, "accounts?fields=['customFields']");
+    api_request(folder_tree_request, "folders?fields=['starred']");
+    api_request(contacts_request, "contacts");
+
+    folder_tree_init();
+
+    memset(search_buffer, 0, sizeof(search_buffer));
+
+    load_persisted_settings();
+
+    printf("Platform init: %s\n", result ? "true" : "false");
+
+    frame_monitor = new FrameMonitor;
 
     load_png_from_disk("resources/wrike_logo.png", logo);
 
     return result;
 }
 
-#ifdef __EMSCRIPTEN__
-EMSCRIPTEN_KEEPALIVE
+EXPORT
 int main() {
-    init();
-    emscripten_set_main_loop(loop, 0, 1);
+    if (!init()) {
+        return -1;
+    }
+
+    platform_loop();
 }
-#endif
