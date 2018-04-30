@@ -16,14 +16,6 @@ struct Folder_Tree_Node {
     bool is_starred;
 };
 
-struct Parent_Child_Pair {
-    String parent;
-    String child;
-
-    u32 parent_hash;
-    u32 child_hash;
-};
-
 void folder_tree_init();
 void process_folder_tree_request(char* json, jsmntok_t* tokens, u32 num_tokens);
 

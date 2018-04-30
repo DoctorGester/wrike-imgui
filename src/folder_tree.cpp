@@ -2,15 +2,20 @@
 #include "xxhash.h"
 #include "jsmn.h"
 #include "hash_map.h"
+#include "lazy_array.h"
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <assert.h>
 
-static Parent_Child_Pair* parent_child_pairs = NULL;
-static u32 parent_child_pairs_count = 0;
-static u32 parent_child_pairs_watermark = 0;
+struct Parent_Child_Pair {
+    Folder_Tree_Node* parent;
 
+    String child_id;
+    u32 child_hash;
+};
+
+static Lazy_Array<Parent_Child_Pair, 64> parent_child_pairs{};
 static Hash_Map<Folder_Tree_Node*> folder_id_to_node_map;
 
 static u32 current_node = 0;
@@ -32,21 +37,10 @@ inline Folder_Tree_Node* find_folder_tree_node_by_id(String& id, u32 hash) {
     return hash_map_get(&folder_id_to_node_map, id, hash);
 }
 
-static void add_parent_child_pair(String& parent_id, String& child_id) {
-    if (parent_child_pairs_count == parent_child_pairs_watermark) {
-        if (parent_child_pairs_watermark == 0) {
-            parent_child_pairs_watermark = 64;
-        } else {
-            parent_child_pairs_watermark *= 2;
-        }
-
-        parent_child_pairs = (Parent_Child_Pair*) realloc(parent_child_pairs, sizeof(Parent_Child_Pair) * parent_child_pairs_watermark);
-    }
-
-    Parent_Child_Pair* pair = &parent_child_pairs[parent_child_pairs_count++];
-    pair->parent = parent_id;
-    pair->child = child_id;
-    pair->parent_hash = hash_string(parent_id);
+static void add_parent_child_pair(Folder_Tree_Node* parent, String& child_id) {
+    Parent_Child_Pair* pair = lazy_array_reserve_n_values(parent_child_pairs, 1);
+    pair->parent = parent;
+    pair->child_id = child_id;
     pair->child_hash = hash_string(child_id);
 }
 
@@ -55,13 +49,12 @@ static void process_folder_tree_data_object(char* json, jsmntok_t*& token) {
 
     assert(object_token->type == JSMN_OBJECT);
 
-    String name;
-    String id;
     String scope;
     u32 num_children = 0;
     bool is_starred = false;
 
-    bool has_id = false;
+    Folder_Tree_Node* new_node = &all_nodes[current_node++];
+    new_node->name.start = NULL;
 
     for (u32 propety_index = 0; propety_index < object_token->size; propety_index++, token++) {
         jsmntok_t* property_token = token++;
@@ -72,11 +65,9 @@ static void process_folder_tree_data_object(char* json, jsmntok_t*& token) {
 
         // TODO string comparison there is inefficient, can be faster
         if (json_string_equals(json, property_token, "title")) {
-            json_token_to_string(json, value_token, name);
+            json_token_to_string(json, value_token, new_node->name);
         } else if (json_string_equals(json, property_token, "id")) {
-            json_token_to_string(json, value_token, id);
-
-            has_id = true;
+            json_token_to_string(json, value_token, new_node->id);
         } else if (json_string_equals(json, property_token, "scope")) {
             json_token_to_string(json, value_token, scope);
         } else if (json_string_equals(json, property_token, "starred")) {
@@ -84,7 +75,6 @@ static void process_folder_tree_data_object(char* json, jsmntok_t*& token) {
             is_starred = *(json + value_token->start) == 't';
         } else if (json_string_equals(json, property_token, "childIds")) {
             assert(value_token->type == JSMN_ARRAY);
-            assert(has_id);
 
             num_children = value_token->size;
 
@@ -96,7 +86,8 @@ static void process_folder_tree_data_object(char* json, jsmntok_t*& token) {
                 String child_id;
 
                 json_token_to_string(json, id_token, child_id);
-                add_parent_child_pair(id, child_id);
+                // TODO could be adding multiple pairs at once
+                add_parent_child_pair(new_node, child_id);
             }
         } else {
             eat_json(token);
@@ -104,11 +95,8 @@ static void process_folder_tree_data_object(char* json, jsmntok_t*& token) {
         }
     }
 
-    u32 id_hash = hash_string(id);
+    u32 id_hash = hash_string(new_node->id);
 
-    Folder_Tree_Node* new_node = &all_nodes[current_node++];
-    new_node->id = id;
-    new_node->name = name;
     new_node->id_hash = id_hash;
     new_node->num_children = 0;
     new_node->is_starred = is_starred;
@@ -138,10 +126,10 @@ void match_tree_parent_child_pairs() {
     for (u32 i = 0; i < parent_child_pairs_count; i++) {
         Parent_Child_Pair& pair = parent_child_pairs[i];
 
-        Folder_Tree_Node* parent_node = find_folder_tree_node_by_id(pair.parent, pair.parent_hash);
-        Folder_Tree_Node* child_node = find_folder_tree_node_by_id(pair.child, pair.child_hash);
+        Folder_Tree_Node* parent_node = pair.parent;
+        Folder_Tree_Node* child_node = find_folder_tree_node_by_id(pair.child_id, pair.child_hash);
 
-        if (parent_node && child_node) {
+        if (child_node) {
             found_pairs++;
 
             parent_node->children[parent_node->num_children] = child_node;
