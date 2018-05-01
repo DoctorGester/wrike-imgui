@@ -7,17 +7,22 @@
 #include "main.h"
 
 struct Running_Request {
+    u32 status_code_or_zero;
     Request_Id request_id;
+    char* debug_url = NULL;
     char* data_read = NULL;
     u32 data_length = 0;
-    char* debug_url = NULL;
+    u64 started_at = 0;
 };
 
 static SDL_Window* application_window = NULL;
 static SDL_GLContext gl_context;
+
 static CURLM* curl_multi = NULL;
 static Running_Request** running_requests = NULL;
 static u32 num_running_requests = 0;
+static SDL_mutex* requests_process_mutex = NULL;
+static SDL_cond* new_requests_signal = NULL;
 
 
 static Uint64 application_time = 0;
@@ -144,68 +149,166 @@ bool poll_events_and_check_exit_event() {
     return false;
 }
 
-bool platform_init() {
-    SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER | SDL_INIT_EVENTS);
-
-    u32 window_flags = SDL_WINDOW_OPENGL /*| SDL_WINDOW_ALLOW_HIGHDPI*/ | SDL_WINDOW_RESIZABLE;
-
-    application_window = SDL_CreateWindow("Wrike", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, 800, 600, window_flags);
-
-    create_open_gl_context();
-
-    curl_multi = curl_multi_init();
-
-    // TODO bad API, we shouldn't be making external calls in platform impl, move those out
-    FunImGui::init();
-    FunImGui::initGraphics(vertex_shader_source, fragment_shader_source);
-
-    private_token = file_to_string("private.key");
-
-    return true;
+static void set_clipboard_text(void*, const char* text) {
+    SDL_SetClipboardText(text);
 }
 
-void poll_curl_messages() {
+static const char* get_clipboard_text(void*) {
+    return SDL_GetClipboardText();
+}
+
+static void setup_io() {
+    ImGuiIO& io = ImGui::GetIO();
+
+    // Keyboard mapping. ImGui will use those indices to peek into the io.KeysDown[] array.
+    io.KeyMap[ImGuiKey_Tab] = SDL_SCANCODE_TAB;
+    io.KeyMap[ImGuiKey_LeftArrow] = SDL_SCANCODE_LEFT;
+    io.KeyMap[ImGuiKey_RightArrow] = SDL_SCANCODE_RIGHT;
+    io.KeyMap[ImGuiKey_UpArrow] = SDL_SCANCODE_UP;
+    io.KeyMap[ImGuiKey_DownArrow] = SDL_SCANCODE_DOWN;
+    io.KeyMap[ImGuiKey_PageUp] = SDL_SCANCODE_PAGEUP;
+    io.KeyMap[ImGuiKey_PageDown] = SDL_SCANCODE_PAGEDOWN;
+    io.KeyMap[ImGuiKey_Home] = SDL_SCANCODE_HOME;
+    io.KeyMap[ImGuiKey_End] = SDL_SCANCODE_END;
+    io.KeyMap[ImGuiKey_Insert] = SDL_SCANCODE_INSERT;
+    io.KeyMap[ImGuiKey_Delete] = SDL_SCANCODE_DELETE;
+    io.KeyMap[ImGuiKey_Backspace] = SDL_SCANCODE_BACKSPACE;
+    io.KeyMap[ImGuiKey_Space] = SDL_SCANCODE_SPACE;
+    io.KeyMap[ImGuiKey_Enter] = SDL_SCANCODE_RETURN;
+    io.KeyMap[ImGuiKey_Escape] = SDL_SCANCODE_ESCAPE;
+    io.KeyMap[ImGuiKey_A] = SDL_SCANCODE_A;
+    io.KeyMap[ImGuiKey_C] = SDL_SCANCODE_C;
+    io.KeyMap[ImGuiKey_V] = SDL_SCANCODE_V;
+    io.KeyMap[ImGuiKey_X] = SDL_SCANCODE_X;
+    io.KeyMap[ImGuiKey_Y] = SDL_SCANCODE_Y;
+    io.KeyMap[ImGuiKey_Z] = SDL_SCANCODE_Z;
+
+    io.SetClipboardTextFn = set_clipboard_text;
+    io.GetClipboardTextFn = get_clipboard_text;
+    io.ClipboardUserData = NULL;
+}
+
+static void poll_curl_messages() {
     int messages_left = 0;
 
     CURLMsg* message = NULL;
 
     while ((message = curl_multi_info_read(curl_multi, &messages_left))) {
-        if (message->msg == CURLMSG_DONE) {
-            CURL* curl = message->easy_handle;
-            CURLcode result_code = message->data.result;
+        if (message->msg != CURLMSG_DONE) {
+            continue;
+        }
 
-            if (result_code != CURLE_OK) {
-                printf("Got CURL code %d\n", result_code);
-                continue;
+        CURL* curl = message->easy_handle;
+        CURLcode result_code = message->data.result;
+
+        if (result_code != CURLE_OK) {
+            printf("Got CURL code %d\n", result_code);
+            continue;
+        }
+
+        u32 http_status_code = 0;
+
+        Running_Request* request = NULL;
+
+        curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_status_code);
+        curl_easy_getinfo(curl, CURLINFO_PRIVATE, &request);
+
+        assert(request);
+        assert(http_status_code);
+
+        float time = (float) (((double) SDL_GetPerformanceCounter() - request->started_at) / SDL_GetPerformanceFrequency());
+
+        printf("GET %s completed with %lu, time: %fs\n", request->debug_url, http_status_code, time);
+
+        request->status_code_or_zero = http_status_code;
+
+        curl_multi_remove_handle(curl_multi, curl);
+        curl_easy_cleanup(curl);
+    }
+}
+
+static int curl_multi_thread_spin(void*) {
+    curl_multi = curl_multi_init();
+
+    while (true) {
+        int running_transfers = 0;
+
+        SDL_LockMutex(requests_process_mutex);
+
+        curl_multi_perform(curl_multi, &running_transfers);
+
+        if (num_running_requests) {
+            poll_curl_messages();
+        } else {
+            if (SDL_CondWait(new_requests_signal, requests_process_mutex) == -1) {
+                // Fatal error, do we need to unlock there too?
+                break;
             }
+        }
 
-            u32 http_status_code = 0;
+        SDL_UnlockMutex(requests_process_mutex);
+    }
 
-            Running_Request* request = NULL;
+    return 0;
+}
 
-            curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_status_code);
-            curl_easy_getinfo(curl, CURLINFO_PRIVATE, &request);
+static void process_completed_api_requests() {
+    SDL_LockMutex(requests_process_mutex);
 
-            assert(request);
-            assert(http_status_code);
+    for (s32 index = 0; index < num_running_requests; index++) {
+        Running_Request* request = running_requests[index];
 
-            if (http_status_code == 200) {
-                printf("Got 200 for %s\n", request->debug_url);
+        if (request->status_code_or_zero) {
+            if (request->status_code_or_zero == 200) {
                 // TODO temporary code!!!!!!
+                // TODO we could just pass data_read + data_length into api_request_success
                 char* null_terminated_request = (char*) malloc(request->data_length + 1);
                 memcpy(null_terminated_request, request->data_read, request->data_length);
                 null_terminated_request[request->data_length] = 0;
 
                 api_request_success(request->request_id, null_terminated_request);
             } else {
-                printf("ERROR: Got %d for %s\n", http_status_code, request->debug_url);
                 printf("%.*s\n", request->data_length, request->data_read);
             }
 
-            curl_multi_remove_handle(curl_multi, curl);
-            curl_easy_cleanup(curl);
+            free(request->debug_url);
+            free(request->data_read);
+            free(request);
+
+            if (num_running_requests > 1) {
+                running_requests[index] = running_requests[num_running_requests - 1];
+            }
+
+            num_running_requests--;
+            index--;
         }
     }
+
+    SDL_UnlockMutex(requests_process_mutex);
+}
+
+bool platform_init() {
+    SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER | SDL_INIT_EVENTS);
+
+    u32 window_flags = SDL_WINDOW_OPENGL | SDL_WINDOW_ALLOW_HIGHDPI | SDL_WINDOW_RESIZABLE;
+
+    application_window = SDL_CreateWindow("Wrike", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, 800, 600, window_flags);
+
+    create_open_gl_context();
+
+    setup_io();
+
+    new_requests_signal = SDL_CreateCond();
+    requests_process_mutex = SDL_CreateMutex();
+
+    SDL_CreateThread(curl_multi_thread_spin, "CURLMultiThread", (void*) NULL);
+
+    // TODO bad API, we shouldn't be making external calls in platform impl, move those out
+    FunImGui::initGraphics(vertex_shader_source, fragment_shader_source);
+
+    private_token = file_to_string("private.key");
+
+    return true;
 }
 
 void platform_loop() {
@@ -216,18 +319,17 @@ void platform_loop() {
     while (true) {
         frame_start_time = SDL_GetTicks();
 
-        int running_transfers = 0;
-
-        curl_multi_perform(curl_multi, &running_transfers);
-
-        poll_curl_messages();
-
         if (poll_events_and_check_exit_event()) {
             break;
         }
 
+        process_completed_api_requests();
+
         loop();
 
+        // TODO SDL_GetTicks() is not accurate
+        // TODO SDL_Delay() is not accurate
+        // TODO limited to 60fps, bad
         u32 delta = SDL_GetTicks() - frame_start_time;
         if (delta < 16) {
             SDL_Delay(16 - delta);
@@ -313,8 +415,10 @@ void platform_api_get(Request_Id& request_id, char* url) {
 
     // TODO optimize
     Running_Request* new_request = (Running_Request*) calloc(1, sizeof(Running_Request));
+    new_request->status_code_or_zero = 0;
     new_request->request_id = request_id;
     new_request->debug_url = (char*) malloc(buffer_length);
+    new_request->started_at = SDL_GetPerformanceCounter();
     memcpy(new_request->debug_url, buffer, buffer_length);
 
     CURL* curl_easy = curl_easy_init();
@@ -324,13 +428,14 @@ void platform_api_get(Request_Id& request_id, char* url) {
     curl_easy_setopt(curl_easy, CURLOPT_WRITEDATA, new_request);
     curl_easy_setopt(curl_easy, CURLOPT_WRITEFUNCTION, &handle_curl_write);
 
-    if (strcmp("https://www.wrike.com/api/v3/folders/IEAAAAAFI4CJOO54/tasks?fields=['customFields', 'superTaskIds', 'responsibleIds']&subTasks=true", buffer) == 0) {
-        curl_easy_setopt(curl_easy, CURLOPT_VERBOSE, 1);
-    }
+    SDL_LockMutex(requests_process_mutex);
 
     curl_multi_add_handle(curl_multi, curl_easy);
 
     running_requests[new_request_index] = new_request;
+
+    SDL_CondSignal(new_requests_signal);
+    SDL_UnlockMutex(requests_process_mutex);
 }
 
 // TODO super duper temporary coderino

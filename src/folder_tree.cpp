@@ -119,11 +119,11 @@ static void process_folder_tree_data_object(char* json, jsmntok_t*& token) {
 }
 
 void match_tree_parent_child_pairs() {
-    printf("Total pairs: %lu\n", parent_child_pairs_count);
+    printf("Total pairs: %lu\n", parent_child_pairs.length);
 
     u32 found_pairs = 0;
 
-    for (u32 i = 0; i < parent_child_pairs_count; i++) {
+    for (u32 i = 0; i < parent_child_pairs.length; i++) {
         Parent_Child_Pair& pair = parent_child_pairs[i];
 
         Folder_Tree_Node* parent_node = pair.parent;
