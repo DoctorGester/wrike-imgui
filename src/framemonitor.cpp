@@ -9,7 +9,7 @@
 FrameMonitor::FrameMonitor()
 {
     values.resize(60,0);
-    lastTime = platform_get_now();
+    lastTime = platform_get_app_time_ms();
 }
 
 void FrameMonitor::debugDraw()
@@ -44,14 +44,14 @@ void FrameMonitor::drawAverage() {
 }
 
 void FrameMonitor::startFrame() {
-    lastTime = platform_get_now();
+    lastTime = platform_get_app_time_ms();
 }
 
 void FrameMonitor::endFrame()
 {
     if(bShow)
     {
-        double newTime = platform_get_now();
+        double newTime = platform_get_app_time_ms();
         values[frame++%values.size()] = newTime - lastTime;
         //lastTime = newTime;
     }

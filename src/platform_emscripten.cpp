@@ -271,7 +271,7 @@ void platform_begin_frame() {
 
     static float last = 0;
 
-    float now = platform_get_now();
+    float now = platform_get_app_time_ms();
     io.DeltaTime = (now - last) / 1000.0f;
     last = now;
 
@@ -308,6 +308,6 @@ float platform_get_pixel_ratio() {
     return (float) emscripten_get_device_pixel_ratio(); // TODO performance overhead, cache
 }
 
-float platform_get_now() {
+float platform_get_app_time_ms() {
     return (float) emscripten_get_now(); // TODO performance overhead, cache
 }

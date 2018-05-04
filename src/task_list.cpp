@@ -315,9 +315,9 @@ static void sort_by_field(Task_List_Sort_Field sort_by) {
 
     sort_field = sort_by;
 
-    float start = platform_get_now();
+    float start = platform_get_app_time_ms();
     sort_tasks_hierarchically(top_level_tasks.data, top_level_tasks.length);
-    printf("Sorting %lu elements by %i took %fms\n", top_level_tasks.length, sort_by, platform_get_now() - start);
+    printf("Sorting %lu elements by %i took %fms\n", top_level_tasks.length, sort_by, platform_get_app_time_ms() - start);
 }
 
 static void sort_by_custom_field(Custom_Field_Id field_id) {
@@ -336,9 +336,10 @@ static void sort_by_custom_field(Custom_Field_Id field_id) {
     sort_custom_field_id = field_id;
     sort_custom_field = id_hash_map_get(&id_to_custom_field, field_id, hash_id(field_id)); // TODO hash cache?
 
-    float start = platform_get_now();
+    float start = platform_get_app_time_ms();
     sort_tasks_hierarchically(top_level_tasks.data, top_level_tasks.length);
-    printf("Sorting %lu elements by %lu took %fms\n", top_level_tasks.length, field_id, platform_get_now() - start);
+    printf("Sorting %lu elements by %lu took %fms\n", top_level_tasks.length, field_id,
+           platform_get_app_time_ms() - start);
 }
 
 void draw_task_list_header(float view_width, float custom_column_width, Custom_Field** column_to_custom_field, u32 total_columns) {

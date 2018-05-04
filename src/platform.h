@@ -11,7 +11,7 @@ void platform_begin_frame();
 void platform_end_frame();
 
 float platform_get_pixel_ratio();
-float platform_get_now();
+float platform_get_app_time_ms();
 
 void platform_open_in_wrike(String& permalink);
 
