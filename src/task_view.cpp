@@ -186,7 +186,23 @@ void process_task_data(char* json, u32 data_size, jsmntok_t*& token) {
 
     current_task.description_strings = 0;
 
-    parse_rich_text(description, current_task.description, current_task.description_strings);
+    // We copy to strip comments from description
+    // In fact we could just do that in the original string, since stripping comments
+    //  never adds characters, but removes them, but this is 'cleaner'
+    String temporary_description_string;
+
+    {
+        char* temporary_description = (char*) talloc(description.length);
+
+        temporary_description_string.start = temporary_description;
+        temporary_description_string.length = description.length;
+
+        memcpy(temporary_description, description.start, description.length);
+    }
+
+    destructively_strip_html_comments(temporary_description_string);
+
+    parse_rich_text(temporary_description_string, current_task.description, current_task.description_strings);
 
     u32 total_text_length = 0;
 

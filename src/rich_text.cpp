@@ -347,6 +347,39 @@ void parse_text_into_rich_string_recursively(Array<Rich_Text_Token>& tokens, Ric
     }
 }
 
+void destructively_strip_html_comments(String& text) {
+    if (text.length == 0) {
+        return;
+    }
+
+    char* comment_start = NULL;
+    char* text_end = text.start + text.length;
+    char* current;
+
+    for (current = text.start; current < text_end; current++) {
+        if (comment_start) {
+            if (text_end - current >= 3 && strncmp("-->", current, 3) == 0) {
+                char* post_comment_close_tag = current + 3;
+                u32 remaining_text_length = text_end - post_comment_close_tag;
+                u32 comment_length = post_comment_close_tag - comment_start;
+
+                // Important to use memmove, the memory regions overlap!
+                memmove(comment_start, post_comment_close_tag, remaining_text_length);
+
+                text_end -= comment_length;
+                current = comment_start;
+                comment_start = NULL;
+            }
+        } else {
+            if (text_end - current >= 4 && strncmp("<!--", current, 4) == 0) {
+                comment_start = current;
+            }
+        }
+    }
+
+    text.length = text_end - text.start;
+}
+
 
 void parse_rich_text(String& text, Rich_Text_String*& output, u32& output_size) {
     Array<Rich_Text_Token> tokens{};

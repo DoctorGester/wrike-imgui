@@ -22,3 +22,4 @@ struct Rich_Text_String {
 };
 
 void parse_rich_text(String& text, Rich_Text_String*& output, u32& output_size);
+void destructively_strip_html_comments(String& source);

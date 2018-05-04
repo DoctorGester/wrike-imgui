@@ -470,7 +470,7 @@ void draw_task_column(Sorted_Folder_Task* sorted_task, u32 column, Custom_Field*
 
         ImGui::SameLine();
 
-        ImGui::TextColored(ImVec4(0, 0, 0, alpha), "%lu %.*s", level, task->title.length, task->title.start);
+        ImGui::TextColored(ImVec4(0, 0, 0, alpha), "%.*s", task->title.length, task->title.start);
 
         if (clicked && !expand_arrow_clicked) {
             request_task_by_task_id(task->id);
