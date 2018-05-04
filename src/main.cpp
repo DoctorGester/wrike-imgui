@@ -20,6 +20,7 @@
 #include "accounts.h"
 #include "task_view.h"
 #include "platform.h"
+#include "base32.h"
 
 #define PRINTLIKE(string_index, first_to_check) __attribute__((__format__ (__printf__, string_index, first_to_check)))
 
@@ -39,6 +40,7 @@ Request_Id workflows_request = NO_REQUEST;
 
 bool had_last_selected_folder_so_doesnt_need_to_load_the_root_folder = false;
 
+static bool draw_memory_debug = false;
 static bool draw_side_menu = true;
 
 // TODO use temporary storage there
@@ -46,7 +48,9 @@ static char temporary_request_buffer[512];
 
 static Memory_Image logo;
 
-Id16 selected_folder_task_id;
+static Account_Id selected_account_id;
+
+Task_Id selected_folder_task_id;
 
 static Folder_Tree_Node* selected_node = NULL; // TODO should be a Task_Id
 
@@ -102,7 +106,7 @@ static void process_users_data_object(char* json, jsmntok_t*&token) {
         jsmntok_t* next_token = token;
 
         if (json_string_equals(json, property_token, "id")) {
-            json_token_to_id(json, next_token, user->id);
+            json_token_to_id8(json, next_token, user->id);
         } else if (json_string_equals(json, property_token, "firstName")) {
             json_token_to_string(json, next_token, user->firstName);
         } else if (json_string_equals(json, property_token, "lastName")) {
@@ -136,12 +140,18 @@ static void process_users_data(char* json, u32 data_size, jsmntok_t*&token) {
     }
 }
 
-static void request_workflows_for_each_account() {
-    // TODO this will have issues with multiple accounts because it sets global variables
-    for (u32 index = 0; index < accounts_count; index++) {
-        Account& account = accounts[index];
-        api_request(workflows_request, "accounts/%.*s/workflows", ID_8_LENGTH, account.id.id);
-    }
+static void select_account() {
+    assert(accounts_count);
+
+    selected_account_id = accounts[0].id;
+}
+
+static void request_workflow_for_account(Account_Id account_id) {
+    u8 output_account_id[8];
+
+    fill_id8('A', account_id, output_account_id);
+
+    api_request(workflows_request, "accounts/%.*s/workflows", ARRAY_SIZE(output_account_id), output_account_id);
 
     started_loading_statuses_at = tick;
 }
@@ -149,7 +159,7 @@ static void request_workflows_for_each_account() {
 extern "C"
 EXPORT
 void api_request_success(Request_Id request_id, char* content_json) {
-    printf("Got request %lu with content at %p\n", request_id, (void*) content_json);
+//    printf("Got request %lu with content at %p\n", request_id, (void*) content_json);
 
     u32 parsed_tokens;
     jsmntok_t* json_tokens = parse_json_into_tokens(content_json, parsed_tokens);
@@ -180,7 +190,8 @@ void api_request_success(Request_Id request_id, char* content_json) {
         accounts_request = NO_REQUEST;
         process_json_content(accounts_json_content, process_accounts_data, content_json, json_tokens, parsed_tokens);
 
-        request_workflows_for_each_account();
+        select_account();
+        request_workflow_for_account(selected_account_id);
     } else if (request_id == workflows_request) {
         workflows_request = NO_REQUEST;
         process_json_content(workflows_json_content, process_workflows_data, content_json, json_tokens, parsed_tokens);
@@ -244,9 +255,21 @@ int levenshtein(const char* a, const char* b, u32 a_length, u32 b_length) {
 void request_folder_contents(String &folder_id) {
     platform_local_storage_set("last_selected_folder", folder_id);
 
-    // TODO folders/id request is not permitted for a logical folder
+    // TODO dirty temporary code, we need to request by regular id instead of passing a string
+    u8* token_start = (u8*) folder_id.start;
+    u8 result[UNBASE32_LEN(16)];
+    base32_decode(token_start, 16, result);
+
+    s32 id = uchars_to_s32(result + 6);
+
     api_request(folder_contents_request, "folders/%.*s/tasks%s", (int) folder_id.length, folder_id.start, "?fields=['customFields','superTaskIds','responsibleIds']&subTasks=true");
-    api_request(folder_header_request, "folders/%.*s%s", (int) folder_id.length, folder_id.start, "?fields=['customColumnIds']");
+
+    if (id >= 0) {
+        api_request(folder_header_request, "folders/%.*s%s", (int) folder_id.length, folder_id.start, "?fields=['customColumnIds']");
+    } else {
+        folder_header_request = NO_REQUEST;
+        process_current_folder_as_logical();
+    }
 
     started_loading_folder_contents_at = tick;
 }
@@ -254,20 +277,45 @@ void request_folder_contents(String &folder_id) {
 void select_folder_node_and_request_contents_if_necessary(Folder_Tree_Node* folder_node) {
     selected_node = folder_node;
 
-    request_folder_contents(selected_node->id);
+    u8* account_and_folder_id = (u8*) talloc(sizeof(u8) * 16);
+
+    fill_id16('A', selected_account_id, 'G', folder_node->id, account_and_folder_id);
+
+    String id_as_string;
+    id_as_string.start = (char*) account_and_folder_id;
+    id_as_string.length = 16;
+
+    request_folder_contents(id_as_string);
 }
 
-void request_task(Id16& task_id) {
-    selected_folder_task_id = task_id;
+static void request_task_by_full_id(String &full_id) {
+    // TODO I'm not sure if that's all a good solution
+    // TODO might make sense to store a regular id and only build API id on request
 
-    String task_id_as_string;
-    task_id_as_string.start = task_id.id;
-    task_id_as_string.length = ID_16_LENGTH;
+    u8* string_start = (u8*) full_id.start;
+    u8 result[UNBASE32_LEN(16)];
 
-    platform_local_storage_set("last_selected_task", task_id_as_string);
+    // TODO wasteful to decode all bytes but only use some
+    base32_decode(string_start, 16, result);
 
-    api_request(task_request, "tasks/%.*s", ID_16_LENGTH, task_id.id);
+    selected_folder_task_id = uchars_to_s32(result + 6);
+
+    platform_local_storage_set("last_selected_task", full_id);
+
+    api_request(task_request, "tasks/%.*s", full_id.length, full_id.start);
     started_loading_task_at = tick;
+}
+
+void request_task_by_task_id(Task_Id task_id) {
+    u8* account_and_task_id = (u8*) talloc(sizeof(u8) * 16);
+
+    fill_id16('A', selected_account_id, 'T', task_id, account_and_task_id);
+
+    String id_as_string;
+    id_as_string.start = (char*) account_and_task_id;
+    id_as_string.length = 16;
+
+    request_task_by_full_id(id_as_string);
 }
 
 void draw_folder_tree_node(Folder_Tree_Node* tree_node) {
@@ -281,9 +329,11 @@ void draw_folder_tree_node(Folder_Tree_Node* tree_node) {
             node_flags |= ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
         }
 
-        String& id = child_node->id;
+        if (!child_node->name.start) {
+            continue;
+        }
 
-        ImGui::PushID(id.start, id.start + id.length);
+        ImGui::PushID(child_node->id);
         bool node_open = ImGui::TreeNodeEx(child_node, node_flags, "%.*s", child_node->name.length, child_node->name.start);
         ImGui::PopID();
 
@@ -337,14 +387,6 @@ struct Sorted_Node {
 };
 
 static Sorted_Node* sorted_nodes = NULL;
-
-int compare_nodes(const Sorted_Node& a, const Sorted_Node& b) {
-    //s32 a_result = levenshtein(a->name.start, search_buffer, a->name.length, buffer_length);
-    //s32 b_result = levenshtein(b->name.start, search_buffer, b->name.length, buffer_length);
-
-    //return a_result - b_result;
-    return a.distance - b.distance;
-}
 
 int compare_nodes2(const void* ap, const void* bp) {
     Sorted_Node* a = (Sorted_Node*) ap;
@@ -462,8 +504,7 @@ void draw_folder_tree() {
 
             char* name = string_to_temporary_null_terminated_string(node->source_node->name);
 
-            String& id = node->source_node->id;
-            ImGui::PushID(id.start, id.start + id.length);
+            ImGui::PushID(node->source_node->id);
             if (ImGui::Selectable(name)) {
                 select_folder_node_and_request_contents_if_necessary(node->source_node);
             }
@@ -529,39 +570,22 @@ void draw_side_menu_toggle_button(const ImVec2& size) {
                              color, rounding);
 }
 
-extern "C"
-EMSCRIPTEN_KEEPALIVE
-char* handle_clipboard_copy() {
-    char* temp = (char*) talloc(current_task.permalink.length + 1);
-    sprintf(temp, "%.*s", current_task.permalink.length, current_task.permalink.start);
+void draw_ui() {
+    // TODO temporary code, desktop only
+    static const u32 d_key_in_sdl = 7;
 
-    return temp;
-}
+    if (ImGui::IsKeyPressed(d_key_in_sdl) && ImGui::GetIO().KeyCtrl) {
+        draw_memory_debug = !draw_memory_debug;
+    }
 
-extern "C"
-EMSCRIPTEN_KEEPALIVE
-void loop()
-{
-    gFrameMonitor->startFrame();
+    if (draw_memory_debug) {
+        ImGuiIO& io = ImGui::GetIO();
 
-    clear_temporary_storage();
+        ImGui::Text("%f %f", io.DisplaySize.x, io.DisplaySize.y);
+        ImGui::Text("%f %f", io.DisplayFramebufferScale.x, io.DisplayFramebufferScale.y);
 
-    tick++;
-
-    static bool bShowTestWindow = true;
-    FunImGui::BeginFrame();
-
-    ImGuiWindowFlags flags =
-            ImGuiWindowFlags_NoTitleBar |
-            ImGuiWindowFlags_NoResize |
-            ImGuiWindowFlags_NoMove |
-            ImGuiWindowFlags_NoCollapse;
-
-    bool open = true;
-
-    ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize);
-    ImGui::SetNextWindowPos(ImVec2());
-    ImGui::Begin("Wrike", &open, flags);
+        return;
+    }
 
     bool draw_side_menu_this_frame = draw_side_menu;
 
@@ -614,15 +638,50 @@ void loop()
     }
 
     ImGui::Columns(1);
+}
+
+extern "C"
+EXPORT
+char* handle_clipboard_copy() {
+    char* temp = (char*) talloc(current_task.permalink.length + 1);
+    sprintf(temp, "%.*s", current_task.permalink.length, current_task.permalink.start);
+
+    return temp;
+}
+
+extern "C"
+EXPORT
+void loop()
+{
+    frame_monitor->startFrame();
+
+    clear_temporary_storage();
+
+    tick++;
+
+    platform_begin_frame();
+    ImGui::NewFrame();
+
+    ImGuiWindowFlags flags =
+            ImGuiWindowFlags_NoTitleBar |
+            ImGuiWindowFlags_NoResize |
+            ImGuiWindowFlags_NoMove |
+            ImGuiWindowFlags_NoCollapse;
+
+    bool open = true;
+
+    ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize);
+    ImGui::SetNextWindowPos(ImVec2());
+    ImGui::Begin("Wrike", &open, flags);
+
+    draw_ui();
+
     ImGui::End();
 
-    //bool o = true;
-    //ImGui::ShowTestWindow(&o);
-
-    Draw::clear();
     ImGui::Render();
-
-    frame_monitor->endFrame();
+    FunImGui::RenderDrawLists(ImGui::GetDrawData());
+    frame_monitor->endFrame(); // Before assumed swapBuffers
+    platform_end_frame();
 }
 
 void load_persisted_settings() {
@@ -640,20 +699,34 @@ void load_persisted_settings() {
     }
 
     if (last_selected_task) {
-        Id16 task_id;
-        memcpy(task_id.id, last_selected_task, ID_16_LENGTH);
+        String task_id;
+        task_id.start = last_selected_task;
+        task_id.length = strlen(last_selected_task);
 
-        request_task(task_id);
+        request_task_by_full_id(task_id);
     }
+}
+
+static void setup_ui_style() {
+    ImGuiStyle* style = &ImGui::GetStyle();
+    ImGui::StyleColorsLight(style);
+
+    style->Colors[ImGuiCol_WindowBg] = ImGui::ColorConvertU32ToFloat4(color_background_dark);
+    style->FrameRounding = 4.0f;
+    style->ScaleAllSizes(platform_get_pixel_ratio());
 }
 
 EXPORT
 bool init()
 {
+    auto init_start = std::chrono::steady_clock::now();
+
     init_temporary_storage();
     create_imgui_context();
 
     bool result = platform_init();
+
+    setup_ui_style();
 
     api_request(accounts_request, "accounts?fields=['customFields']");
     api_request(folder_tree_request, "folders?fields=['starred']");
@@ -670,6 +743,10 @@ bool init()
     frame_monitor = new FrameMonitor;
 
     load_png_from_disk("resources/wrike_logo.png", logo);
+
+    s64 init_time = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - init_start).count();
+
+    printf("Initializiation took %lli ms\n", init_time);
 
     return result;
 }

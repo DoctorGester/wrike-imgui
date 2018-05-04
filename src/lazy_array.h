@@ -21,6 +21,18 @@ struct Relative_Pointer {
     }
 };
 
+// TODO an interesting possibility would be to make something like this and allocate on demand
+/*
+struct Array_Block {
+    T elements[1024];
+};
+
+struct Block_Array {
+    Array_Block* blocks[1024];
+};
+ */
+
+
 template <typename T, u8 initial_watermark>
 struct Lazy_Array {
     T* data = NULL;

@@ -20,12 +20,12 @@ struct Task {
     u32 description_strings = 0;
     String description_text{};
 
-    Id8* assignees = NULL;
+    User_Id* assignees = NULL;
     u32 num_assignees = 0;
 };
 
 struct User {
-    Id8 id;
+    User_Id id;
     String firstName;
     String lastName;
 };
@@ -61,9 +61,9 @@ extern bool had_last_selected_folder_so_doesnt_need_to_load_the_root_folder;
 extern u32 tick;
 
 extern Task current_task;
-extern Id16 selected_folder_task_id;
+extern Task_Id selected_folder_task_id;
 
-void request_task(Id16& task_id);
+void request_task_by_task_id(Task_Id task_id);
 
 // TODO move this into imgui extension file?
 namespace ImGui {

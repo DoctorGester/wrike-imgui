@@ -30,7 +30,6 @@ static bool mouse_pressed[3] = { false, false, false };
 
 static char* private_token = NULL;
 
-
 static const char* vertex_shader_source =
         "#version 150\n"
         "uniform mat4 ProjMtx;\n"
@@ -81,7 +80,7 @@ static char* file_to_string(const char* file) {
     return buffer;
 }
 
-void create_open_gl_context() {
+static void create_open_gl_context() {
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 2);
@@ -100,7 +99,7 @@ void create_open_gl_context() {
     printf("Using OpenGL version %s\n", glGetString(GL_VERSION));
 }
 
-bool process_sdl_events(SDL_Event* event) {
+static bool process_sdl_events(SDL_Event* event) {
     ImGuiIO &io = ImGui::GetIO();
     switch (event->type) {
         case SDL_MOUSEWHEEL: {
@@ -135,7 +134,7 @@ bool process_sdl_events(SDL_Event* event) {
     return false;
 }
 
-bool poll_events_and_check_exit_event() {
+static bool poll_events_and_check_exit_event() {
     SDL_Event event;
 
     while (SDL_PollEvent(&event)) {
@@ -266,7 +265,13 @@ static void process_completed_api_requests() {
                 memcpy(null_terminated_request, request->data_read, request->data_length);
                 null_terminated_request[request->data_length] = 0;
 
+                u64 start_process_request = SDL_GetPerformanceCounter();
+
                 api_request_success(request->request_id, null_terminated_request);
+
+                u64 delta = SDL_GetPerformanceCounter() - start_process_request;
+
+                printf("Request processed in %fms\n", delta * 1000.0 / SDL_GetPerformanceFrequency());
             } else {
                 printf("%.*s\n", request->data_length, request->data_read);
             }
@@ -351,7 +356,7 @@ void platform_begin_frame() {
     int display_w, display_h;
     SDL_GetWindowSize(application_window, &w, &h);
     SDL_GL_GetDrawableSize(application_window, &display_w, &display_h);
-    io.DisplaySize = ImVec2((float)w, (float)h);
+    io.DisplaySize = ImVec2((float)display_w, (float)display_h);
     io.DisplayFramebufferScale = ImVec2(w > 0 ? ((float)display_w / w) : 0, h > 0 ? ((float)display_h / h) : 0);
 
     // Setup time step (we don't use SDL_GetTicks() because it is using millisecond resolution)
@@ -363,6 +368,7 @@ void platform_begin_frame() {
     // Setup mouse inputs (we already got mouse wheel, keyboard keys & characters from our event handler)
     int mx, my;
     Uint32 mouse_buttons = SDL_GetMouseState(&mx, &my);
+    float scale = platform_get_pixel_ratio();
     io.MousePos = ImVec2(-FLT_MAX, -FLT_MAX);
     io.MouseDown[0] = mouse_pressed[0] || (mouse_buttons & SDL_BUTTON(SDL_BUTTON_LEFT)) != 0;  // If a mouse press event came, always pass it as "mouse held this frame", so we don't miss click-release events that are shorter than 1 frame.
     io.MouseDown[1] = mouse_pressed[1] || (mouse_buttons & SDL_BUTTON(SDL_BUTTON_RIGHT)) != 0;
@@ -370,7 +376,7 @@ void platform_begin_frame() {
     mouse_pressed[0] = mouse_pressed[1] = mouse_pressed[2] = false;
 
     if ((SDL_GetWindowFlags(application_window) & SDL_WINDOW_INPUT_FOCUS) != 0)
-    io.MousePos = ImVec2((float)mx, (float)my);
+    io.MousePos = ImVec2((float)mx * scale, (float)my * scale);
 
     SDL_GL_MakeCurrent(application_window, gl_context);
 
@@ -460,17 +466,18 @@ void platform_open_in_wrike(String &permalink) {
 }
 
 float platform_get_pixel_ratio() {
-    int display_index = SDL_GetWindowDisplayIndex(application_window);
-    float dpi;
+    int framebuffer_w = 0;
+    int window_w = 0;
 
-    // TODO performance overhead, cache
-    if (SDL_GetDisplayDPI(display_index, &dpi, NULL, NULL) != -1) {
-        return 1.0f;//dpi; // TODO it works uhhh in mysterious ways
-    };
+    SDL_GetWindowSize(application_window, &window_w, NULL);
+    SDL_GL_GetDrawableSize(application_window, &framebuffer_w, NULL);
 
-    return 1.0f;
+    // TODO performance overhead, cache?
+    return (float) framebuffer_w / window_w;
 }
 
 float platform_get_now() {
-    return (float) SDL_GetTicks();
+    static u64 frequency = SDL_GetPerformanceFrequency();
+
+    return (float) ((double) SDL_GetPerformanceCounter() * 1000.0 / frequency);
 }

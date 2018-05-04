@@ -37,64 +37,8 @@ unsigned int FunImGui::m_vbo = -1;
 unsigned int FunImGui::m_elements = -1;
 unsigned int FunImGui::m_fontTexture = -1;
 
-void FunImGui::init() {
-    ImGuiIO &io = ImGui::GetIO();
-
-    io.KeyMap[ImGuiKey_Tab] = 9;
-    io.KeyMap[ImGuiKey_LeftArrow] = 37;
-    io.KeyMap[ImGuiKey_RightArrow] = 39;
-    io.KeyMap[ImGuiKey_UpArrow] = 38;
-    io.KeyMap[ImGuiKey_DownArrow] = 40;
-    io.KeyMap[ImGuiKey_PageUp] = 33;
-    io.KeyMap[ImGuiKey_PageDown] = 34;
-    io.KeyMap[ImGuiKey_Home] = 36;
-    io.KeyMap[ImGuiKey_End] = 35;
-    io.KeyMap[ImGuiKey_Delete] = 46;
-    io.KeyMap[ImGuiKey_Backspace] = 8;
-    io.KeyMap[ImGuiKey_Enter] = 13;
-    io.KeyMap[ImGuiKey_Escape] = 27;
-    io.KeyMap[ImGuiKey_A] = 65;
-    io.KeyMap[ImGuiKey_C] = 67;
-    io.KeyMap[ImGuiKey_V] = 86;
-    io.KeyMap[ImGuiKey_X] = 88;
-    io.KeyMap[ImGuiKey_Y] = 89;
-    io.KeyMap[ImGuiKey_Z] = 90;
-
-    io.RenderDrawListsFn = RenderDrawLists;
-    io.SetClipboardTextFn = SetClipboardText;
-    io.GetClipboardTextFn = GetClipboardText;
-    io.ClipboardUserData = nullptr;
-
-    io.KeyRepeatDelay = 1.0f;
-    io.KeyRepeatRate = 0.5f;
-
-    ImGuiStyle* style = &ImGui::GetStyle();
-    ImGui::StyleColorsLight(style);
-
-    style->Colors[ImGuiCol_WindowBg] = ImGui::ColorConvertU32ToFloat4(color_background_dark);
-    style->FrameRounding = 4.0f;
-    style->ScaleAllSizes(platform_get_pixel_ratio());
-
-    //io.MouseDrawCursor = true;
-
-    //emscripten_request_pointerlock(nullptr, true);
-    printf("pixel ratio: %f\n", platform_get_pixel_ratio());
-
-//    init_sdf();
-}
-
 void FunImGui::RenderDrawLists(ImDrawData* drawData) {
     ImGuiIO &io = ImGui::GetIO();
-    float fb_width = io.DisplaySize.x * io.DisplayFramebufferScale.x;
-    float fb_height = io.DisplaySize.y * io.DisplayFramebufferScale.y;
-
-    //printf("size: %d, %d\n", fb_width, fb_height);
-
-    /*fb_width = frame_buffer_width;
-    fb_height = frame_buffer_height;*/
-
-    if (fb_width == 0 || fb_height == 0)
-        return;
     //drawData->ScaleClipRects(io.DisplayFramebufferScale);
 
     glEnable(GL_BLEND);
@@ -164,13 +108,6 @@ void FunImGui::RenderDrawLists(ImDrawData* drawData) {
 #if 0
     render_test_sdf_text(14.0f * io.DisplayFramebufferScale.x, &orthProjection[0][0]);
 #endif
-}
-
-const char* FunImGui::GetClipboardText(void*) {
-    return "";
-}
-
-void FunImGui::SetClipboardText(void*, const char* text) {
 }
 
 
@@ -282,4 +219,3 @@ void FunImGui::initFont() {
     glBindTexture(GL_TEXTURE_2D, lastTexture);
 
 }
-

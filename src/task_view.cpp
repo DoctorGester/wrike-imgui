@@ -34,7 +34,7 @@ void draw_task_contents() {
         for (u32 user_index = 0; user_index < users_count; user_index++) {
             User* user = &users[user_index];
 
-            if (are_ids_equal(&user->id, &current_task.assignees[index])) {
+            if (user->id == current_task.assignees[index]) {
                 const char* pattern_last = "%.*s %.*s";
                 const char* pattern_preceding = "%.*s %.*s,";
 
@@ -124,6 +124,13 @@ void draw_task_contents() {
 }
 
 void process_task_data(char* json, u32 data_size, jsmntok_t*& token) {
+    // The task stopped existing?
+    if (data_size == 0) {
+        current_task = {};
+
+        return;
+    }
+
     // We only request singular tasks now
     assert(data_size == 1);
     assert(token->type == JSMN_OBJECT);
@@ -152,7 +159,7 @@ void process_task_data(char* json, u32 data_size, jsmntok_t*& token) {
             assert(next_token->type == JSMN_ARRAY);
 
             if (current_task.num_assignees < next_token->size) {
-                current_task.assignees = (Id8*) realloc(current_task.assignees, sizeof(Id8) * next_token->size);
+                current_task.assignees = (User_Id*) realloc(current_task.assignees, sizeof(User_Id) * next_token->size);
             }
 
             current_task.num_assignees = 0;
@@ -162,7 +169,7 @@ void process_task_data(char* json, u32 data_size, jsmntok_t*& token) {
 
                 assert(id_token->type == JSMN_STRING);
 
-                json_token_to_id(json, id_token, current_task.assignees[current_task.num_assignees++]);
+                json_token_to_id8(json, id_token, current_task.assignees[current_task.num_assignees++]);
             }
         } else {
             eat_json(token);

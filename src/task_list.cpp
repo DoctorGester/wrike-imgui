@@ -7,6 +7,8 @@
 #include "temporary_storage.h"
 #include "accounts.h"
 #include "main.h"
+#include "lazy_array.h"
+#include "platform.h"
 
 enum Status_Group {
     Status_Group_Invalid,
@@ -25,27 +27,38 @@ enum Task_List_Sort_Field {
 };
 
 struct Custom_Field_Value {
-    Id16 field_id;
+    Custom_Field_Id field_id;
     String value;
 };
 
 struct Folder_Task {
-    Id16 id;
-    Id16 custom_status_id;
+    Task_Id id;
+    Custom_Status_Id custom_status_id;
     u32 custom_status_id_hash;
 
     String title;
-    Custom_Field_Value* custom_field_values;
+    Relative_Pointer<Custom_Field_Value> custom_field_values;
     u32 num_custom_field_values;
+
+    Relative_Pointer<Task_Id> parent_task_ids;
+    u32 num_parent_task_ids;
+
+    Relative_Pointer<User_Id> responsible_ids;
+    u32 num_responsible_ids;
+};
+
+struct Parent_Child_Pair {
+    Task_Id parent_id;
+    Folder_Task* child_id;
 };
 
 struct Folder_Header {
-    Id16* custom_columns;
+    Custom_Field_Id* custom_columns;
     u32 num_custom_columns;
 };
 
 struct Custom_Status {
-    Id16 id;
+    s32 id;
     String name;
     Status_Group group;
     u32 id_hash;
@@ -53,9 +66,17 @@ struct Custom_Status {
     u32 natural_index;
 };
 
+// TODO the bigger the struct, the slower sorting is (bc of copying), might want to consider a faster solution
 struct Sorted_Folder_Task {
+    Task_Id id;
+    u32 id_hash;
+
     Folder_Task* source_task;
     Custom_Status* cached_status;
+    Relative_Pointer<Sorted_Folder_Task*> sub_tasks;
+    u32 num_sub_tasks;
+
+    bool is_expanded;
 };
 
 static const u32 custom_columns_start_index = 2;
@@ -64,26 +85,31 @@ static Folder_Header current_folder{};
 
 static Folder_Task* folder_tasks = NULL;
 static Sorted_Folder_Task* sorted_folder_tasks = NULL;
+static Lazy_Array<Sorted_Folder_Task*, 32> top_level_tasks{};
 static u32 folder_task_count = 0;
+
+static Id_Hash_Map<Sorted_Folder_Task*> id_to_sorted_folder_task{};
+
+static Lazy_Array<Custom_Field_Value, 16> custom_field_values{};
+static Lazy_Array<Task_Id, 16> parent_task_ids{};
+static Lazy_Array<User_Id, 16> responsible_ids{};
+static Lazy_Array<Parent_Child_Pair, 16> parent_child_pairs{};
+static Lazy_Array<Sorted_Folder_Task*, 64> sub_tasks{};
 
 typedef char Sort_Direction;
 static const Sort_Direction Sort_Direction_Normal = 1;
 static const Sort_Direction Sort_Direction_Reverse = -1;
 
 static Task_List_Sort_Field sort_field = Task_List_Sort_Field_None;
-static Id16 sort_custom_field_id{};
+static Custom_Field_Id sort_custom_field_id{};
 static Custom_Field* sort_custom_field;
 static Sort_Direction sort_direction = Sort_Direction_Normal;
 static bool has_been_sorted_after_loading = false;
 static bool show_only_active_tasks = true;
 
-static Custom_Field_Value* custom_field_values = NULL;
-static u32 custom_field_values_count = 0;
-static u32 custom_field_values_watermark = 0;
-
 static Custom_Status* custom_statuses = NULL;
 static u32 custom_statuses_count = 0;
-static Hash_Map<Custom_Status*> id_to_custom_status = { 0 };
+static Id_Hash_Map<Custom_Status*> id_to_custom_status = { 0 };
 
 static u32 color_name_to_color_argb(String &color_name) {
     char c = *color_name.start;
@@ -169,22 +195,10 @@ static u32 status_group_to_color(Status_Group group) {
     }
 }
 
-static Custom_Field_Value* reserve_n_custom_field_values(u32 n) {
-    if (custom_field_values_count + n > custom_field_values_watermark) {
-        if (custom_field_values_watermark == 0) {
-            custom_field_values_watermark = 16;
-        } else {
-            custom_field_values_watermark *= 2;
-        }
-
-        custom_field_values = (Custom_Field_Value*) realloc(custom_field_values, sizeof(Custom_Field_Value) * custom_field_values_watermark);
-    }
-
-    Custom_Field_Value* result = &custom_field_values[custom_field_values_count];
-
-    custom_field_values_count += n;
-
-    return result;
+static void add_parent_child_pair(Folder_Task* child, Task_Id parent_id) {
+    Parent_Child_Pair* pair = lazy_array_reserve_n_values(parent_child_pairs, 1);
+    pair->parent_id = parent_id;
+    pair->child_id = child;
 }
 
 static inline int compare_tasks_custom_fields(Folder_Task* a, Folder_Task* b, Custom_Field_Type custom_field_type) {
@@ -193,7 +207,7 @@ static inline int compare_tasks_custom_fields(Folder_Task* a, Folder_Task* b, Cu
 
     // TODO we could cache that to sort big lists faster
     for (u32 index = 0; index < a->num_custom_field_values; index++) {
-        if (are_ids_equal(&a->custom_field_values[index].field_id, &sort_custom_field_id)) {
+        if (a->custom_field_values[index].field_id == sort_custom_field_id) {
             a_value = &a->custom_field_values[index].value;
             break;
         }
@@ -204,7 +218,7 @@ static inline int compare_tasks_custom_fields(Folder_Task* a, Folder_Task* b, Cu
     }
 
     for (u32 index = 0; index < b->num_custom_field_values; index++) {
-        if (are_ids_equal(&b->custom_field_values[index].field_id, &sort_custom_field_id)) {
+        if (b->custom_field_values[index].field_id == sort_custom_field_id) {
             b_value = &b->custom_field_values[index].value;
             break;
         }
@@ -230,13 +244,8 @@ static inline int compare_tasks_custom_fields(Folder_Task* a, Folder_Task* b, Cu
     }
 }
 
-static Custom_Status* find_task_custom_status(Folder_Task* task) {
-    // TODO ugly!
-    String id_as_string;
-    id_as_string.start = task->custom_status_id.id;
-    id_as_string.length = ID_16_LENGTH;
-
-    return hash_map_get(&id_to_custom_status, id_as_string, task->custom_status_id_hash);
+static inline Custom_Status* find_task_custom_status(Folder_Task* task) {
+    return id_hash_map_get(&id_to_custom_status, task->custom_status_id, task->custom_status_id_hash);
 }
 
 static inline int compare_folder_tasks_based_on_current_sort(Sorted_Folder_Task* as, Sorted_Folder_Task* bs) {
@@ -267,20 +276,26 @@ static inline int compare_folder_tasks_based_on_current_sort(Sorted_Folder_Task*
 }
 
 static int compare_folder_tasks_based_on_current_sort_and_their_ids(const void* ap, const void* bp) {
-    Sorted_Folder_Task* as = (Sorted_Folder_Task*) ap;
-    Sorted_Folder_Task* bs = (Sorted_Folder_Task*) bp;
+    Sorted_Folder_Task* as = *(Sorted_Folder_Task**) ap;
+    Sorted_Folder_Task* bs = *(Sorted_Folder_Task**) bp;
 
     int result = compare_folder_tasks_based_on_current_sort(as, bs);
 
     if (result == 0) {
-        /* TODO EXTREMELY slow. This takes up the most time when sorting big datasets
-         * could try to convert id to a number and do a regular int comparison
-         */
-
-        return memcmp(as->source_task->id.id, bs->source_task->id.id, ID_16_LENGTH);
+        return (int) (as->source_task->id - bs->source_task->id);
     }
 
     return result;
+}
+
+static void sort_tasks_hierarchically(Sorted_Folder_Task** tasks, u32 length) {
+    qsort(tasks, length, sizeof(Sorted_Folder_Task*), compare_folder_tasks_based_on_current_sort_and_their_ids);
+
+    for (u32 task_index = 0; task_index < length; task_index++) {
+        for (u32 sub_task_index = 0; sub_task_index < tasks[task_index]->num_sub_tasks; sub_task_index++) {
+            sort_tasks_hierarchically(&tasks[task_index]->sub_tasks[0], tasks[task_index]->num_sub_tasks);
+        }
+    }
 }
 
 static void sort_by_field(Task_List_Sort_Field sort_by) {
@@ -301,12 +316,12 @@ static void sort_by_field(Task_List_Sort_Field sort_by) {
     sort_field = sort_by;
 
     float start = platform_get_now();
-    qsort(sorted_folder_tasks, folder_task_count, sizeof(Sorted_Folder_Task), compare_folder_tasks_based_on_current_sort_and_their_ids);
-    printf("Sorting %lu elements by %i took %fms\n", folder_task_count, sort_by, platform_get_now() - start);
+    sort_tasks_hierarchically(top_level_tasks.data, top_level_tasks.length);
+    printf("Sorting %lu elements by %i took %fms\n", top_level_tasks.length, sort_by, platform_get_now() - start);
 }
 
-static void sort_by_custom_field(Id16& field_id) {
-    if (sort_field == Task_List_Sort_Field_Custom_Field && are_ids_equal(&field_id, &sort_custom_field_id)) {
+static void sort_by_custom_field(Custom_Field_Id field_id) {
+    if (sort_field == Task_List_Sort_Field_Custom_Field && field_id == sort_custom_field_id) {
         sort_direction *= -1;
     } else {
         sort_direction = Sort_Direction_Normal;
@@ -317,65 +332,13 @@ static void sort_by_custom_field(Id16& field_id) {
         sorted_folder_task->cached_status = find_task_custom_status(sorted_folder_task->source_task);
     }
 
-    // TODO ugly! We need to find a way to use ID as hash map key
-    String id_as_string;
-    id_as_string.start = field_id.id;
-    id_as_string.length = ID_16_LENGTH;
-
     sort_field = Task_List_Sort_Field_Custom_Field;
     sort_custom_field_id = field_id;
-    sort_custom_field = hash_map_get(&id_to_custom_field, id_as_string, hash_string(id_as_string));
+    sort_custom_field = id_hash_map_get(&id_to_custom_field, field_id, hash_id(field_id)); // TODO hash cache?
 
     float start = platform_get_now();
-    qsort(sorted_folder_tasks, folder_task_count, sizeof(Sorted_Folder_Task), compare_folder_tasks_based_on_current_sort_and_their_ids);
-    printf("Sorting %lu elements by %.16s took %fms\n", folder_task_count, field_id.id, platform_get_now() - start);
-}
-
-void draw_task_column(Sorted_Folder_Task* sorted_task, u32 column, Custom_Field* custom_field_or_null, float alpha) {
-    Folder_Task* task = sorted_task->source_task;
-
-    if (column == 0) {
-        ImGui::PushID(task->id.id, task->id.id + ID_16_LENGTH);
-
-        // TODO slow, could compare hashes if that becomes an issue
-        bool is_selected = are_ids_equal(&task->id, &selected_folder_task_id);
-        bool clicked = ImGui::Selectable("##dummy_task", is_selected, ImGuiSelectableFlags_SpanAllColumns);
-
-        ImGui::PopID();
-
-        ImGui::SameLine();
-        ImGui::TextColored(ImVec4(0, 0, 0, alpha), "%.*s", task->title.length, task->title.start);
-
-        if (clicked) {
-            request_task(task->id);
-        }
-    } else if (column == 1 && id_to_custom_status.size > 0) {
-        if (sorted_task->cached_status) {
-            ImVec4 color = ImGui::ColorConvertU32ToFloat4(sorted_task->cached_status->color);
-            color.w = alpha;
-
-            ImGui::TextColored(color, "[%.*s]", sorted_task->cached_status->name.length, sorted_task->cached_status->name.start);
-        } else {
-            ImGui::Text("...");
-        }
-    } else if (custom_field_or_null) {
-        // TODO seems slow, any better way?
-        bool found = false;
-
-        for (u32 j = 0; j < task->num_custom_field_values; j++) {
-            Custom_Field_Value* value = &task->custom_field_values[j];
-
-            if (are_ids_equal(&value->field_id, &custom_field_or_null->id)) {
-                ImGui::TextColored(ImVec4(0, 0, 0, alpha), "%.*s", value->value.length, value->value.start);
-                found = true;
-                break;
-            }
-        }
-
-        if (!found) {
-            ImGui::Dummy(ImVec2(0.0f, ImGui::GetTextLineHeight()));
-        }
-    }
+    sort_tasks_hierarchically(top_level_tasks.data, top_level_tasks.length);
+    printf("Sorting %lu elements by %lu took %fms\n", top_level_tasks.length, field_id, platform_get_now() - start);
 }
 
 void draw_task_list_header(float view_width, float custom_column_width, Custom_Field** column_to_custom_field, u32 total_columns) {
@@ -407,7 +370,11 @@ void draw_task_list_header(float view_width, float custom_column_width, Custom_F
 
         char* column_title_null_terminated = string_to_temporary_null_terminated_string(column_title);
 
-        Id16& custom_field_id = current_folder.custom_columns[column - custom_columns_start_index];
+        Custom_Field_Id custom_field_id = NULL;
+
+        if (column >= custom_columns_start_index) {
+            custom_field_id = current_folder.custom_columns[column - custom_columns_start_index];
+        }
 
         // TODO ugly/copypaste
         if (ImGui::Button(column_title_null_terminated)) {
@@ -442,7 +409,7 @@ void draw_task_list_header(float view_width, float custom_column_width, Custom_F
             }
 
             default: {
-                sorting_by_this_column = sort_field == Task_List_Sort_Field_Custom_Field && are_ids_equal(&sort_custom_field_id, &custom_field_id);
+                sorting_by_this_column = sort_field == Task_List_Sort_Field_Custom_Field && sort_custom_field_id == custom_field_id;
             }
         }
 
@@ -460,19 +427,106 @@ void draw_task_list_header(float view_width, float custom_column_width, Custom_F
     ImGui::EndColumns();
 }
 
+void draw_task_column(Sorted_Folder_Task* sorted_task, u32 column, Custom_Field* custom_field_or_null, u16 level, float alpha) {
+    Folder_Task* task = sorted_task->source_task;
+
+    if (column == 0) {
+        ImGui::PushID(task->id);
+
+        bool is_selected = task->id == selected_folder_task_id;
+        bool clicked = ImGui::Selectable("##dummy_task", is_selected, ImGuiSelectableFlags_SpanAllColumns);
+        bool expand_arrow_clicked = false;
+
+        ImGui::PopID();
+
+        ImGui::SameLine();
+
+        if (level) {
+            ImGui::Dummy(ImVec2(level * 20.0f, 0.0f));
+            ImGui::SameLine();
+        }
+
+        const float arrow_size = ImGui::GetFontSize();
+
+        if (sorted_task->num_sub_tasks) {
+            ImVec2 arrow_position = ImGui::GetCursorScreenPos();
+
+            ImGui::PushID(sorted_task);
+
+            ImGui::InvisibleButton("##expand_button", ImVec2(arrow_size, arrow_size));
+
+            // TODO kinda hacky, Selectable blocks hover
+            if (ImGui::IsMouseClicked(0) && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenBlockedByActiveItem)) {
+                expand_arrow_clicked = true;
+                sorted_task->is_expanded = !sorted_task->is_expanded;
+            }
+
+            ImGui::PopID();
+
+            ImGui::RenderArrow(arrow_position, sorted_task->is_expanded ? ImGuiDir_Down : ImGuiDir_Right);
+        } else {
+            ImGui::Dummy(ImVec2(arrow_size, 0.0f));
+        }
+
+        ImGui::SameLine();
+
+        ImGui::TextColored(ImVec4(0, 0, 0, alpha), "%lu %.*s", level, task->title.length, task->title.start);
+
+        if (clicked && !expand_arrow_clicked) {
+            request_task_by_task_id(task->id);
+        }
+    } else if (column == 1 && id_to_custom_status.size > 0) {
+        if (sorted_task->cached_status) {
+            ImVec4 color = ImGui::ColorConvertU32ToFloat4(sorted_task->cached_status->color);
+            color.w = alpha;
+
+            ImGui::TextColored(color, "[%.*s]", sorted_task->cached_status->name.length, sorted_task->cached_status->name.start);
+        } else {
+            ImGui::Text("...");
+        }
+    } else if (custom_field_or_null) {
+        // TODO seems slow, any better way?
+        // TODO I can think of one: we could literally cache already stringified values in Sorted_Task
+        bool found = false;
+
+        for (u32 j = 0; j < task->num_custom_field_values; j++) {
+            Custom_Field_Value* value = &task->custom_field_values[j];
+
+            if (value->field_id == custom_field_or_null->id) {
+                ImGui::TextColored(ImVec4(0, 0, 0, alpha), "%.*s", value->value.length, value->value.start);
+                found = true;
+                break;
+            }
+        }
+
+        if (!found) {
+            ImGui::Dummy(ImVec2(0.0f, ImGui::GetTextLineHeight()));
+        }
+    }
+}
+
 void map_columns_to_custom_fields(Custom_Field** column_to_custom_field) {
     for (u32 column = 0; column < current_folder.num_custom_columns; column++) {
-        Id16* custom_field_id = &current_folder.custom_columns[column];
-
-        // TODO ugly! We need to find a way to use ID as hash map key
-        String id_as_string;
-        id_as_string.start = custom_field_id->id;
-        id_as_string.length = ID_16_LENGTH;
+        Custom_Field_Id custom_field_id = current_folder.custom_columns[column];
 
         // TODO hash cache!
-        Custom_Field* custom_field = hash_map_get(&id_to_custom_field, id_as_string, hash_string(id_as_string));
+        Custom_Field* custom_field = id_hash_map_get(&id_to_custom_field, custom_field_id, hash_id(custom_field_id));
 
         column_to_custom_field[column] = custom_field;
+    }
+}
+
+void draw_task_column_hierarchical(Sorted_Folder_Task* task, u32 column, Custom_Field* custom_field_or_null, u16 level, float alpha) {
+    if (show_only_active_tasks && task->cached_status->group != Status_Group_Active) {
+        return;
+    }
+
+    draw_task_column(task, column, custom_field_or_null, level, alpha);
+
+    if (task->is_expanded) {
+        for (u32 sub_task_index = 0; sub_task_index < task->num_sub_tasks; sub_task_index++) {
+            draw_task_column_hierarchical(task->sub_tasks[sub_task_index], column, custom_field_or_null, level + 1, alpha);
+        }
     }
 }
 
@@ -485,14 +539,14 @@ void draw_all_task_columns(Custom_Field** column_to_custom_field, u32 total_colu
         //ImGuiListClipper clipper(folder_task_count, ImGui::GetTextLineHeightWithSpacing());
 
         //while (clipper.Step()) {
-        for (int index = 0; index < folder_task_count; index++) {
-            Sorted_Folder_Task* task = &sorted_folder_tasks[index];
+        for (int index = 0; index < top_level_tasks.length; index++) {
+            Sorted_Folder_Task* task = top_level_tasks[index];
 
             if (show_only_active_tasks && task->cached_status->group != Status_Group_Active) {
                 continue;
             }
 
-            draw_task_column(task, column, custom_field, alpha);
+            draw_task_column_hierarchical(task, column, custom_field, 0, alpha);
         }
         //}
 
@@ -598,7 +652,7 @@ static void process_folder_task_custom_field(Custom_Field_Value* custom_field_va
         jsmntok_t* next_token = token;
 
         if (json_string_equals(json, property_token, "id")) {
-            json_token_to_id(json, next_token, custom_field_value->field_id);
+            json_token_to_right_part_of_id16(json, next_token, custom_field_value->field_id);
             has_id = true;
         } else if (json_string_equals(json, property_token, "value")) {
             json_token_to_string(json, next_token, custom_field_value->value);
@@ -619,10 +673,14 @@ static void process_folder_contents_data_object(char* json, jsmntok_t*& token) {
     assert(object_token->type == JSMN_OBJECT);
 
     Folder_Task* folder_task = &folder_tasks[folder_task_count];
+    folder_task->num_parent_task_ids = 0;
     folder_task->num_custom_field_values = 0;
+    folder_task->num_responsible_ids = 0;
 
     Sorted_Folder_Task* sorted_folder_task = &sorted_folder_tasks[folder_task_count];
+    sorted_folder_task->num_sub_tasks = 0;
     sorted_folder_task->source_task = folder_task;
+    sorted_folder_task->is_expanded = false;
 
     folder_task_count++;
 
@@ -636,18 +694,46 @@ static void process_folder_contents_data_object(char* json, jsmntok_t*& token) {
         if (json_string_equals(json, property_token, "title")) {
             json_token_to_string(json, next_token, folder_task->title);
         } else if (json_string_equals(json, property_token, "id")) {
-            json_token_to_id(json, next_token, folder_task->id);
+            json_token_to_right_part_of_id16(json, next_token, folder_task->id);
         } else if (json_string_equals(json, property_token, "customStatusId")) {
-            json_token_to_id(json, next_token, folder_task->custom_status_id);
+            json_token_to_right_part_of_id16(json, next_token, folder_task->custom_status_id);
 
             folder_task->custom_status_id_hash = hash_id(folder_task->custom_status_id);
+        } else if (json_string_equals(json, property_token, "responsibleIds")) {
+            assert(next_token->type == JSMN_ARRAY);
+
+            token++;
+
+            if (next_token->size > 0) {
+                folder_task->responsible_ids = lazy_array_reserve_n_values_relative_pointer(responsible_ids, next_token->size);
+            }
+
+            for (u32 field_index = 0; field_index < next_token->size; field_index++, token++) {
+                json_token_to_right_part_of_id16(json, token, folder_task->responsible_ids[folder_task->num_responsible_ids++]);
+            }
+
+            token--;
+        } else if (json_string_equals(json, property_token, "superTaskIds")) {
+            assert(next_token->type == JSMN_ARRAY);
+
+            token++;
+
+            if (next_token->size > 0) {
+                folder_task->parent_task_ids = lazy_array_reserve_n_values_relative_pointer(parent_task_ids, next_token->size);
+            }
+
+            for (u32 field_index = 0; field_index < next_token->size; field_index++, token++) {
+                json_token_to_right_part_of_id16(json, token, folder_task->parent_task_ids[folder_task->num_parent_task_ids++]);
+            }
+
+            token--;
         } else if (json_string_equals(json, property_token, "customFields")) {
             assert(next_token->type == JSMN_ARRAY);
 
             token++;
 
             if (next_token->size > 0) {
-                folder_task->custom_field_values = reserve_n_custom_field_values(next_token->size);
+                folder_task->custom_field_values = lazy_array_reserve_n_values_relative_pointer(custom_field_values, next_token->size);
             }
 
             for (u32 field_index = 0; field_index < next_token->size; field_index++) {
@@ -662,6 +748,11 @@ static void process_folder_contents_data_object(char* json, jsmntok_t*& token) {
             token--;
         }
     }
+
+    sorted_folder_task->id = folder_task->id;
+    sorted_folder_task->id_hash = hash_id(folder_task->id);
+
+    id_hash_map_put(&id_to_sorted_folder_task, sorted_folder_task, sorted_folder_task->id_hash);
 }
 
 static void process_custom_status(char* json, jsmntok_t*& token, u32 natural_index) {
@@ -685,7 +776,7 @@ static void process_custom_status(char* json, jsmntok_t*& token, u32 natural_ind
         jsmntok_t* next_token = token;
 
         if (json_string_equals(json, property_token, "id")) {
-            json_token_to_id(json, next_token, custom_status->id);
+            json_token_to_right_part_of_id16(json, next_token, custom_status->id);
         } else if (json_string_equals(json, property_token, "name")) {
             json_token_to_string(json, next_token, custom_status->name);
         } else if (json_string_equals(json, property_token, "standard")) {
@@ -714,7 +805,7 @@ static void process_custom_status(char* json, jsmntok_t*& token, u32 natural_ind
 
 //    printf("Got status %.*s with hash %lu\n", custom_status->name.length, custom_status->name.start, custom_status->id_hash);
 
-    hash_map_put(&id_to_custom_status, custom_status, custom_status->id_hash);
+    id_hash_map_put(&id_to_custom_status, custom_status, custom_status->id_hash);
 }
 
 void process_workflows_data(char* json, u32 data_size, jsmntok_t*&token) {
@@ -747,7 +838,7 @@ void process_workflows_data(char* json, u32 data_size, jsmntok_t*&token) {
 
     // TODO hacky, we need to clear the map when it's populated too
     if (id_to_custom_status.size == 0) {
-        hash_map_init(&id_to_custom_status, total_statuses);
+        id_hash_map_init(&id_to_custom_status, total_statuses);
     }
 
     if (custom_statuses_count < total_statuses) {
@@ -801,7 +892,7 @@ void process_folder_header_data(char* json, u32 data_size, jsmntok_t*& token) {
         jsmntok_t* next_token = token;
 
         if (json_string_equals(json, property_token, "customColumnIds")) {
-            current_folder.custom_columns = (Id16*) realloc(current_folder.custom_columns, sizeof(Id16) * next_token->size);
+            current_folder.custom_columns = (Custom_Field_Id*) realloc(current_folder.custom_columns, sizeof(Custom_Field_Id) * next_token->size);
             current_folder.num_custom_columns = 0;
 
             for (u32 array_index = 0; array_index < next_token->size; array_index++) {
@@ -809,7 +900,7 @@ void process_folder_header_data(char* json, u32 data_size, jsmntok_t*& token) {
 
                 assert(id_token->type == JSMN_STRING);
 
-                json_token_to_id(json, id_token, current_folder.custom_columns[current_folder.num_custom_columns++]);
+                json_token_to_right_part_of_id16(json, id_token, current_folder.custom_columns[current_folder.num_custom_columns++]);
             }
         } else {
             eat_json(token);
@@ -818,18 +909,92 @@ void process_folder_header_data(char* json, u32 data_size, jsmntok_t*& token) {
     }
 }
 
+static void associate_parent_tasks_with_sub_tasks() {
+    // Step 1: count sub tasks for each parent, while also deciding which parents should go into the root
+    for (u32 task_index = 0; task_index < folder_task_count; task_index++) {
+        Sorted_Folder_Task* folder_task = &sorted_folder_tasks[task_index];
+        Folder_Task* source_task = folder_task->source_task;
+
+        bool found_at_least_one_parent = false;
+
+        if (source_task->num_parent_task_ids) {
+            for (u32 id_index = 0; id_index < source_task->num_parent_task_ids; id_index++) {
+                Task_Id parent_id = source_task->parent_task_ids[id_index];
+
+                Sorted_Folder_Task* parent_or_null = id_hash_map_get(&id_to_sorted_folder_task, parent_id, hash_id(parent_id));
+
+                if (parent_or_null) {
+                    found_at_least_one_parent = true;
+
+                    parent_or_null->num_sub_tasks++;
+                }
+            }
+        }
+
+        if (!found_at_least_one_parent) {
+            Sorted_Folder_Task** pointer_to_task = lazy_array_reserve_n_values(top_level_tasks, 1);
+            *pointer_to_task = folder_task;
+        }
+    }
+
+    // Step 2: allocate space for sub tasks
+    for (u32 task_index = 0; task_index < folder_task_count; task_index++) {
+        Sorted_Folder_Task* folder_task = &sorted_folder_tasks[task_index];
+
+        if (folder_task->num_sub_tasks) {
+            folder_task->sub_tasks = lazy_array_reserve_n_values_relative_pointer(sub_tasks, folder_task->num_sub_tasks);
+
+            folder_task->num_sub_tasks = 0;
+        }
+    }
+
+    // Step 3: fill sub tasks
+    for (u32 task_index = 0; task_index < folder_task_count; task_index++) {
+        Sorted_Folder_Task* folder_task = &sorted_folder_tasks[task_index];
+        Folder_Task* source_task = folder_task->source_task;
+
+        if (source_task->num_parent_task_ids) {
+            for (u32 id_index = 0; id_index < source_task->num_parent_task_ids; id_index++) {
+                Task_Id parent_id = source_task->parent_task_ids[id_index];
+
+                Sorted_Folder_Task* parent_or_null = id_hash_map_get(&id_to_sorted_folder_task, parent_id, hash_id(parent_id));
+
+                if (parent_or_null) {
+                    parent_or_null->sub_tasks[parent_or_null->num_sub_tasks++] = folder_task;
+                }
+            }
+        }
+    }
+}
+
 void process_folder_contents_data(char* json, u32 data_size, jsmntok_t*& token) {
+    if (id_to_sorted_folder_task.buckets) {
+        id_hash_map_clear(&id_to_sorted_folder_task);
+    } else {
+        id_hash_map_init(&id_to_sorted_folder_task, data_size);
+    }
+
     if (folder_task_count < data_size) {
         folder_tasks = (Folder_Task*) realloc(folder_tasks, sizeof(Folder_Task) * data_size);
         sorted_folder_tasks = (Sorted_Folder_Task*) realloc(sorted_folder_tasks, sizeof(Sorted_Folder_Task) * data_size);
     }
 
     folder_task_count = 0;
-    custom_field_values_count = 0;
+
+    lazy_array_soft_reset(custom_field_values);
+    lazy_array_soft_reset(parent_task_ids);
+    lazy_array_soft_reset(top_level_tasks);
+    lazy_array_soft_reset(sub_tasks);
 
     for (u32 array_index = 0; array_index < data_size; array_index++) {
         process_folder_contents_data_object(json, token);
     }
 
+    associate_parent_tasks_with_sub_tasks();
+
     has_been_sorted_after_loading = false;
+}
+
+void process_current_folder_as_logical() {
+    current_folder.num_custom_columns = 0;
 }

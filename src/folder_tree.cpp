@@ -11,12 +11,12 @@
 struct Parent_Child_Pair {
     Folder_Tree_Node* parent;
 
-    String child_id;
+    Folder_Id child_id;
     u32 child_hash;
 };
 
 static Lazy_Array<Parent_Child_Pair, 64> parent_child_pairs{};
-static Hash_Map<Folder_Tree_Node*> folder_id_to_node_map;
+static Id_Hash_Map<Folder_Tree_Node*> folder_id_to_node_map;
 
 static u32 current_node = 0;
 
@@ -30,18 +30,18 @@ u32 total_starred = 0;
 
 void folder_tree_init() {
     // TODO Probably need some kind of heuristics to determine a good bucket count
-    hash_map_init(&folder_id_to_node_map, 2048);
+    id_hash_map_init(&folder_id_to_node_map, 2048);
 }
 
-inline Folder_Tree_Node* find_folder_tree_node_by_id(String& id, u32 hash) {
-    return hash_map_get(&folder_id_to_node_map, id, hash);
+static inline Folder_Tree_Node* find_folder_tree_node_by_id(Folder_Id id, u32 hash) {
+    return id_hash_map_get(&folder_id_to_node_map, id, hash);
 }
 
-static void add_parent_child_pair(Folder_Tree_Node* parent, String& child_id) {
+static void add_parent_child_pair(Folder_Tree_Node* parent, Folder_Id child_id) {
     Parent_Child_Pair* pair = lazy_array_reserve_n_values(parent_child_pairs, 1);
     pair->parent = parent;
     pair->child_id = child_id;
-    pair->child_hash = hash_string(child_id);
+    pair->child_hash = hash_id(child_id);
 }
 
 static void process_folder_tree_data_object(char* json, jsmntok_t*& token) {
@@ -67,7 +67,7 @@ static void process_folder_tree_data_object(char* json, jsmntok_t*& token) {
         if (json_string_equals(json, property_token, "title")) {
             json_token_to_string(json, value_token, new_node->name);
         } else if (json_string_equals(json, property_token, "id")) {
-            json_token_to_string(json, value_token, new_node->id);
+            json_token_to_right_part_of_id16(json, value_token, new_node->id);
         } else if (json_string_equals(json, property_token, "scope")) {
             json_token_to_string(json, value_token, scope);
         } else if (json_string_equals(json, property_token, "starred")) {
@@ -83,9 +83,10 @@ static void process_folder_tree_data_object(char* json, jsmntok_t*& token) {
 
                 assert(id_token->type == JSMN_STRING);
 
-                String child_id;
+                Folder_Id child_id;
 
-                json_token_to_string(json, id_token, child_id);
+                json_token_to_right_part_of_id16(json, id_token, child_id);
+
                 // TODO could be adding multiple pairs at once
                 add_parent_child_pair(new_node, child_id);
             }
@@ -95,7 +96,7 @@ static void process_folder_tree_data_object(char* json, jsmntok_t*& token) {
         }
     }
 
-    u32 id_hash = hash_string(new_node->id);
+    u32 id_hash = hash_id(new_node->id);
 
     new_node->id_hash = id_hash;
     new_node->num_children = 0;
@@ -109,7 +110,7 @@ static void process_folder_tree_data_object(char* json, jsmntok_t*& token) {
         new_node->children = (Folder_Tree_Node**) malloc(sizeof(Folder_Tree_Node*) * num_children);
     }
 
-    hash_map_put(&folder_id_to_node_map, new_node, id_hash);
+    id_hash_map_put(&folder_id_to_node_map, new_node, id_hash);
 
     bool is_root = strlen("WsRoot") == scope.length && strncmp(scope.start, "WsRoot", scope.length) == 0;
 

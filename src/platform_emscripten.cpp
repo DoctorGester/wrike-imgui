@@ -201,6 +201,40 @@ static bool create_webgl_context() {
     return false;
 }
 
+static const char* get_clipboard_text(void*) {
+    return "";
+}
+
+static void set_clipboard_text(void*, const char* text) {
+}
+
+static void setup_io() {
+    ImGuiIO &io = ImGui::GetIO();
+
+    io.KeyMap[ImGuiKey_Tab] = 9;
+    io.KeyMap[ImGuiKey_LeftArrow] = 37;
+    io.KeyMap[ImGuiKey_RightArrow] = 39;
+    io.KeyMap[ImGuiKey_UpArrow] = 38;
+    io.KeyMap[ImGuiKey_DownArrow] = 40;
+    io.KeyMap[ImGuiKey_PageUp] = 33;
+    io.KeyMap[ImGuiKey_PageDown] = 34;
+    io.KeyMap[ImGuiKey_Home] = 36;
+    io.KeyMap[ImGuiKey_End] = 35;
+    io.KeyMap[ImGuiKey_Delete] = 46;
+    io.KeyMap[ImGuiKey_Backspace] = 8;
+    io.KeyMap[ImGuiKey_Enter] = 13;
+    io.KeyMap[ImGuiKey_Escape] = 27;
+    io.KeyMap[ImGuiKey_A] = 65;
+    io.KeyMap[ImGuiKey_C] = 67;
+    io.KeyMap[ImGuiKey_V] = 86;
+    io.KeyMap[ImGuiKey_X] = 88;
+    io.KeyMap[ImGuiKey_Y] = 89;
+    io.KeyMap[ImGuiKey_Z] = 90;
+
+    io.SetClipboardTextFn = set_clipboard_text;
+    io.GetClipboardTextFn = get_clipboard_text;
+    io.ClipboardUserData = NULL;
+}
 
 bool platform_init() {
 //    TODO This code breaks the whole app, why?
@@ -211,7 +245,6 @@ bool platform_init() {
 
     create_webgl_context();
 
-    FunImGui::init();
     FunImGui::initGraphics(vertex_shader_source, fragment_shader_source);
 
     register_input_callbacks();

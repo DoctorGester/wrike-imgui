@@ -11,7 +11,7 @@ struct Hash_Bucket {
 };
 
 template <typename T>
-struct Hash_Map {
+struct Id_Hash_Map {
     u32 total_buckets;
     u32 size;
 
@@ -19,7 +19,7 @@ struct Hash_Map {
 };
 
 template <typename T>
-void hash_map_init(Hash_Map<T>* map, u32 total_buckets) {
+void id_hash_map_init(Id_Hash_Map<T>* map, u32 total_buckets) {
     map->buckets = (Hash_Bucket<T>*) calloc(total_buckets, sizeof(Hash_Bucket<T>));
     map->total_buckets = total_buckets;
     map->size = 0;
@@ -28,10 +28,12 @@ void hash_map_init(Hash_Map<T>* map, u32 total_buckets) {
 }
 
 template <typename T>
-void hash_map_destroy(Hash_Map<T>* map) {
-    for (u32 index = 0; index < map->total_buckets; index++) {
-        if (map->buckets[index].contents) {
-            free(map->buckets[index].contents);
+void id_hash_map_destroy(Id_Hash_Map<T>* map) {
+    if (map->size) {
+        for (u32 index = 0; index < map->total_buckets; index++) {
+            if (map->buckets[index].contents) {
+                free(map->buckets[index].contents);
+            }
         }
     }
 
@@ -39,7 +41,23 @@ void hash_map_destroy(Hash_Map<T>* map) {
 }
 
 template <typename T>
-void hash_map_put(Hash_Map<T>* map, T value, u32 hash) {
+void id_hash_map_clear(Id_Hash_Map<T>* map) {
+    if (!map->size) {
+        return;
+    }
+
+    for (u32 index = 0; index < map->total_buckets; index++) {
+        if (map->buckets[index].contents) {
+            free(map->buckets[index].contents);
+        }
+    }
+
+    memset(map->buckets, 0, sizeof(Hash_Bucket<T>) * map->total_buckets);
+    map->size = 0;
+}
+
+template <typename T>
+void id_hash_map_put(Id_Hash_Map<T>* map, T value, u32 hash) {
     Hash_Bucket<T>* target_bucket = &map->buckets[hash % map->total_buckets];
 
     const bool children_not_allocated = !target_bucket->contents;
@@ -60,13 +78,13 @@ void hash_map_put(Hash_Map<T>* map, T value, u32 hash) {
 }
 
 template <typename T>
-T hash_map_get(Hash_Map<T>* map, String &key, u32 hash) {
+T id_hash_map_get(Id_Hash_Map<T>* map, s32 id_key, u32 hash) {
     Hash_Bucket<T>* target_bucket = &map->buckets[hash % map->total_buckets];
 
     for (u32 i = 0; i < target_bucket->current_size; i++) {
         T bucket_element = target_bucket->contents[i];
 
-        if (hash == bucket_element->id_hash && are_strings_equal(key, bucket_element->id)) {
+        if (hash == bucket_element->id_hash && bucket_element->id == id_key) {
             return bucket_element;
         }
     }

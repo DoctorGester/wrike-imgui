@@ -3,6 +3,7 @@
 #include "temporary_storage.h"
 #include <cstring>
 #include <cstdio>
+#include <jsmn.h>
 
 #pragma once
 
@@ -19,12 +20,23 @@ inline bool json_string_equals(char* json, jsmntok_t* tok, const char *s) {
     return (u32) strlen(s) == token_length && strncmp(json + tok->start, s, token_length) == 0;
 }
 
-inline void json_token_to_id(char* json, jsmntok_t* token, Id16& id) {
-    memcpy(id.id, json + token->start, ID_16_LENGTH);
+inline void json_token_to_right_part_of_id16(char* json, jsmntok_t* token, s32& id) {
+    u8* token_start = (u8*) json + token->start;
+    u8 result[UNBASE32_LEN(16)];
+
+    // TODO wasteful to decode all bytes but only use some
+    base32_decode(token_start, 16, result);
+
+    id = uchars_to_s32(result + 6);
 }
 
-inline void json_token_to_id(char* json, jsmntok_t* token, Id8& id) {
-    memcpy(id.id, json + token->start, ID_8_LENGTH);
+inline void json_token_to_id8(char* json, jsmntok_t* token, s32& id) {
+    u8* token_start = (u8*) json + token->start;
+    u8 result[UNBASE32_LEN(8)];
+
+    base32_decode(token_start, 8, result);
+
+    id = uchars_to_s32((u8*) result + 1);
 }
 
 inline char* string_to_temporary_null_terminated_string(String& string) {

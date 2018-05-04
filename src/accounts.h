@@ -17,19 +17,19 @@ enum Custom_Field_Type {
 };
 
 struct Custom_Field {
-    Id16 id;
-    String title;
+    Custom_Field_Id id;
     u32 id_hash;
+    String title;
     Custom_Field_Type type;
 };
 
 struct Account {
-    Id8 id;
+    Account_Id id;
 };
 
 extern Account* accounts;
 extern u32 accounts_count;
 
-extern Hash_Map<Custom_Field*> id_to_custom_field;
+extern Id_Hash_Map<Custom_Field*> id_to_custom_field;
 
 void process_accounts_data(char* json, u32 data_size, jsmntok_t*&token);

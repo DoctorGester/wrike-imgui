@@ -9,7 +9,7 @@ static u32 custom_fields_count = 0;
 Account* accounts = NULL;
 u32 accounts_count = 0;
 
-Hash_Map<Custom_Field*> id_to_custom_field = { 0 };
+Id_Hash_Map<Custom_Field*> id_to_custom_field = { 0 };
 
 static void process_custom_field(char* json, jsmntok_t*& token) {
     jsmntok_t* object_token = token++;
@@ -26,7 +26,7 @@ static void process_custom_field(char* json, jsmntok_t*& token) {
         jsmntok_t* next_token = token;
 
         if (json_string_equals(json, property_token, "id")) {
-            json_token_to_id(json, next_token, custom_field->id);
+            json_token_to_right_part_of_id16(json, next_token, custom_field->id);
         } else if (json_string_equals(json, property_token, "title")) {
             json_token_to_string(json, next_token, custom_field->title);
         } else if (json_string_equals(json, property_token, "type")) {
@@ -48,13 +48,9 @@ static void process_custom_field(char* json, jsmntok_t*& token) {
         }
     }
 
-    String id_as_string;
-    id_as_string.start = custom_field->id.id;
-    id_as_string.length = ID_16_LENGTH;
+    custom_field->id_hash = hash_id(custom_field->id);
 
-    custom_field->id_hash = hash_string(id_as_string);
-
-    hash_map_put(&id_to_custom_field, custom_field, custom_field->id_hash);
+    id_hash_map_put(&id_to_custom_field, custom_field, custom_field->id_hash);
 }
 
 void process_accounts_data(char* json, u32 data_size, jsmntok_t*&token) {
@@ -81,12 +77,15 @@ void process_accounts_data(char* json, u32 data_size, jsmntok_t*&token) {
             jsmntok_t* next_token = token;
 
             if (json_string_equals(json, property_token, "id")) {
-                json_token_to_id(json, next_token, account->id);
+                json_token_to_id8(json, next_token, account->id);
             } else if (!has_already_requested_a_folder && json_string_equals(json, property_token, "rootFolderId")) {
                 void request_folder_contents(String &folder_id);
 
                 String folder_id;
                 json_token_to_string(json, next_token, folder_id);
+
+                s32 id = 0;
+                json_token_to_right_part_of_id16(json, next_token, id);
 
                 request_folder_contents(folder_id);
 
@@ -98,7 +97,7 @@ void process_accounts_data(char* json, u32 data_size, jsmntok_t*&token) {
 
                 // TODO broken with more than 1 account!
                 custom_fields = (Custom_Field*) malloc(sizeof(Custom_Field) * next_token->size);
-                hash_map_init(&id_to_custom_field, (u32) next_token->size);
+                id_hash_map_init(&id_to_custom_field, (u32) next_token->size);
 
                 for (u32 field_index = 0; field_index < next_token->size; field_index++) {
                     process_custom_field(json, token);

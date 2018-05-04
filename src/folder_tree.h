@@ -5,13 +5,12 @@
 #pragma once
 
 struct Folder_Tree_Node {
+    Folder_Id id;
+    u32 id_hash;
+
     u16 num_children;
-    u16 children_limit;
     Folder_Tree_Node** children;
     String name;
-    u32 id_hash;
-    // TODO I believe folder ids could be kept right in the structure without indirection bc they are always of the same size
-    String id;
 
     bool is_starred;
 };

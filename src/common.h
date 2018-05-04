@@ -1,5 +1,6 @@
 #include <imgui.h>
 #include "xxhash.h"
+#include "base32.h"
 
 #pragma once
 
@@ -10,6 +11,15 @@ typedef unsigned char u8;
 typedef long long s64;
 typedef long s32;
 typedef short s16;
+
+// TODO strong typedefs?
+// TODO hash could be optionally contained within the ID
+typedef s32 Account_Id;
+typedef s32 Folder_Id;
+typedef s32 Task_Id;
+typedef s32 Custom_Field_Id;
+typedef s32 Custom_Status_Id;
+typedef s32 User_Id;
 
 static const u32 hash_seed = 3637;
 
@@ -30,26 +40,6 @@ struct String {
     char* start = NULL;
     u32 length = 0;
 };
-
-// TODO just remove those? Idk
-const int ID_16_LENGTH = 16;
-const int ID_8_LENGTH = 8;
-
-struct Id16 {
-    char id[ID_16_LENGTH];
-};
-
-struct Id8 {
-    char id[ID_8_LENGTH];
-};
-
-inline bool are_ids_equal(Id16* a, Id16* b) {
-    return memcmp(a->id, b->id, ID_16_LENGTH) == 0;
-}
-
-inline bool are_ids_equal(Id8* a, Id8* b) {
-    return memcmp(a->id, b->id, ID_8_LENGTH) == 0;
-}
 
 inline float lerp(float time_from, float time_to, float scale_to, float max) {
     float delta = (time_to - time_from);
@@ -78,17 +68,48 @@ inline bool are_strings_equal(String& a, String& b) {
     return a.length == b.length && strncmp(a.start, b.start, a.length) == 0;
 }
 
-// TODO hack because we need id as string in hash map
-inline bool are_strings_equal(String& a, Id16& b) {
-    return a.length == ID_16_LENGTH && strncmp(a.start, b.id, ID_16_LENGTH) == 0;
-}
-
 inline u32 hash_string(String& string) {
     return XXH32(string.start, string.length, hash_seed);
 }
 
-inline u32 hash_id(Id16& id) {
-    return XXH32(id.id, ID_16_LENGTH, hash_seed);
+inline u32 hash_id(s32 id) {
+    return XXH32(&id, sizeof(id), hash_seed);
+}
+
+inline s32 uchars_to_s32(const u8* chars) {
+    return (((chars[0]       ) << 24) |
+            ((chars[1] & 0xff) << 16) |
+            ((chars[2] & 0xff) <<  8) |
+            ((chars[3] & 0xff)      ));
+}
+
+inline void fill_id8(const u8 type, s32 id, u8* output) {
+    u8 input[] = {
+            type,
+            (u8) (id << 24),
+            (u8) (id << 16),
+            (u8) (id << 8),
+            (u8) id
+    };
+
+    base32_encode(input, ARRAY_SIZE(input), output);
+}
+
+inline void fill_id16(const u8 type1, s32 id1, const u8 type2, s32 id2, u8* output) {
+    u8 input[] = {
+            type1,
+            (u8) (id1 >> 24),
+            (u8) (id1 >> 16),
+            (u8) (id1 >> 8),
+            (u8) id1,
+            type2,
+            (u8) (id2 >> 24),
+            (u8) (id2 >> 16),
+            (u8) (id2 >> 8),
+            (u8) id2
+    };
+
+    base32_encode(input, ARRAY_SIZE(input), output);
 }
 
 s32 string_atoi(String* string);

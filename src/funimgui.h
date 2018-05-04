@@ -9,12 +9,9 @@ class EmscriptenWheelEvent;
 class EmscriptenKeyboardEvent;
 class FunImGui {
 public:
-    static void init();
     static void initGraphics(const char* vertex_shader_source, const char* fragment_shader_source);
     static void initFont();
     static void RenderDrawLists(ImDrawData* drawData);
-    static const char* GetClipboardText(void*);
-    static void SetClipboardText(void*, const char* text);
     static int m_shaderHandle;
     static int m_texture;
     static int m_projectionMatrix;
