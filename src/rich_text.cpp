@@ -402,9 +402,9 @@ void parse_rich_text(String& text, Rich_Text_String*& output, u32& output_size) 
     }
 
     // TODO that's a memory leak right there.
-    // TODO a proper solution would be to use output and output_size and realloc them
+    // TODO a proper solution would be to use output and output_size and REALLOC them
     Array<Rich_Text_String> result_strings{};
-    result_strings.values = (Rich_Text_String*) malloc(sizeof(Rich_Text_String) * text_tokens);
+    result_strings.values = (Rich_Text_String*) MALLOC(sizeof(Rich_Text_String) * text_tokens);
     result_strings.watermark = text_tokens;
 
     u32 index = 0;

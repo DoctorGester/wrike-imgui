@@ -22,7 +22,7 @@ static u32 determine_token_count_and_reallocate_if_needed(char* json) {
     assert(needs_tokens > 0);
 
     if (needs_tokens > 0 && needs_tokens > last_json_token_count) {
-        json_tokens = (jsmntok_t*) realloc(json_tokens, sizeof(jsmntok_t) * needs_tokens);
+        json_tokens = (jsmntok_t*) REALLOC(json_tokens, sizeof(jsmntok_t) * needs_tokens);
         last_json_token_count = (u32) needs_tokens;
     }
 

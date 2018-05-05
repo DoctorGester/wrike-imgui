@@ -4,6 +4,11 @@
 
 #pragma once
 
+#define MALLOC(x) malloc_and_log(__FILE__, __FUNCTION__, __LINE__, x)
+#define CALLOC(x, y) calloc_and_log(__FILE__, __FUNCTION__, __LINE__, x, y)
+#define REALLOC(x, y) realloc_and_log(__FILE__, __FUNCTION__, __LINE__, x, y)
+#define FREE(x) free_and_log(__FILE__, __FUNCTION__, __LINE__, x)
+
 typedef unsigned long long u64;
 typedef unsigned long u32;
 typedef unsigned short u16;
@@ -25,7 +30,10 @@ static const u32 hash_seed = 3637;
 
 u32 argb_to_agbr(u32 argb);
 
-#pragma once
+void* calloc_and_log(const char* file, const char* function, u32 line, size_t num, size_t size);
+void* malloc_and_log(const char* file, const char* function, u32 line, size_t size);
+void* realloc_and_log(const char* file, const char* function, u32 line, void* realloc_what, size_t new_size);
+void free_and_log(const char* file, const char* function, u32 line, void* free_what);
 
 const u32 color_background_dark = argb_to_agbr(0xFF284159);
 const u32 color_link = argb_to_agbr(0x004488ff);

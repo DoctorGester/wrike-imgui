@@ -7,6 +7,7 @@
 #endif
 #include "common.h"
 #include "temporary_storage.h"
+#include "tracing.h"
 
 u32 argb_to_agbr(u32 argb) {
     u32 a = argb & 0xFF000000;
@@ -99,6 +100,8 @@ bool load_png_from_disk(const char* path, Memory_Image& out) {
 
     load_image_into_gpu_memory(out, data);
 
+    // TODO Not using a FREE macro because memory is coming from an outside library
+    // TODO     but honestly we should just record that memory too
     free(data);
 
     return true;

@@ -218,4 +218,5 @@ void FunImGui::initFont() {
     io.Fonts->TexID = (void*) (intptr_t) m_fontTexture;
     glBindTexture(GL_TEXTURE_2D, lastTexture);
 
+    io.Fonts->ClearTexData();
 }

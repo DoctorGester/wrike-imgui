@@ -20,7 +20,7 @@ struct Id_Hash_Map {
 
 template <typename T>
 void id_hash_map_init(Id_Hash_Map<T>* map, u32 total_buckets) {
-    map->buckets = (Hash_Bucket<T>*) calloc(total_buckets, sizeof(Hash_Bucket<T>));
+    map->buckets = (Hash_Bucket<T>*) CALLOC(total_buckets, sizeof(Hash_Bucket<T>));
     map->total_buckets = total_buckets;
     map->size = 0;
 
@@ -32,12 +32,12 @@ void id_hash_map_destroy(Id_Hash_Map<T>* map) {
     if (map->size) {
         for (u32 index = 0; index < map->total_buckets; index++) {
             if (map->buckets[index].contents) {
-                free(map->buckets[index].contents);
+                FREE(map->buckets[index].contents);
             }
         }
     }
 
-    free(map->buckets);
+    FREE(map->buckets);
 }
 
 template <typename T>
@@ -48,7 +48,7 @@ void id_hash_map_clear(Id_Hash_Map<T>* map) {
 
     for (u32 index = 0; index < map->total_buckets; index++) {
         if (map->buckets[index].contents) {
-            free(map->buckets[index].contents);
+            FREE(map->buckets[index].contents);
         }
     }
 
@@ -69,7 +69,7 @@ void id_hash_map_put(Id_Hash_Map<T>* map, T value, u32 hash) {
             target_bucket->size_limit *= 2;
         }
 
-        target_bucket->contents = (T*) realloc(target_bucket->contents, sizeof(T) * target_bucket->size_limit);
+        target_bucket->contents = (T*) REALLOC(target_bucket->contents, sizeof(T) * target_bucket->size_limit);
     }
 
     target_bucket->contents[target_bucket->current_size++] = value;

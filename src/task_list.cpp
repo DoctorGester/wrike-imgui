@@ -47,11 +47,6 @@ struct Folder_Task {
     u32 num_responsible_ids;
 };
 
-struct Parent_Child_Pair {
-    Task_Id parent_id;
-    Folder_Task* child_id;
-};
-
 struct Folder_Header {
     Custom_Field_Id* custom_columns;
     u32 num_custom_columns;
@@ -66,7 +61,6 @@ struct Custom_Status {
     u32 natural_index;
 };
 
-// TODO the bigger the struct, the slower sorting is (bc of copying), might want to consider a faster solution
 struct Sorted_Folder_Task {
     Task_Id id;
     u32 id_hash;
@@ -93,7 +87,6 @@ static Id_Hash_Map<Sorted_Folder_Task*> id_to_sorted_folder_task{};
 static Lazy_Array<Custom_Field_Value, 16> custom_field_values{};
 static Lazy_Array<Task_Id, 16> parent_task_ids{};
 static Lazy_Array<User_Id, 16> responsible_ids{};
-static Lazy_Array<Parent_Child_Pair, 16> parent_child_pairs{};
 static Lazy_Array<Sorted_Folder_Task*, 64> sub_tasks{};
 
 typedef char Sort_Direction;
@@ -195,12 +188,6 @@ static u32 status_group_to_color(Status_Group group) {
     }
 }
 
-static void add_parent_child_pair(Folder_Task* child, Task_Id parent_id) {
-    Parent_Child_Pair* pair = lazy_array_reserve_n_values(parent_child_pairs, 1);
-    pair->parent_id = parent_id;
-    pair->child_id = child;
-}
-
 static inline int compare_tasks_custom_fields(Folder_Task* a, Folder_Task* b, Custom_Field_Type custom_field_type) {
     String* a_value = NULL;
     String* b_value = NULL;
@@ -298,6 +285,14 @@ static void sort_tasks_hierarchically(Sorted_Folder_Task** tasks, u32 length) {
     }
 }
 
+static void update_cached_data_for_sorted_tasks() {
+    // TODO We actually only need to do that once when tasks/workflows combination changes, not for every sort
+    for (u32 index = 0; index < folder_task_count; index++) {
+        Sorted_Folder_Task* sorted_folder_task = &sorted_folder_tasks[index];
+        sorted_folder_task->cached_status = find_task_custom_status(sorted_folder_task->source_task);
+    }
+}
+
 static void sort_by_field(Task_List_Sort_Field sort_by) {
     assert(sort_by != Task_List_Sort_Field_Custom_Field);
 
@@ -307,11 +302,7 @@ static void sort_by_field(Task_List_Sort_Field sort_by) {
         sort_direction = Sort_Direction_Normal;
     }
 
-    // TODO We actually only need to do that once when tasks/workflows combination changes, not for every sort
-    for (u32 index = 0; index < folder_task_count; index++) {
-        Sorted_Folder_Task* sorted_folder_task = &sorted_folder_tasks[index];
-        sorted_folder_task->cached_status = find_task_custom_status(sorted_folder_task->source_task);
-    }
+    update_cached_data_for_sorted_tasks();
 
     sort_field = sort_by;
 
@@ -327,10 +318,7 @@ static void sort_by_custom_field(Custom_Field_Id field_id) {
         sort_direction = Sort_Direction_Normal;
     }
 
-    for (u32 index = 0; index < folder_task_count; index++) {
-        Sorted_Folder_Task* sorted_folder_task = &sorted_folder_tasks[index];
-        sorted_folder_task->cached_status = find_task_custom_status(sorted_folder_task->source_task);
-    }
+    update_cached_data_for_sorted_tasks();
 
     sort_field = Task_List_Sort_Field_Custom_Field;
     sort_custom_field_id = field_id;
@@ -843,7 +831,7 @@ void process_workflows_data(char* json, u32 data_size, jsmntok_t*&token) {
     }
 
     if (custom_statuses_count < total_statuses) {
-        custom_statuses = (Custom_Status*) realloc(custom_statuses, sizeof(Custom_Status) * total_statuses);
+        custom_statuses = (Custom_Status*) REALLOC(custom_statuses, sizeof(Custom_Status) * total_statuses);
     }
 
     custom_statuses_count = 0;
@@ -893,7 +881,7 @@ void process_folder_header_data(char* json, u32 data_size, jsmntok_t*& token) {
         jsmntok_t* next_token = token;
 
         if (json_string_equals(json, property_token, "customColumnIds")) {
-            current_folder.custom_columns = (Custom_Field_Id*) realloc(current_folder.custom_columns, sizeof(Custom_Field_Id) * next_token->size);
+            current_folder.custom_columns = (Custom_Field_Id*) REALLOC(current_folder.custom_columns, sizeof(Custom_Field_Id) * next_token->size);
             current_folder.num_custom_columns = 0;
 
             for (u32 array_index = 0; array_index < next_token->size; array_index++) {
@@ -976,8 +964,8 @@ void process_folder_contents_data(char* json, u32 data_size, jsmntok_t*& token) 
     }
 
     if (folder_task_count < data_size) {
-        folder_tasks = (Folder_Task*) realloc(folder_tasks, sizeof(Folder_Task) * data_size);
-        sorted_folder_tasks = (Sorted_Folder_Task*) realloc(sorted_folder_tasks, sizeof(Sorted_Folder_Task) * data_size);
+        folder_tasks = (Folder_Task*) REALLOC(folder_tasks, sizeof(Folder_Task) * data_size);
+        sorted_folder_tasks = (Sorted_Folder_Task*) REALLOC(sorted_folder_tasks, sizeof(Sorted_Folder_Task) * data_size);
     }
 
     folder_task_count = 0;

@@ -2,7 +2,7 @@
 #include "common.h"
 
 // TODO looks terribly slow to be honest. Though base might be cached when accessing in a loop
-// TODO maybe a lot of malloc/free for SubTaskIds/CustomFieldValues is not a bad idea?
+// TODO maybe a lot of MALLOC/free for SubTaskIds/CustomFieldValues is not a bad idea?
 template <typename T>
 struct Relative_Pointer {
     T** base;
@@ -60,7 +60,7 @@ T* lazy_array_reserve_n_values(Lazy_Array<T, initial_watermark>& array, u32 n) {
 
 //        printf("New WM is %lu, new size %lu\n", array.watermark, sizeof(T) * array.watermark);
 
-        array.data = (T*) realloc(array.data, sizeof(T) * array.watermark);
+        array.data = (T*) REALLOC(array.data, sizeof(T) * array.watermark);
 
 //        printf("Reallocated to %p with size %lu\n", array.data, array.watermark);
     }

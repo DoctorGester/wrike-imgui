@@ -107,7 +107,7 @@ static void process_folder_tree_data_object(char* json, jsmntok_t*& token) {
     }
 
     if (num_children > 0) {
-        new_node->children = (Folder_Tree_Node**) malloc(sizeof(Folder_Tree_Node*) * num_children);
+        new_node->children = (Folder_Tree_Node**) MALLOC(sizeof(Folder_Tree_Node*) * num_children);
     }
 
     id_hash_map_put(&folder_id_to_node_map, new_node, id_hash);
@@ -142,7 +142,7 @@ void match_tree_parent_child_pairs() {
 }
 
 static void process_folder_tree_data(char* json, u32 data_size, jsmntok_t*& token) {
-    all_nodes = (Folder_Tree_Node*) malloc(sizeof(Folder_Tree_Node) * data_size);
+    all_nodes = (Folder_Tree_Node*) MALLOC(sizeof(Folder_Tree_Node) * data_size);
     total_nodes = data_size;
     current_node = 0;
 
@@ -155,7 +155,7 @@ static void process_folder_tree_data(char* json, u32 data_size, jsmntok_t*& toke
 // TODO also we are managing char* json there, but not managing tokens!
 void process_folder_tree_request(char* json, jsmntok_t* tokens, u32 num_tokens) {
     if (json_content) {
-        free(json_content);
+        FREE(json_content);
     }
 
     json_content = json;
@@ -163,7 +163,7 @@ void process_folder_tree_request(char* json, jsmntok_t* tokens, u32 num_tokens) 
     process_json_data_segment(json, tokens, num_tokens, process_folder_tree_data);
     match_tree_parent_child_pairs();
 
-    starred_nodes = (Folder_Tree_Node**) malloc(sizeof(Folder_Tree_Node*) * total_starred);
+    starred_nodes = (Folder_Tree_Node**) MALLOC(sizeof(Folder_Tree_Node*) * total_starred);
 
     for (u32 node_index = 0, starred_counter = 0; node_index < total_nodes; node_index++) {
         Folder_Tree_Node* node = &all_nodes[node_index];

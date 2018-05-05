@@ -55,7 +55,7 @@ static void process_custom_field(char* json, jsmntok_t*& token) {
 
 void process_accounts_data(char* json, u32 data_size, jsmntok_t*&token) {
     if (accounts_count < data_size) {
-        accounts = (Account*) realloc(accounts, sizeof(Account) * data_size);
+        accounts = (Account*) REALLOC(accounts, sizeof(Account) * data_size);
     }
 
     accounts_count = 0;
@@ -96,7 +96,7 @@ void process_accounts_data(char* json, u32 data_size, jsmntok_t*&token) {
                 token++;
 
                 // TODO broken with more than 1 account!
-                custom_fields = (Custom_Field*) malloc(sizeof(Custom_Field) * next_token->size);
+                custom_fields = (Custom_Field*) MALLOC(sizeof(Custom_Field) * next_token->size);
                 id_hash_map_init(&id_to_custom_field, (u32) next_token->size);
 
                 for (u32 field_index = 0; field_index < next_token->size; field_index++) {

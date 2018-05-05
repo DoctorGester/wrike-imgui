@@ -159,7 +159,7 @@ void process_task_data(char* json, u32 data_size, jsmntok_t*& token) {
             assert(next_token->type == JSMN_ARRAY);
 
             if (current_task.num_assignees < next_token->size) {
-                current_task.assignees = (User_Id*) realloc(current_task.assignees, sizeof(User_Id) * next_token->size);
+                current_task.assignees = (User_Id*) REALLOC(current_task.assignees, sizeof(User_Id) * next_token->size);
             }
 
             current_task.num_assignees = 0;
@@ -181,7 +181,7 @@ void process_task_data(char* json, u32 data_size, jsmntok_t*& token) {
 #undef TOKEN_TO_STRING
 
     if (current_task.description) {
-        free(current_task.description);
+        FREE(current_task.description);
     }
 
     current_task.description_strings = 0;
@@ -211,7 +211,7 @@ void process_task_data(char* json, u32 data_size, jsmntok_t*& token) {
     }
 
     String& description_text = current_task.description_text;
-    description_text.start = (char*) realloc(description_text.start, total_text_length);
+    description_text.start = (char*) REALLOC(description_text.start, total_text_length);
     description_text.length = total_text_length;
 
     char* current_location = description_text.start;

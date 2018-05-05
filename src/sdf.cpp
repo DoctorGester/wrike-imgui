@@ -427,8 +427,8 @@ void render_test_sdf_text(float font_size, const float* orthProjection) {
 
     int text_length = strlen(test_text);
 
-    SDF_Vert* vertices = (SDF_Vert*) malloc(sizeof(SDF_Vert) * text_length * 4);
-    ImDrawIdx* indices = (ImDrawIdx*) malloc(sizeof(ImDrawIdx) * text_length * 6);
+    SDF_Vert* vertices = (SDF_Vert*) MALLOC(sizeof(SDF_Vert) * text_length * 4);
+    ImDrawIdx* indices = (ImDrawIdx*) MALLOC(sizeof(ImDrawIdx) * text_length * 6);
 
     SDF_Vert* vertices_pointer = vertices;
     ImDrawIdx* indices_pointer = indices;
@@ -476,6 +476,6 @@ void render_test_sdf_text(float font_size, const float* orthProjection) {
             0
     );
 
-    free(vertices);
-    free(indices);
+    FREE(vertices);
+    FREE(indices);
 }

@@ -73,7 +73,7 @@ static char* file_to_string(const char* file) {
 
     rewind(file_handle);
 
-    char* buffer = (char*) malloc((size + 1) * sizeof(char));
+    char* buffer = (char*) MALLOC((size + 1) * sizeof(char));
     fread(buffer, size, 1, file_handle);
     buffer[size] = '\0';
 
@@ -261,7 +261,7 @@ static void process_completed_api_requests() {
             if (request->status_code_or_zero == 200) {
                 // TODO temporary code!!!!!!
                 // TODO we could just pass data_read + data_length into api_request_success
-                char* null_terminated_request = (char*) malloc(request->data_length + 1);
+                char* null_terminated_request = (char*) MALLOC(request->data_length + 1);
                 memcpy(null_terminated_request, request->data_read, request->data_length);
                 null_terminated_request[request->data_length] = 0;
 
@@ -276,9 +276,9 @@ static void process_completed_api_requests() {
                 printf("%.*s\n", request->data_length, request->data_read);
             }
 
-            free(request->debug_url);
-            free(request->data_read);
-            free(request);
+            FREE(request->debug_url);
+            FREE(request->data_read);
+            FREE(request);
 
             if (num_running_requests > 1) {
                 running_requests[index] = running_requests[num_running_requests - 1];
@@ -396,7 +396,7 @@ static size_t handle_curl_write(char *ptr, size_t size, size_t nmemb, void *user
     u32 received_data_length = size * nmemb;
 
     // TODO very inefficient
-    request->data_read = (char*) realloc(request->data_read, request->data_length + received_data_length);
+    request->data_read = (char*) REALLOC(request->data_read, request->data_length + received_data_length);
     memcpy(request->data_read + request->data_length, ptr, received_data_length);
     request->data_length += received_data_length;
 
@@ -412,7 +412,7 @@ void platform_api_get(Request_Id& request_id, char* url) {
     snprintf(buffer, buffer_length, "%s%s", url_prefix, url);
 
     u32 new_request_index = num_running_requests++;
-    running_requests = (Running_Request**) realloc(running_requests, num_running_requests * sizeof(Running_Request*));
+    running_requests = (Running_Request**) REALLOC(running_requests, num_running_requests * sizeof(Running_Request*));
 
     // TODO cleanup those
     curl_slist* header_chunk = NULL;
@@ -420,10 +420,10 @@ void platform_api_get(Request_Id& request_id, char* url) {
     header_chunk = curl_slist_append(header_chunk, private_token);
 
     // TODO optimize
-    Running_Request* new_request = (Running_Request*) calloc(1, sizeof(Running_Request));
+    Running_Request* new_request = (Running_Request*) CALLOC(1, sizeof(Running_Request));
     new_request->status_code_or_zero = 0;
     new_request->request_id = request_id;
-    new_request->debug_url = (char*) malloc(buffer_length);
+    new_request->debug_url = (char*) MALLOC(buffer_length);
     new_request->started_at = SDL_GetPerformanceCounter();
     memcpy(new_request->debug_url, buffer, buffer_length);
 

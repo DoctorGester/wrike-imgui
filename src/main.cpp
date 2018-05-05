@@ -21,6 +21,7 @@
 #include "task_view.h"
 #include "platform.h"
 #include "base32.h"
+#include "tracing.h"
 
 #define PRINTLIKE(string_index, first_to_check) __attribute__((__format__ (__printf__, string_index, first_to_check)))
 
@@ -120,7 +121,7 @@ static void process_users_data_object(char* json, jsmntok_t*&token) {
 
 static void process_json_content(char*& json_reference, Data_Process_Callback callback, char* json, jsmntok_t* tokens, u32 num_tokens) {
     if (json_reference) {
-        free(json_reference);
+        FREE(json_reference);
     }
 
     json_reference = json;
@@ -130,7 +131,7 @@ static void process_json_content(char*& json_reference, Data_Process_Callback ca
 
 static void process_users_data(char* json, u32 data_size, jsmntok_t*&token) {
     if (users_count < data_size) {
-        users = (User*) realloc(users, sizeof(User) * data_size);
+        users = (User*) REALLOC(users, sizeof(User) * data_size);
     }
 
     users_count = 0;
@@ -401,7 +402,7 @@ void search_folder_tree() {
     }
 
     if (!sorted_nodes) {
-        sorted_nodes = (Sorted_Node*) malloc(sizeof(Sorted_Node) * total_nodes);
+        sorted_nodes = (Sorted_Node*) MALLOC(sizeof(Sorted_Node) * total_nodes);
 
         for (u32 index = 0; index < total_nodes; index++) {
             Sorted_Node& sorted_node = sorted_nodes[index];
@@ -584,6 +585,12 @@ void draw_ui() {
         ImGui::Text("%f %f", io.DisplaySize.x, io.DisplaySize.y);
         ImGui::Text("%f %f", io.DisplayFramebufferScale.x, io.DisplayFramebufferScale.y);
 
+        if (ImGui::ListBoxHeader("Memory allocations", ImVec2(-1, -1))) {
+            draw_memory_records();
+
+            ImGui::ListBoxFooter();
+        }
+
         return;
     }
 
@@ -716,6 +723,16 @@ static void setup_ui_style() {
     style->ScaleAllSizes(platform_get_pixel_ratio());
 }
 
+static void* imgui_malloc_wrapper(size_t size, void* user_data) {
+    (void) user_data;
+    return MALLOC(size);
+}
+
+static void imgui_free_wrapper(void* ptr, void* user_data) {
+    (void) user_data;
+    FREE(ptr);
+}
+
 EXPORT
 bool init()
 {
@@ -723,6 +740,8 @@ bool init()
 
     init_temporary_storage();
     create_imgui_context();
+
+    ImGui::SetAllocatorFunctions(imgui_malloc_wrapper, imgui_free_wrapper);
 
     bool result = platform_init();
 

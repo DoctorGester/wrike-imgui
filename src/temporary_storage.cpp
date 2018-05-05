@@ -3,6 +3,7 @@
 #include <cstring>
 #include <cstdio>
 #include "temporary_storage.h"
+#include "common.h"
 
 static char* pointer_initial = nullptr;
 static char* pointer_current = nullptr;
@@ -11,7 +12,7 @@ static char* pointer_previous = nullptr;
 static const size_t available_memory_bytes = 1024 * 1024 * 16;
 
 void init_temporary_storage() {
-    pointer_initial = static_cast<char*>(malloc(available_memory_bytes));
+    pointer_initial = static_cast<char*>(MALLOC(available_memory_bytes));
     pointer_current = pointer_initial;
 }
 
