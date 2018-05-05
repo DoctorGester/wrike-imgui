@@ -2,6 +2,7 @@
 
 #include <cstdlib>
 #include "common.h"
+#include "lazy_array.h"
 
 template <typename T>
 struct Hash_Bucket {
@@ -11,7 +12,7 @@ struct Hash_Bucket {
 };
 
 template <typename T>
-struct Id_Hash_Map {
+struct Hash_Map {
     u32 total_buckets;
     u32 size;
 
@@ -19,7 +20,7 @@ struct Id_Hash_Map {
 };
 
 template <typename T>
-void id_hash_map_init(Id_Hash_Map<T>* map, u32 total_buckets) {
+void hash_map_init(Hash_Map<T>* map, u32 total_buckets) {
     map->buckets = (Hash_Bucket<T>*) CALLOC(total_buckets, sizeof(Hash_Bucket<T>));
     map->total_buckets = total_buckets;
     map->size = 0;
@@ -28,7 +29,7 @@ void id_hash_map_init(Id_Hash_Map<T>* map, u32 total_buckets) {
 }
 
 template <typename T>
-void id_hash_map_destroy(Id_Hash_Map<T>* map) {
+void hash_map_destroy(Hash_Map<T>* map) {
     if (map->size) {
         for (u32 index = 0; index < map->total_buckets; index++) {
             if (map->buckets[index].contents) {
@@ -41,7 +42,7 @@ void id_hash_map_destroy(Id_Hash_Map<T>* map) {
 }
 
 template <typename T>
-void id_hash_map_clear(Id_Hash_Map<T>* map) {
+void hash_map_clear(Hash_Map<T>* map) {
     if (!map->size) {
         return;
     }
@@ -57,7 +58,7 @@ void id_hash_map_clear(Id_Hash_Map<T>* map) {
 }
 
 template <typename T>
-void id_hash_map_put(Id_Hash_Map<T>* map, T value, u32 hash) {
+void hash_map_put(Hash_Map<T>* map, T value, u32 hash) {
     Hash_Bucket<T>* target_bucket = &map->buckets[hash % map->total_buckets];
 
     const bool children_not_allocated = !target_bucket->contents;
@@ -78,7 +79,7 @@ void id_hash_map_put(Id_Hash_Map<T>* map, T value, u32 hash) {
 }
 
 template <typename T>
-T id_hash_map_get(Id_Hash_Map<T>* map, s32 id_key, u32 hash) {
+T hash_map_get(Hash_Map<T>* map, s32 id_key, u32 hash) {
     Hash_Bucket<T>* target_bucket = &map->buckets[hash % map->total_buckets];
 
     for (u32 i = 0; i < target_bucket->current_size; i++) {

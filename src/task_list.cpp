@@ -2,7 +2,7 @@
 #include <cstdio>
 #include <imgui.h>
 #include <imgui_internal.h>
-#include "hash_map.h"
+#include "id_hash_map.h"
 #include "json.h"
 #include "temporary_storage.h"
 #include "accounts.h"
@@ -82,7 +82,7 @@ static Sorted_Folder_Task* sorted_folder_tasks = NULL;
 static Lazy_Array<Sorted_Folder_Task*, 32> top_level_tasks{};
 static u32 folder_task_count = 0;
 
-static Id_Hash_Map<Sorted_Folder_Task*> id_to_sorted_folder_task{};
+static Id_Hash_Map<Task_Id, Sorted_Folder_Task*> id_to_sorted_folder_task{};
 
 static Lazy_Array<Custom_Field_Value, 16> custom_field_values{};
 static Lazy_Array<Task_Id, 16> parent_task_ids{};
@@ -102,7 +102,7 @@ static bool show_only_active_tasks = true;
 
 static Custom_Status* custom_statuses = NULL;
 static u32 custom_statuses_count = 0;
-static Id_Hash_Map<Custom_Status*> id_to_custom_status = { 0 };
+static Id_Hash_Map<Custom_Status_Id, Custom_Status*> id_to_custom_status = { 0 };
 
 static u32 color_name_to_color_argb(String &color_name) {
     char c = *color_name.start;
@@ -741,7 +741,7 @@ static void process_folder_contents_data_object(char* json, jsmntok_t*& token) {
     sorted_folder_task->id = folder_task->id;
     sorted_folder_task->id_hash = hash_id(folder_task->id);
 
-    id_hash_map_put(&id_to_sorted_folder_task, sorted_folder_task, sorted_folder_task->id_hash);
+    id_hash_map_put(&id_to_sorted_folder_task, sorted_folder_task, folder_task->id, sorted_folder_task->id_hash);
 }
 
 static void process_custom_status(char* json, jsmntok_t*& token, u32 natural_index) {
@@ -794,7 +794,7 @@ static void process_custom_status(char* json, jsmntok_t*& token, u32 natural_ind
 
 //    printf("Got status %.*s with hash %lu\n", custom_status->name.length, custom_status->name.start, custom_status->id_hash);
 
-    id_hash_map_put(&id_to_custom_status, custom_status, custom_status->id_hash);
+    id_hash_map_put(&id_to_custom_status, custom_status, custom_status->id, custom_status->id_hash);
 }
 
 void process_workflows_data(char* json, u32 data_size, jsmntok_t*&token) {
@@ -827,7 +827,7 @@ void process_workflows_data(char* json, u32 data_size, jsmntok_t*&token) {
 
     // TODO hacky, we need to clear the map when it's populated too
     if (id_to_custom_status.size == 0) {
-        id_hash_map_init(&id_to_custom_status, total_statuses);
+        id_hash_map_init(&id_to_custom_status);
     }
 
     if (custom_statuses_count < total_statuses) {
@@ -957,11 +957,11 @@ static void associate_parent_tasks_with_sub_tasks() {
 }
 
 void process_folder_contents_data(char* json, u32 data_size, jsmntok_t*& token) {
-    if (id_to_sorted_folder_task.buckets) {
-        id_hash_map_clear(&id_to_sorted_folder_task);
-    } else {
-        id_hash_map_init(&id_to_sorted_folder_task, data_size);
+    if (id_to_sorted_folder_task.table) {
+        id_hash_map_destroy(&id_to_sorted_folder_task);
     }
+
+    id_hash_map_init(&id_to_sorted_folder_task);
 
     if (folder_task_count < data_size) {
         folder_tasks = (Folder_Task*) REALLOC(folder_tasks, sizeof(Folder_Task) * data_size);

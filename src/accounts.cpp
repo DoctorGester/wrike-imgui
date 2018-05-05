@@ -9,7 +9,7 @@ static u32 custom_fields_count = 0;
 Account* accounts = NULL;
 u32 accounts_count = 0;
 
-Id_Hash_Map<Custom_Field*> id_to_custom_field = { 0 };
+Id_Hash_Map<Custom_Field_Id, Custom_Field*> id_to_custom_field = { 0 };
 
 static void process_custom_field(char* json, jsmntok_t*& token) {
     jsmntok_t* object_token = token++;
@@ -50,7 +50,7 @@ static void process_custom_field(char* json, jsmntok_t*& token) {
 
     custom_field->id_hash = hash_id(custom_field->id);
 
-    id_hash_map_put(&id_to_custom_field, custom_field, custom_field->id_hash);
+    id_hash_map_put(&id_to_custom_field, custom_field, custom_field->id, custom_field->id_hash);
 }
 
 void process_accounts_data(char* json, u32 data_size, jsmntok_t*&token) {
@@ -97,7 +97,7 @@ void process_accounts_data(char* json, u32 data_size, jsmntok_t*&token) {
 
                 // TODO broken with more than 1 account!
                 custom_fields = (Custom_Field*) MALLOC(sizeof(Custom_Field) * next_token->size);
-                id_hash_map_init(&id_to_custom_field, (u32) next_token->size);
+                id_hash_map_init(&id_to_custom_field);
 
                 for (u32 field_index = 0; field_index < next_token->size; field_index++) {
                     process_custom_field(json, token);

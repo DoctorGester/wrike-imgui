@@ -1,6 +1,7 @@
 #include "common.h"
 #include "jsmn.h"
 #include "json.h"
+#include "lazy_array.h"
 
 #pragma once
 
@@ -9,7 +10,7 @@ struct Folder_Tree_Node {
     u32 id_hash;
 
     u16 num_children;
-    Folder_Tree_Node** children;
+    Relative_Pointer<Folder_Tree_Node*> children;
     String name;
 
     bool is_starred;

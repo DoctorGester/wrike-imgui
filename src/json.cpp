@@ -5,28 +5,9 @@
 #include <cstdlib>
 #include <cassert>
 
-static jsmntok_t* json_tokens;
-static u32 last_json_token_count = 0;
-static jsmn_parser json_parser;
-
 void json_token_to_string(char* json, jsmntok_t* token, String &string) {
     string.start = json + token->start;
     string.length = token->end - token->start;
-}
-
-static u32 determine_token_count_and_reallocate_if_needed(char* json) {
-    jsmn_init(&json_parser);
-
-    int needs_tokens = jsmn_parse(&json_parser, json, strlen(json), 0, 10);
-
-    assert(needs_tokens > 0);
-
-    if (needs_tokens > 0 && needs_tokens > last_json_token_count) {
-        json_tokens = (jsmntok_t*) REALLOC(json_tokens, sizeof(jsmntok_t) * needs_tokens);
-        last_json_token_count = (u32) needs_tokens;
-    }
-
-    return (u32) needs_tokens;
 }
 
 void eat_json(jsmntok_t*& token) {
@@ -57,7 +38,17 @@ void eat_json(jsmntok_t*& token) {
 }
 
 jsmntok_t* parse_json_into_tokens(char* content_json, u32& result_parsed_tokens) {
-    u32 num_tokens = determine_token_count_and_reallocate_if_needed(content_json);
+    jsmn_parser json_parser;
+    jsmn_init(&json_parser);
+
+    s32 needs_tokens = jsmn_parse(&json_parser, content_json, strlen(content_json), 0, 10);
+
+    assert(needs_tokens > 0);
+
+    u32 num_tokens = (u32) needs_tokens;
+
+    // TODO what happens if temporary storage size is simply not enough?
+    jsmntok_t* json_tokens = (jsmntok_t*) talloc(sizeof(jsmntok_t) * needs_tokens);
 
     jsmn_init(&json_parser);
     int parsed_tokens = jsmn_parse(&json_parser, content_json, strlen(content_json), json_tokens, num_tokens);

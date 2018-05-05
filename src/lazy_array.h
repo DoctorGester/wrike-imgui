@@ -1,6 +1,8 @@
 #include <cstdlib>
 #include "common.h"
 
+#pragma once
+
 // TODO looks terribly slow to be honest. Though base might be cached when accessing in a loop
 // TODO maybe a lot of MALLOC/free for SubTaskIds/CustomFieldValues is not a bad idea?
 template <typename T>
@@ -87,6 +89,14 @@ Relative_Pointer<T> lazy_array_reserve_n_values_relative_pointer(Lazy_Array<T, i
 template <typename T, u8 initial_watermark>
 inline void lazy_array_soft_reset(Lazy_Array<T, initial_watermark>& lazy_array) {
     lazy_array.length = 0;
+}
+
+template <typename T, u8 initial_watermark>
+inline void lazy_array_clear(Lazy_Array<T, initial_watermark>& lazy_array) {
+    lazy_array.length = 0;
+    lazy_array.watermark = 0;
+    FREE(lazy_array.data);
+    lazy_array.data = NULL;
 }
 
 template <typename T>

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <jsmn.h>
-#include "hash_map.h"
+#include "id_hash_map.h"
 
 enum Custom_Field_Type {
     Custom_Field_Type_None,
@@ -30,6 +30,6 @@ struct Account {
 extern Account* accounts;
 extern u32 accounts_count;
 
-extern Id_Hash_Map<Custom_Field*> id_to_custom_field;
+extern Id_Hash_Map<Custom_Field_Id, Custom_Field*> id_to_custom_field;
 
 void process_accounts_data(char* json, u32 data_size, jsmntok_t*&token);

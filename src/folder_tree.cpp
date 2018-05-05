@@ -1,7 +1,7 @@
 #include "folder_tree.h"
 #include "xxhash.h"
 #include "jsmn.h"
-#include "hash_map.h"
+#include "id_hash_map.h"
 #include "lazy_array.h"
 #include <string.h>
 #include <stdlib.h>
@@ -15,8 +15,9 @@ struct Parent_Child_Pair {
     u32 child_hash;
 };
 
+static Lazy_Array<Folder_Tree_Node*, 64> child_nodes{};
 static Lazy_Array<Parent_Child_Pair, 64> parent_child_pairs{};
-static Id_Hash_Map<Folder_Tree_Node*> folder_id_to_node_map;
+static Id_Hash_Map<Folder_Id, Folder_Tree_Node*> folder_id_to_node_map;
 
 static u32 current_node = 0;
 
@@ -29,8 +30,7 @@ u32 total_nodes;
 u32 total_starred = 0;
 
 void folder_tree_init() {
-    // TODO Probably need some kind of heuristics to determine a good bucket count
-    id_hash_map_init(&folder_id_to_node_map, 2048);
+    id_hash_map_init(&folder_id_to_node_map);
 }
 
 static inline Folder_Tree_Node* find_folder_tree_node_by_id(Folder_Id id, u32 hash) {
@@ -107,10 +107,10 @@ static void process_folder_tree_data_object(char* json, jsmntok_t*& token) {
     }
 
     if (num_children > 0) {
-        new_node->children = (Folder_Tree_Node**) MALLOC(sizeof(Folder_Tree_Node*) * num_children);
+        new_node->children = lazy_array_reserve_n_values_relative_pointer(child_nodes, num_children);
     }
 
-    id_hash_map_put(&folder_id_to_node_map, new_node, id_hash);
+    id_hash_map_put(&folder_id_to_node_map, new_node, new_node->id, id_hash);
 
     bool is_root = strlen("WsRoot") == scope.length && strncmp(scope.start, "WsRoot", scope.length) == 0;
 
@@ -172,4 +172,7 @@ void process_folder_tree_request(char* json, jsmntok_t* tokens, u32 num_tokens) 
             starred_nodes[starred_counter++] = node;
         }
     }
+
+    id_hash_map_destroy(&folder_id_to_node_map);
+    lazy_array_clear(parent_child_pairs);
 }

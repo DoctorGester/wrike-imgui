@@ -15,7 +15,6 @@
 #include "temporary_storage.h"
 #include "rich_text.h"
 #include "render_rich_text.h"
-#include "hash_map.h"
 #include "task_list.h"
 #include "accounts.h"
 #include "task_view.h"
@@ -725,12 +724,15 @@ static void setup_ui_style() {
 
 static void* imgui_malloc_wrapper(size_t size, void* user_data) {
     (void) user_data;
-    return MALLOC(size);
+    return malloc(size);
 }
 
 static void imgui_free_wrapper(void* ptr, void* user_data) {
     (void) user_data;
-    FREE(ptr);
+    // Imgui does that
+    if (ptr) {
+        free(ptr);
+    }
 }
 
 EXPORT
