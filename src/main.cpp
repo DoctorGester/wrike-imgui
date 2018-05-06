@@ -21,6 +21,7 @@
 #include "platform.h"
 #include "base32.h"
 #include "tracing.h"
+#include "users.h"
 
 #define PRINTLIKE(string_index, first_to_check) __attribute__((__format__ (__printf__, string_index, first_to_check)))
 
@@ -50,14 +51,11 @@ static Memory_Image logo;
 
 static Account_Id selected_account_id;
 
-Task_Id selected_folder_task_id;
+Task_Id selected_folder_task_id = 0;
 
 static Folder_Tree_Node* selected_node = NULL; // TODO should be a Task_Id
 
 Task current_task{};
-
-User* users = NULL;
-u32 users_count = 0;
 
 static char* task_json_content = NULL;
 static char* users_json_content = NULL;
@@ -78,6 +76,9 @@ u32 finished_loading_task_at = 0;
 u32 started_loading_statuses_at = 0;
 u32 finished_loading_statuses_at = 0;
 
+u32 started_loading_users_at = 0;
+u32 finished_loading_users_at = 0;
+
 PRINTLIKE(2, 3) static void api_request(Request_Id& request_id, const char* format, ...) {
     va_list args;
     va_start(args, format);
@@ -91,33 +92,6 @@ PRINTLIKE(2, 3) static void api_request(Request_Id& request_id, const char* form
     platform_api_get(request_id, temporary_request_buffer);
 }
 
-static void process_users_data_object(char* json, jsmntok_t*&token) {
-    jsmntok_t* object_token = token++;
-
-    assert(object_token->type == JSMN_OBJECT);
-
-    User* user = &users[users_count++];
-
-    for (u32 propety_index = 0; propety_index < object_token->size; propety_index++, token++) {
-        jsmntok_t* property_token = token++;
-
-        assert(property_token->type == JSMN_STRING);
-
-        jsmntok_t* next_token = token;
-
-        if (json_string_equals(json, property_token, "id")) {
-            json_token_to_id8(json, next_token, user->id);
-        } else if (json_string_equals(json, property_token, "firstName")) {
-            json_token_to_string(json, next_token, user->firstName);
-        } else if (json_string_equals(json, property_token, "lastName")) {
-            json_token_to_string(json, next_token, user->lastName);
-        } else {
-            eat_json(token);
-            token--;
-        }
-    }
-}
-
 static void process_json_content(char*& json_reference, Data_Process_Callback callback, char* json, jsmntok_t* tokens, u32 num_tokens) {
     if (json_reference) {
         FREE(json_reference);
@@ -126,18 +100,6 @@ static void process_json_content(char*& json_reference, Data_Process_Callback ca
     json_reference = json;
 
     process_json_data_segment(json, tokens, num_tokens, callback);
-}
-
-static void process_users_data(char* json, u32 data_size, jsmntok_t*&token) {
-    if (users_count < data_size) {
-        users = (User*) REALLOC(users, sizeof(User) * data_size);
-    }
-
-    users_count = 0;
-
-    for (u32 array_index = 0; array_index < data_size; array_index++) {
-        process_users_data_object(json, token);
-    }
 }
 
 static void select_account() {
@@ -186,6 +148,7 @@ void api_request_success(Request_Id request_id, char* content_json, u32 content_
     } else if (request_id == contacts_request) {
         contacts_request = NO_REQUEST;
         process_json_content(users_json_content, process_users_data, content_json, json_tokens, parsed_tokens);
+        finished_loading_users_at = tick;
     } else if (request_id == accounts_request) {
         accounts_request = NO_REQUEST;
         process_json_content(accounts_json_content, process_accounts_data, content_json, json_tokens, parsed_tokens);
@@ -629,18 +592,18 @@ void draw_ui() {
 
     ImGui::NextColumn();
 
-    bool task_is_loading = task_request != NO_REQUEST;
+    bool task_is_loading = task_request != NO_REQUEST || contacts_request != NO_REQUEST;
 
-    if (/*!selected_folder_task_id.length || */task_is_loading) {
+    if (selected_folder_task_id && !task_is_loading) {
+        draw_task_contents();
+    } else {
         ImGui::ListBoxHeader("##task_content", ImVec2(-1, -1));
 
         if (task_is_loading) {
-            ImGui::LoadingIndicator(started_loading_task_at);
+            ImGui::LoadingIndicator(MIN(started_loading_task_at, started_loading_users_at));
         }
 
         ImGui::ListBoxFooter();
-    } else {
-        draw_task_contents();
     }
 
     ImGui::Columns(1);
@@ -752,6 +715,8 @@ bool init()
     api_request(accounts_request, "accounts?fields=['customFields']");
     api_request(folder_tree_request, "folders?fields=['starred']");
     api_request(contacts_request, "contacts");
+
+    started_loading_users_at = tick;
 
     folder_tree_init();
 

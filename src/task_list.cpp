@@ -9,6 +9,7 @@
 #include "main.h"
 #include "lazy_array.h"
 #include "platform.h"
+#include "users.h"
 
 enum Status_Group {
     Status_Group_Invalid,
@@ -43,8 +44,8 @@ struct Folder_Task {
     Relative_Pointer<Task_Id> parent_task_ids;
     u32 num_parent_task_ids;
 
-    Relative_Pointer<User_Id> responsible_ids;
-    u32 num_responsible_ids;
+    Relative_Pointer<User_Id> assignees;
+    u32 num_assignees;
 };
 
 struct Folder_Header {
@@ -73,7 +74,7 @@ struct Sorted_Folder_Task {
     bool is_expanded;
 };
 
-static const u32 custom_columns_start_index = 2;
+static const u32 custom_columns_start_index = 3;
 
 static Folder_Header current_folder{};
 
@@ -86,7 +87,7 @@ static Id_Hash_Map<Task_Id, Sorted_Folder_Task*> id_to_sorted_folder_task{};
 
 static Lazy_Array<Custom_Field_Value, 16> custom_field_values{};
 static Lazy_Array<Task_Id, 16> parent_task_ids{};
-static Lazy_Array<User_Id, 16> responsible_ids{};
+static Lazy_Array<User_Id, 16> assignee_ids{};
 static Lazy_Array<Sorted_Folder_Task*, 64> sub_tasks{};
 
 typedef char Sort_Direction;
@@ -102,7 +103,7 @@ static bool show_only_active_tasks = true;
 
 static Custom_Status* custom_statuses = NULL;
 static u32 custom_statuses_count = 0;
-static Id_Hash_Map<Custom_Status_Id, Custom_Status*> id_to_custom_status = { 0 };
+static Id_Hash_Map<Custom_Status_Id, Custom_Status*> id_to_custom_status = {};
 
 static u32 color_name_to_color_argb(String &color_name) {
     char c = *color_name.start;
@@ -245,6 +246,37 @@ static inline int compare_folder_tasks_based_on_current_sort(Sorted_Folder_Task*
             return strncmp(a->title.start, b->title.start, MIN(a->title.length, b->title.length)) * sort_direction;
         }
 
+        case Task_List_Sort_Field_Assignee: {
+            if (!a->num_assignees) {
+                return 1;
+            }
+
+            if (!b->num_assignees) {
+                return -1;
+            }
+
+            // TODO all of this could be cached into a Sorted_Task including full name
+            User_Id a_first_assignee = a->assignees[0];
+            User_Id b_first_assignee = b->assignees[0];
+
+            User* a_assignee = find_user_by_id(a_first_assignee);
+
+            if (!a_assignee) {
+                return 1;
+            }
+
+            User* b_assignee = find_user_by_id(b_first_assignee);
+
+            if (!b_assignee) {
+                return -1;
+            }
+
+            String a_name = full_user_name_to_temporary_string(a_assignee);
+            String b_name = full_user_name_to_temporary_string(b_assignee);
+
+            return strncmp(a_name.start, b_name.start, MIN(a_name.length, b_name.length)) * sort_direction;
+        }
+
         case Task_List_Sort_Field_Status: {
             Custom_Status* a_status = as->cached_status;
             Custom_Status* b_status = bs->cached_status;
@@ -322,7 +354,7 @@ static void sort_by_custom_field(Custom_Field_Id field_id) {
 
     sort_field = Task_List_Sort_Field_Custom_Field;
     sort_custom_field_id = field_id;
-    sort_custom_field = id_hash_map_get(&id_to_custom_field, field_id, hash_id(field_id)); // TODO hash cache?
+    sort_custom_field = find_custom_field_by_id(field_id, hash_id(field_id)); // TODO hash cache?
 
     float start = platform_get_app_time_ms();
     sort_tasks_hierarchically(top_level_tasks.data, top_level_tasks.length);
@@ -347,14 +379,28 @@ void draw_task_list_header(float view_width, float custom_column_width, Custom_F
                                      column_to_custom_field[column - custom_columns_start_index] :
                                      NULL;
 
-        if (column == 0) {
-            column_title.start = (char*) "Name";
-            column_title.length = strlen(column_title.start);
-        } else if (column == 1) {
-            column_title.start = (char*) "Status";
-            column_title.length = strlen(column_title.start);
-        } else {
-            column_title = custom_field->title;
+        switch (column) {
+            case 0: {
+                column_title.start = (char*) "Name";
+                column_title.length = strlen(column_title.start);
+                break;
+            }
+
+            case 1: {
+                column_title.start = (char*) "Status";
+                column_title.length = strlen(column_title.start);
+                break;
+            }
+
+            case 2: {
+                column_title.start = (char*) "Assignees";
+                column_title.length = strlen(column_title.start);
+                break;
+            }
+
+            default: {
+                column_title = custom_field->title;
+            }
         }
 
         char* column_title_null_terminated = string_to_temporary_null_terminated_string(column_title);
@@ -378,6 +424,11 @@ void draw_task_list_header(float view_width, float custom_column_width, Custom_F
                     break;
                 }
 
+                case 2: {
+                    sort_by_field(Task_List_Sort_Field_Assignee);
+                    break;
+                }
+
                 default: {
                     sort_by_custom_field(custom_field_id);
                 }
@@ -394,6 +445,11 @@ void draw_task_list_header(float view_width, float custom_column_width, Custom_F
 
             case 1: {
                 sorting_by_this_column = sort_field == Task_List_Sort_Field_Status;
+                break;
+            }
+
+            case 2: {
+                sorting_by_this_column = sort_field == Task_List_Sort_Field_Assignee;
                 break;
             }
 
@@ -465,13 +521,30 @@ void draw_task_column(Sorted_Folder_Task* sorted_task, u32 column, Custom_Field*
             request_task_by_task_id(task->id);
         }
     } else if (column == 1 && id_to_custom_status.size > 0) {
-        if (sorted_task->cached_status) {
-            ImVec4 color = ImGui::ColorConvertU32ToFloat4(sorted_task->cached_status->color);
-            color.w = alpha;
+        ImVec4 color = ImGui::ColorConvertU32ToFloat4(sorted_task->cached_status->color);
+        color.w = alpha;
 
-            ImGui::TextColored(color, "[%.*s]", sorted_task->cached_status->name.length, sorted_task->cached_status->name.start);
-        } else {
-            ImGui::Text("...");
+        ImGui::TextColored(color, "[%.*s]", sorted_task->cached_status->name.length,
+                           sorted_task->cached_status->name.start);
+    } else if (column == 2) {
+        for (u32 assignee_index = 0; assignee_index < task->num_assignees; assignee_index++) {
+            User_Id user_id = task->assignees[assignee_index];
+            User* user = find_user_by_id(user_id);
+            String user_name;
+
+            if (user) {
+                user_name = full_user_name_to_temporary_string(user);
+            } else {
+                user_name.start = (char*) "...";
+                user_name.length = 3;
+            }
+
+            if (assignee_index < task->num_assignees - 1) {
+                ImGui::TextColored(ImVec4(0, 0, 0, alpha), "%.*s,", user_name.length, user_name.start);
+                ImGui::SameLine();
+            } else {
+                ImGui::TextColored(ImVec4(0, 0, 0, alpha), "%.*s", user_name.length, user_name.start);
+            }
         }
     } else if (custom_field_or_null) {
         // TODO seems slow, any better way?
@@ -499,7 +572,7 @@ void map_columns_to_custom_fields(Custom_Field** column_to_custom_field) {
         Custom_Field_Id custom_field_id = current_folder.custom_columns[column];
 
         // TODO hash cache!
-        Custom_Field* custom_field = id_hash_map_get(&id_to_custom_field, custom_field_id, hash_id(custom_field_id));
+        Custom_Field* custom_field = find_custom_field_by_id(custom_field_id, hash_id(custom_field_id));
 
         column_to_custom_field[column] = custom_field;
     }
@@ -555,8 +628,9 @@ void draw_task_list() {
 
     const bool custom_statuses_loaded = custom_statuses_count > 0;
     const bool is_folder_data_loading = folder_contents_request != NO_REQUEST || folder_header_request != NO_REQUEST;
+    const bool are_users_loading = contacts_request != NO_REQUEST;
 
-    if (!is_folder_data_loading && custom_statuses_loaded) {
+    if (!is_folder_data_loading && custom_statuses_loaded && !are_users_loading) {
         if (!has_been_sorted_after_loading) {
             sort_by_field(Task_List_Sort_Field_Title);
             has_been_sorted_after_loading = true;
@@ -565,7 +639,7 @@ void draw_task_list() {
         ImGui::Checkbox("Show only active tasks", &show_only_active_tasks);
         ImGui::Separator();
 
-        u32 loading_end_time = MAX(finished_loading_folder_header_at, MAX(finished_loading_folder_contents_at, finished_loading_statuses_at));
+        u32 loading_end_time = MAX(finished_loading_users_at, MAX(finished_loading_folder_contents_at, finished_loading_statuses_at));
 
         float alpha = lerp(loading_end_time, tick, 1.0f, 8);
 
@@ -620,7 +694,7 @@ void draw_task_list() {
         ImGui::EndColumns();
         ImGui::EndChild();
     } else {
-        ImGui::LoadingIndicator(MIN(started_loading_folder_contents_at, started_loading_statuses_at));
+        ImGui::LoadingIndicator(MIN(started_loading_users_at, MIN(started_loading_folder_contents_at, started_loading_statuses_at)));
     }
 
     ImGui::EndChildFrame();
@@ -664,7 +738,7 @@ static void process_folder_contents_data_object(char* json, jsmntok_t*& token) {
     Folder_Task* folder_task = &folder_tasks[folder_task_count];
     folder_task->num_parent_task_ids = 0;
     folder_task->num_custom_field_values = 0;
-    folder_task->num_responsible_ids = 0;
+    folder_task->num_assignees = 0;
 
     Sorted_Folder_Task* sorted_folder_task = &sorted_folder_tasks[folder_task_count];
     sorted_folder_task->num_sub_tasks = 0;
@@ -694,11 +768,11 @@ static void process_folder_contents_data_object(char* json, jsmntok_t*& token) {
             token++;
 
             if (next_token->size > 0) {
-                folder_task->responsible_ids = lazy_array_reserve_n_values_relative_pointer(responsible_ids, next_token->size);
+                folder_task->assignees = lazy_array_reserve_n_values_relative_pointer(assignee_ids, next_token->size);
             }
 
             for (u32 field_index = 0; field_index < next_token->size; field_index++, token++) {
-                json_token_to_right_part_of_id16(json, token, folder_task->responsible_ids[folder_task->num_responsible_ids++]);
+                json_token_to_id8(json, token, folder_task->assignees[folder_task->num_assignees++]);
             }
 
             token--;

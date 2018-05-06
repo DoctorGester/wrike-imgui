@@ -9,7 +9,7 @@ static u32 custom_fields_count = 0;
 Account* accounts = NULL;
 u32 accounts_count = 0;
 
-Id_Hash_Map<Custom_Field_Id, Custom_Field*> id_to_custom_field = { 0 };
+static Id_Hash_Map<Custom_Field_Id, Custom_Field*> id_to_custom_field = {};
 
 static void process_custom_field(char* json, jsmntok_t*& token) {
     jsmntok_t* object_token = token++;
@@ -51,6 +51,14 @@ static void process_custom_field(char* json, jsmntok_t*& token) {
     custom_field->id_hash = hash_id(custom_field->id);
 
     id_hash_map_put(&id_to_custom_field, custom_field, custom_field->id, custom_field->id_hash);
+}
+
+Custom_Field* find_custom_field_by_id(Custom_Field_Id id, u32 id_hash) {
+    if (!id_hash) {
+        id_hash = hash_id(id);
+    }
+
+    return id_hash_map_get(&id_to_custom_field, id, id_hash);
 }
 
 void process_accounts_data(char* json, u32 data_size, jsmntok_t*&token) {

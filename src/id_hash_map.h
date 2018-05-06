@@ -54,7 +54,7 @@ struct Id_Hash_Entry {
 
 template<typename Key, typename T>
 struct Id_Hash_Map {
-    Id_Hash_Entry<Key, T>* table;
+    Id_Hash_Entry<Key, T>* table = NULL;
     u32 size; // TODO rename this
     u32 rehash;
     u32 max_entries;

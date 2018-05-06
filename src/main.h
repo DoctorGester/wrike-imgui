@@ -24,16 +24,6 @@ struct Task {
     u32 num_assignees = 0;
 };
 
-struct User {
-    User_Id id;
-    String firstName;
-    String lastName;
-};
-
-extern User* users;
-extern u32 users_count;
-
-
 // TODO make this a define?
 extern const Request_Id NO_REQUEST;
 
@@ -55,6 +45,9 @@ extern u32 finished_loading_task_at;
 
 extern u32 started_loading_statuses_at;
 extern u32 finished_loading_statuses_at;
+
+extern u32 started_loading_users_at;
+extern u32 finished_loading_users_at;
 
 extern bool had_last_selected_folder_so_doesnt_need_to_load_the_root_folder;
 

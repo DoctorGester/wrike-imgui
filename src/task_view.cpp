@@ -5,6 +5,7 @@
 #include "rich_text.h"
 #include "render_rich_text.h"
 #include "platform.h"
+#include "users.h"
 
 #include <imgui.h>
 #include <cstdlib>
@@ -30,24 +31,20 @@ void draw_task_contents() {
     for (u32 index = 0; index < current_task.num_assignees; index++) {
         bool is_last = index == (current_task.num_assignees - 1);
 
-        // TODO temporary code, use a hash map!
-        for (u32 user_index = 0; user_index < users_count; user_index++) {
-            User* user = &users[user_index];
+        User_Id user_id = current_task.assignees[index];
+        User* user = find_user_by_id(user_id, hash_id(user_id)); // TODO hash cache
 
-            if (user->id == current_task.assignees[index]) {
-                const char* pattern_last = "%.*s %.*s";
-                const char* pattern_preceding = "%.*s %.*s,";
+        if (user) {
+            const char* pattern_last = "%.*s %.*s";
+            const char* pattern_preceding = "%.*s %.*s,";
 
-                ImGui::TextColored(title_color, is_last ? pattern_last : pattern_preceding,
-                                   user->firstName.length, user->firstName.start,
-                                   user->lastName.length, user->lastName.start
-                );
+            ImGui::TextColored(title_color, is_last ? pattern_last : pattern_preceding,
+                               user->firstName.length, user->firstName.start,
+                               user->lastName.length, user->lastName.start
+            );
 
-                if (!is_last) {
-                    ImGui::SameLine();
-                }
-
-                break;
+            if (!is_last) {
+                ImGui::SameLine();
             }
         }
     }

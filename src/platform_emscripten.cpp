@@ -244,6 +244,8 @@ bool platform_init() {
 
     create_webgl_context();
 
+    frame_pixel_ratio = (float) emscripten_get_device_pixel_ratio();
+
     FunImGui::initGraphics(vertex_shader_source, fragment_shader_source);
 
     register_input_callbacks();
@@ -263,7 +265,7 @@ void platform_begin_frame() {
 
     emscripten_get_canvas_element_size("canvas", &width, &height);
 
-    frame_pixel_ratio = platform_get_pixel_ratio();
+    frame_pixel_ratio = (float) emscripten_get_device_pixel_ratio();
 
     io.DisplaySize = ImVec2((float) width, (float) height);
     io.DisplayFramebufferScale = ImVec2(frame_pixel_ratio, frame_pixel_ratio);
