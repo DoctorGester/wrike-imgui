@@ -11,7 +11,7 @@ void loop();
 typedef signed long Request_Id;
 
 extern "C"
-void api_request_success(Request_Id request_id, char* content_json);
+void api_request_success(Request_Id request_id, char* content_json, u32 content_length);
 
 struct Task {
     String title;

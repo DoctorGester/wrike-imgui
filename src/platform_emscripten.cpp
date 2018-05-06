@@ -32,11 +32,12 @@ static const char* fragment_shader_source =
         "}                                                              \n";
 
 
-static int emscripten_mouse_callback(int eventType, const EmscriptenMouseEvent* mouseEvent, void* /*userData*/)
-{
+static float frame_pixel_ratio = 1.0f;
+
+static int emscripten_mouse_callback(int eventType, const EmscriptenMouseEvent* mouseEvent, void* /*userData*/) {
     float scale = platform_get_pixel_ratio();
     ImGuiIO& io = ImGui::GetIO();
-    io.MousePos = ImVec2((float)mouseEvent->canvasX * scale, (float)mouseEvent->canvasY * scale);
+    io.MousePos = ImVec2((float) mouseEvent->canvasX * scale, (float) mouseEvent->canvasY * scale);
     io.MouseDown[0] = mouseEvent->buttons & 1;
     io.MouseDown[1] = mouseEvent->buttons & 2;
     io.MouseDown[2] = mouseEvent->buttons & 4;
@@ -66,8 +67,7 @@ static int emscripten_touch_callback(int eventType, const EmscriptenTouchEvent *
     return true;
 }
 
-static int emscripten_wheel_callback(int /*eventType*/, const EmscriptenWheelEvent* wheelEvent, void* /*userData*/)
-{
+static int emscripten_wheel_callback(int /*eventType*/, const EmscriptenWheelEvent* wheelEvent, void* /*userData*/) {
     printf("Scroll %f\n", wheelEvent->deltaY);
 
     ImGuiIO& io = ImGui::GetIO();
@@ -82,8 +82,7 @@ static int emscripten_wheel_callback(int /*eventType*/, const EmscriptenWheelEve
     return true;
 }
 
-static int emscripten_keyboard_callback(int eventType, const EmscriptenKeyboardEvent* keyEvent, void* /*userData*/)
-{
+static int emscripten_keyboard_callback(int eventType, const EmscriptenKeyboardEvent* keyEvent, void* /*userData*/) {
     bool handled = true;
     ImGuiIO& io = ImGui::GetIO();
     //let copy paste fall through to browser
@@ -264,10 +263,10 @@ void platform_begin_frame() {
 
     emscripten_get_canvas_element_size("canvas", &width, &height);
 
-    float ratio = platform_get_pixel_ratio();
+    frame_pixel_ratio = platform_get_pixel_ratio();
 
     io.DisplaySize = ImVec2((float) width, (float) height);
-    io.DisplayFramebufferScale = ImVec2(ratio, ratio);
+    io.DisplayFramebufferScale = ImVec2(frame_pixel_ratio, frame_pixel_ratio);
 
     static float last = 0;
 
@@ -305,7 +304,7 @@ void platform_open_in_wrike(String &permalink) {
 }
 
 float platform_get_pixel_ratio() {
-    return (float) emscripten_get_device_pixel_ratio(); // TODO performance overhead, cache
+    return frame_pixel_ratio;
 }
 
 float platform_get_app_time_ms() {

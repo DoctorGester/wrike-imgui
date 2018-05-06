@@ -158,11 +158,11 @@ static void request_workflow_for_account(Account_Id account_id) {
 
 extern "C"
 EXPORT
-void api_request_success(Request_Id request_id, char* content_json) {
+void api_request_success(Request_Id request_id, char* content_json, u32 content_length) {
 //    printf("Got request %lu with content at %p\n", request_id, (void*) content_json);
 
     u32 parsed_tokens;
-    jsmntok_t* json_tokens = parse_json_into_tokens(content_json, parsed_tokens);
+    jsmntok_t* json_tokens = parse_json_into_tokens(content_json, content_length, parsed_tokens);
 
     // TODO simplify, beautify! 3 last arguments are the same, can be a struct
     if (request_id == folder_tree_request) {

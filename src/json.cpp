@@ -1,5 +1,6 @@
 #include "common.h"
 #include "json.h"
+#include "platform.h"
 #include <cstring>
 #include <cstdio>
 #include <cstdlib>
@@ -37,25 +38,59 @@ void eat_json(jsmntok_t*& token) {
     }
 }
 
-jsmntok_t* parse_json_into_tokens(char* content_json, u32& result_parsed_tokens) {
-    jsmn_parser json_parser;
-    jsmn_init(&json_parser);
+static jsmntok_t* parse_json_iteratively(const char* json, u32 json_length, s32 &num_tokens) {
+    jsmn_parser parser;
+    jsmn_init(&parser);
 
-    s32 needs_tokens = jsmn_parse(&json_parser, content_json, strlen(content_json), 0, 10);
+    jsmntok_t* tokens;
 
-    assert(needs_tokens > 0);
+    u32 token_watermark = 16;
 
-    u32 num_tokens = (u32) needs_tokens;
+    tokens = (jsmntok_t*) talloc(sizeof(jsmntok_t) * token_watermark);
 
-    // TODO what happens if temporary storage size is simply not enough?
-    jsmntok_t* json_tokens = (jsmntok_t*) talloc(sizeof(jsmntok_t) * needs_tokens);
+    if (tokens == NULL) {
+        return NULL;
+    }
 
-    jsmn_init(&json_parser);
-    int parsed_tokens = jsmn_parse(&json_parser, content_json, strlen(content_json), json_tokens, num_tokens);
+    try_read_tokens: {
+        s32 return_code = jsmn_parse(&parser, json, json_length, tokens, token_watermark);
 
-    assert(parsed_tokens > 0);
+        if (return_code < 0) {
+            if (return_code == JSMN_ERROR_NOMEM) {
+                u32 prev_count = token_watermark;
+                token_watermark = token_watermark * 2;
+                tokens = (jsmntok_t*) trealloc(
+                        tokens,
+                        sizeof(jsmntok_t) * prev_count,
+                        sizeof(jsmntok_t) * token_watermark
+                );
 
-    printf("Parsed %i tokens\n", parsed_tokens);
+                if (tokens == NULL) {
+                    return NULL;
+                }
+
+                goto try_read_tokens;
+            }
+        } else {
+            num_tokens = return_code;
+            return tokens;
+        }
+    }
+
+    return NULL;
+}
+
+jsmntok_t* parse_json_into_tokens(char* content_json, u32 json_length, u32& result_parsed_tokens) {
+    float start_time = platform_get_app_time_ms();
+
+    s32 num_tokens = 0;
+    jsmntok_t* json_tokens = parse_json_iteratively(content_json, json_length, num_tokens);
+
+    assert(num_tokens > 0);
+
+    u32 parsed_tokens = (u32) num_tokens;
+
+    printf("Parsed %lu tokens in %fms\n", parsed_tokens, platform_get_app_time_ms() - start_time);
 
     result_parsed_tokens = (u32) parsed_tokens;
 

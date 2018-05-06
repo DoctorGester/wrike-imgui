@@ -259,15 +259,9 @@ static void process_completed_api_requests() {
 
         if (request->status_code_or_zero) {
             if (request->status_code_or_zero == 200) {
-                // TODO temporary code!!!!!!
-                // TODO we could just pass data_read + data_length into api_request_success
-                char* null_terminated_request = (char*) MALLOC(request->data_length + 1);
-                memcpy(null_terminated_request, request->data_read, request->data_length);
-                null_terminated_request[request->data_length] = 0;
-
                 u64 start_process_request = SDL_GetPerformanceCounter();
 
-                api_request_success(request->request_id, null_terminated_request);
+                api_request_success(request->request_id, request->data_read, request->data_length);
 
                 u64 delta = SDL_GetPerformanceCounter() - start_process_request;
 
@@ -276,8 +270,8 @@ static void process_completed_api_requests() {
                 printf("%.*s\n", request->data_length, request->data_read);
             }
 
+            // data_read is managed by receiver
             FREE(request->debug_url);
-            FREE(request->data_read);
             FREE(request);
 
             if (num_running_requests > 1) {

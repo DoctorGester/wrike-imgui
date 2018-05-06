@@ -9,7 +9,7 @@ static char* pointer_initial = nullptr;
 static char* pointer_current = nullptr;
 static char* pointer_previous = nullptr;
 
-static const u32 available_memory_bytes = 1024 * 1024 * 4;
+static const u32 available_memory_bytes = 1024 * 1024 * 16;
 
 static void** temporary_heap_pointers = NULL;
 static u32 num_temporary_heap_pointers = 0;
