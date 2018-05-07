@@ -22,6 +22,7 @@
 #include "base32.h"
 #include "tracing.h"
 #include "users.h"
+#include "workflows.h"
 
 #define PRINTLIKE(string_index, first_to_check) __attribute__((__format__ (__printf__, string_index, first_to_check)))
 
@@ -40,6 +41,7 @@ Request_Id accounts_request = NO_REQUEST;
 Request_Id workflows_request = NO_REQUEST;
 
 bool had_last_selected_folder_so_doesnt_need_to_load_the_root_folder = false;
+bool custom_statuses_were_loaded = false;
 
 static bool draw_memory_debug = false;
 static bool draw_side_menu = true;
@@ -158,6 +160,8 @@ void api_request_success(Request_Id request_id, char* content_json, u32 content_
     } else if (request_id == workflows_request) {
         workflows_request = NO_REQUEST;
         process_json_content(workflows_json_content, process_workflows_data, content_json, json_tokens, parsed_tokens);
+
+        custom_statuses_were_loaded = true;
     }
 }
 

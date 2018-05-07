@@ -203,6 +203,10 @@ bool id_hash_map_put(Id_Hash_Map<Key, T>* map, T value, Key key, u32 hash) {
 
 template<typename Key, typename T>
 T id_hash_map_get(Id_Hash_Map<Key, T>* map, Key key, u32 hash) {
+    if (!map->size) {
+        return NULL;
+    }
+
     u32 start_hash_address = hash % map->size;
     u32 hash_address = start_hash_address;
 

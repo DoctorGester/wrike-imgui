@@ -18,8 +18,6 @@
 #include "common.h"
 #include "temporary_storage.h"
 
-#define STB_IMAGE_IMPLEMENTATION
-
 //#include "sdf.h"
 #include "main.h"
 #include "platform.h"

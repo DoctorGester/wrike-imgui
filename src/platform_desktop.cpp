@@ -219,6 +219,21 @@ static void poll_curl_messages() {
 
         printf("GET %s completed with %lu, time: %fs\n", request->debug_url, http_status_code, time);
 
+        double total, name, conn, app, pre, start;
+        curl_easy_getinfo(curl, CURLINFO_TOTAL_TIME, &total);
+        curl_easy_getinfo(curl, CURLINFO_NAMELOOKUP_TIME, &name);
+        curl_easy_getinfo(curl, CURLINFO_CONNECT_TIME, &conn);
+        curl_easy_getinfo(curl, CURLINFO_APPCONNECT_TIME, &app);
+        curl_easy_getinfo(curl, CURLINFO_PRETRANSFER_TIME, &pre);
+        curl_easy_getinfo(curl, CURLINFO_STARTTRANSFER_TIME, &start);
+
+        printf("CURL TIME: total %f\n", total);
+        printf("CURL TIME: name %f\n", name);
+        printf("CURL TIME: conn %f\n", conn);
+        printf("CURL TIME: app %f\n", app);
+        printf("CURL TIME: pre %f\n", pre);
+        printf("CURL TIME: start %f\n", start);
+
         request->status_code_or_zero = http_status_code;
 
         curl_multi_remove_handle(curl_multi, curl);
@@ -427,6 +442,8 @@ void platform_api_get(Request_Id& request_id, char* url) {
     curl_easy_setopt(curl_easy, CURLOPT_PRIVATE, new_request);
     curl_easy_setopt(curl_easy, CURLOPT_WRITEDATA, new_request);
     curl_easy_setopt(curl_easy, CURLOPT_WRITEFUNCTION, &handle_curl_write);
+    curl_easy_setopt(curl_easy, CURLOPT_BUFFERSIZE, CURL_MAX_READ_SIZE);
+
 
     SDL_LockMutex(requests_process_mutex);
 

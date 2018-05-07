@@ -40,8 +40,8 @@ const u32 color_link = argb_to_agbr(0x004488ff);
 
 struct Memory_Image {
     unsigned int texture_id;
-    unsigned width;
-    unsigned height;
+    unsigned width = 0;
+    unsigned height = 0;
 };
 
 struct String {

@@ -20,6 +20,8 @@ struct Task {
     u32 description_strings = 0;
     String description_text{};
 
+    Custom_Status_Id status_id;
+
     User_Id* assignees = NULL;
     u32 num_assignees = 0;
 };
@@ -50,6 +52,7 @@ extern u32 started_loading_users_at;
 extern u32 finished_loading_users_at;
 
 extern bool had_last_selected_folder_so_doesnt_need_to_load_the_root_folder;
+extern bool custom_statuses_were_loaded;
 
 extern u32 tick;
 

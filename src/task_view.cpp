@@ -6,18 +6,210 @@
 #include "render_rich_text.h"
 #include "platform.h"
 #include "users.h"
+#include "workflows.h"
 
 #include <imgui.h>
 #include <cstdlib>
 #include <html_entities.h>
 
+#define IMGUI_DEFINE_MATH_OPERATORS
+#include <imgui_internal.h>
+
+struct RGB {
+    float r;
+    float g;
+    float b;
+};
+
+struct HSL {
+    int h;
+    float s;
+    float l;
+};
+
+static Memory_Image checkmark{};
+
+static HSL rgb_to_hsl(RGB rgb) {
+    HSL hsl;
+
+    float r = rgb.r;
+    float g = rgb.g;
+    float b = rgb.b;
+
+    float min = MIN(MIN(r, g), b);
+    float max = MAX(MAX(r, g), b);
+    float delta = max - min;
+
+    hsl.l = (max + min) / 2;
+
+    if (delta == 0) {
+        hsl.h = 0;
+        hsl.s = 0.0f;
+    } else {
+        hsl.s = (hsl.l <= 0.5) ? (delta / (max + min)) : (delta / (2 - max - min));
+
+        float hue;
+
+        if (r == max) {
+            hue = ((g - b) / 6) / delta;
+        } else if (g == max) {
+            hue = (1.0f / 3) + ((b - r) / 6) / delta;
+        } else {
+            hue = (2.0f / 3) + ((r - g) / 6) / delta;
+        }
+
+        if (hue < 0)
+            hue += 1;
+        if (hue > 1)
+            hue -= 1;
+
+        hsl.h = (int) (hue * 360);
+    }
+
+    return hsl;
+}
+
+static float hue_to_rgb(float v1, float v2, float vH) {
+    if (vH < 0)
+        vH += 1;
+
+    if (vH > 1)
+        vH -= 1;
+
+    if ((6 * vH) < 1)
+        return (v1 + (v2 - v1) * 6 * vH);
+
+    if ((2 * vH) < 1)
+        return v2;
+
+    if ((3 * vH) < 2)
+        return (v1 + (v2 - v1) * ((2.0f / 3) - vH) * 6);
+
+    return v1;
+}
+
+struct RGB hsl_to_rgb(struct HSL hsl) {
+    RGB rgb;
+
+    if (hsl.s == 0) {
+        rgb.r = rgb.g = rgb.b = (u8) (hsl.l * 255);
+    } else {
+        float v1, v2;
+        float hue = (float) hsl.h / 360;
+
+        v2 = (hsl.l < 0.5) ? (hsl.l * (1 + hsl.s)) : ((hsl.l + hsl.s) - (hsl.l * hsl.s));
+        v1 = 2 * hsl.l - v2;
+
+        rgb.r = hue_to_rgb(v1, v2, hue + (1.0f / 3));
+        rgb.g = hue_to_rgb(v1, v2, hue);
+        rgb.b = hue_to_rgb(v1, v2, hue - (1.0f / 3));
+    }
+
+    return rgb;
+}
+
+static u32 change_color_luminance(u32 in_color, float luminance) {
+    ImVec4 color = ImGui::ColorConvertU32ToFloat4(in_color);
+    HSL hsl = rgb_to_hsl({ color.x, color.y, color.z });
+    hsl.l = luminance;
+    RGB rgb_out = hsl_to_rgb(hsl);
+
+    return ImGui::ColorConvertFloat4ToU32({ rgb_out.r, rgb_out.g, rgb_out.b, 1.0f });
+}
+
+static void add_rect_filled(ImDrawList* draw_list, const ImVec2& a, const ImVec2& b, u32 color) {
+    float scale = platform_get_pixel_ratio();
+
+    draw_list->AddRectFilled(a * scale, b * scale, color);
+}
+
+static void add_rect(ImDrawList* draw_list, const ImVec2& a, const ImVec2& b, u32 color) {
+    float scale = platform_get_pixel_ratio();
+
+    draw_list->AddRect(a * scale, b * scale, color);
+}
+
+static void add_text(ImDrawList* draw_list, const ImVec2& pos, u32 color, const char* text_begin, const char* text_end) {
+    float scale = platform_get_pixel_ratio();
+
+    draw_list->AddText(pos * scale, color, text_begin, text_end);
+}
+
+static void add_line(ImDrawList* draw_list, const ImVec2& a, const ImVec2& b, u32 color) {
+    float scale = platform_get_pixel_ratio();
+
+    draw_list->AddLine(a * scale, b * scale, color);
+}
+
+static void add_image(ImDrawList* draw_list, u32 texture_id, const ImVec2& a, const ImVec2& b) {
+    float scale = platform_get_pixel_ratio();
+
+    draw_list->AddImage((void*)(intptr_t) texture_id, a * scale, b * scale);
+}
+
+static void draw_status_selector(Custom_Status* status, float alpha) {
+    float scale = platform_get_pixel_ratio();
+
+    u32 color = change_color_luminance(status->color, 0.42f);
+    u32 bg_color = change_color_luminance(status->color, 0.94f);
+    u32 border_color = change_color_luminance(status->color, 0.89f);
+
+    ImGui::PushFont(font_bold);
+
+    const char* text_begin = status->name.start;
+    const char* text_end = text_begin + status->name.length;
+    ImVec2 text_size = ImGui::CalcTextSize(text_begin, text_end, false) / scale;
+    ImVec2 checkbox_size = ImVec2(18, 18);
+
+    const float left_line_width = 10;
+    const float padding = 21;
+
+    float checkbox_offset_x = left_line_width + padding;
+    float text_offset_x = checkbox_offset_x + checkbox_size.x + 8.0f;
+
+    ImVec2 start = ImGui::GetCursorScreenPos() / scale;
+    ImVec2 size = ImVec2(text_size.x + text_offset_x + padding * 2.0f - left_line_width, 50.0f);
+    ImVec2 checkbox_start = start + ImVec2(checkbox_offset_x, size.y / 2 - checkbox_size.y / 2);
+    ImVec2 text_start = start + ImVec2(text_offset_x, size.y / 2 - text_size.y / 2);
+
+    ImDrawList* draw_list = ImGui::GetWindowDrawList();
+    ImGui::InvisibleButton("status_selector", size * scale);
+
+    add_rect_filled(draw_list, start, start + size, bg_color);
+    add_rect_filled(draw_list, start, start + ImVec2(left_line_width, size.y), color);
+    add_line(draw_list, start + ImVec2(left_line_width, 0), start + ImVec2(size.x, 0), border_color);
+    add_line(draw_list, start + ImVec2(left_line_width, size.y), start + size, border_color);
+    add_line(draw_list, start + ImVec2(left_line_width, 0), start + size, border_color);
+
+    if (status->group == Status_Group_Completed) {
+        add_image(draw_list, checkmark.texture_id, checkbox_start, checkbox_start + checkbox_size);
+    } else {
+        add_rect_filled(draw_list, checkbox_start, checkbox_start + checkbox_size, IM_COL32_WHITE);
+    }
+
+    add_rect(draw_list, checkbox_start, checkbox_start + checkbox_size, color);
+    add_text(draw_list, text_start, IM_COL32_BLACK, text_begin, text_end);
+
+//    ImVec2 arrow_position = text_start + ImVec2(text_size.x + 4, 0);
+//    ImGui::PushStyleColor(ImGuiCol_Text, color);
+//    ImGui::RenderArrow(arrow_position * scale, ImGuiKey_DownArrow, 0.5f);
+//    ImGui::PopStyleColor();
+
+    ImGui::PopFont();
+}
+
 void draw_task_contents() {
+    // TODO temporary code, resource loading should be moved out somewhere
+    if (!checkmark.width) {
+        load_png_from_disk("resources/checkmark_task_complete.png", checkmark);
+    }
+
     float wrap_width = ImGui::GetColumnWidth(-1) - 30.0f; // Accommodate for scroll bar
 
     ImGuiID task_content_id = ImGui::GetID("task_content");
     ImGui::BeginChildFrame(task_content_id, ImVec2(-1, -1), ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
-    float alpha = lerp(finished_loading_task_at, tick, 1.0f, 8);
+    float alpha = lerp(MAX(finished_loading_task_at, finished_loading_users_at), tick, 1.0f, 8);
 
     ImVec4 title_color = ImVec4(0, 0, 0, alpha);
 
@@ -28,6 +220,27 @@ void draw_task_contents() {
     ImGui::PopFont();
     ImGui::PopTextWrapPos();
 
+    ImGui::Separator();
+
+    Custom_Status* status = find_custom_status_by_id(current_task.status_id);
+
+    if (status) {
+        draw_status_selector(status, alpha);
+    } else {
+        ImGui::Text("...");
+    }
+
+    if (current_task.num_assignees) {
+        ImGui::SameLine();
+    }
+
+    // TODO
+    /*
+     * Render at minimum 2 avatar + name as possible, the rest are +X
+     * If 2 avatars with names do not fit, render how many avatars fit,
+     * the rest are +X
+     */
+
     for (u32 index = 0; index < current_task.num_assignees; index++) {
         bool is_last = index == (current_task.num_assignees - 1);
 
@@ -35,12 +248,11 @@ void draw_task_contents() {
         User* user = find_user_by_id(user_id, hash_id(user_id)); // TODO hash cache
 
         if (user) {
-            const char* pattern_last = "%.*s %.*s";
-            const char* pattern_preceding = "%.*s %.*s,";
+            const char* pattern_last = "%.*s %.1s.";
+            const char* pattern_preceding = "%.*s %.1s.,";
 
             ImGui::TextColored(title_color, is_last ? pattern_last : pattern_preceding,
-                               user->firstName.length, user->firstName.start,
-                               user->lastName.length, user->lastName.start
+                               user->firstName.length, user->firstName.start, user->lastName.start
             );
 
             if (!is_last) {
@@ -48,6 +260,8 @@ void draw_task_contents() {
             }
         }
     }
+
+    ImGui::Separator();
 
     if (ImGui::Button("Open in Wrike")) {
         platform_open_in_wrike(current_task.permalink);
@@ -152,6 +366,8 @@ void process_task_data(char* json, u32 data_size, jsmntok_t*& token) {
             TOKEN_TO_STRING(description);
         } else if (IS_PROPERTY("permalink")) {
             TOKEN_TO_STRING(current_task.permalink);
+        } else if (IS_PROPERTY("customStatusId")) {
+            json_token_to_right_part_of_id16(json, next_token, current_task.status_id);
         } else if (IS_PROPERTY("responsibleIds")) {
             assert(next_token->type == JSMN_ARRAY);
 
