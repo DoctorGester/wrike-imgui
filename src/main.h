@@ -13,7 +13,10 @@ typedef signed long Request_Id;
 extern "C"
 void api_request_success(Request_Id request_id, char* content_json, u32 content_length);
 
+// TODO is this just another form of Folder_Task? We could merge them
 struct Task {
+    Task_Id id;
+
     String title;
     String permalink;
     Rich_Text_String* description = NULL;
@@ -22,8 +25,9 @@ struct Task {
 
     Custom_Status_Id status_id;
 
-    User_Id* assignees = NULL;
-    u32 num_assignees = 0;
+    List<Folder_Id> parents{};
+    List<User_Id> authors{};
+    List<User_Id> assignees{};
 };
 
 // TODO make this a define?

@@ -33,7 +33,15 @@ void folder_tree_init() {
     id_hash_map_init(&folder_id_to_node_map);
 }
 
-static inline Folder_Tree_Node* find_folder_tree_node_by_id(Folder_Id id, u32 hash) {
+Folder_Tree_Node* find_folder_tree_node_by_id(Folder_Id id, u32 id_hash) {
+    if (!id_hash) {
+        id_hash = hash_id(id);
+    }
+
+    return id_hash_map_get(&folder_id_to_node_map, id, id_hash);
+}
+
+static inline Folder_Tree_Node* unsafe_find_folder_tree_node_by_id(Folder_Id id, u32 hash) {
     return id_hash_map_get(&folder_id_to_node_map, id, hash);
 }
 
@@ -128,7 +136,7 @@ void match_tree_parent_child_pairs() {
         Parent_Child_Pair& pair = parent_child_pairs[i];
 
         Folder_Tree_Node* parent_node = pair.parent;
-        Folder_Tree_Node* child_node = find_folder_tree_node_by_id(pair.child_id, pair.child_hash);
+        Folder_Tree_Node* child_node = unsafe_find_folder_tree_node_by_id(pair.child_id, pair.child_hash);
 
         if (child_node) {
             found_pairs++;
@@ -173,6 +181,5 @@ void process_folder_tree_request(char* json, jsmntok_t* tokens, u32 num_tokens) 
         }
     }
 
-    id_hash_map_destroy(&folder_id_to_node_map);
     lazy_array_clear(parent_child_pairs);
 }

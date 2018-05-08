@@ -261,6 +261,7 @@ void draw_task_list_header(float view_width, float custom_column_width, Custom_F
 
     ImGui::SetColumnWidth(0, view_width * 0.4f);
     ImGui::SetColumnWidth(1, view_width * 0.2f);
+    ImGui::SetColumnWidth(2, view_width * 0.15f);
 
     for (u32 column = 0; column < current_folder.num_custom_columns; column++) {
         ImGui::SetColumnWidth(custom_columns_start_index + column, custom_column_width);
@@ -421,24 +422,35 @@ void draw_task_column(Sorted_Folder_Task* sorted_task, u32 column, Custom_Field*
         ImGui::TextColored(color, "[%.*s]", sorted_task->cached_status->name.length,
                            sorted_task->cached_status->name.start);
     } else if (column == 2) {
+        bool drawn_at_least_one_user = false;
+
         for (u32 assignee_index = 0; assignee_index < task->num_assignees; assignee_index++) {
             User_Id user_id = task->assignees[assignee_index];
             User* user = find_user_by_id(user_id);
-            String user_name;
 
-            if (user) {
-                user_name = full_user_name_to_temporary_string(user);
-            } else {
-                user_name.start = (char*) "...";
-                user_name.length = 3;
+            if (!user) {
+                continue;
             }
 
-            if (assignee_index < task->num_assignees - 1) {
-                ImGui::TextColored(ImVec4(0, 0, 0, alpha), "%.*s,", user_name.length, user_name.start);
+            drawn_at_least_one_user = true;
+
+            bool is_not_last = assignee_index < task->num_assignees - 1;
+            const char* name_pattern = "%.*s %.1s.";
+
+            if (is_not_last) {
+                name_pattern = "%.*s %.1s.,";
+            }
+
+            ImGui::TextColored(ImVec4(0, 0, 0, alpha), name_pattern,
+                               user->first_name.length, user->first_name.start, user->last_name.start);
+
+            if (is_not_last) {
                 ImGui::SameLine();
-            } else {
-                ImGui::TextColored(ImVec4(0, 0, 0, alpha), "%.*s", user_name.length, user_name.start);
             }
+        }
+
+        if (!drawn_at_least_one_user) {
+            ImGui::Dummy(ImVec2(0.0f, ImGui::GetTextLineHeight()));
         }
     } else if (custom_field_or_null) {
         // TODO seems slow, any better way?
@@ -559,7 +571,7 @@ void draw_task_list() {
 
         float view_width = ImGui::GetContentRegionAvailWidth();
         u32 total_columns = current_folder.num_custom_columns + custom_columns_start_index;
-        float custom_column_width = (view_width * 0.4f);
+        float custom_column_width = (view_width * 0.25f);
 
         if (current_folder.num_custom_columns) {
             custom_column_width /= current_folder.num_custom_columns;
@@ -577,6 +589,7 @@ void draw_task_list() {
 
         ImGui::SetColumnWidth(0, view_width * 0.4f);
         ImGui::SetColumnWidth(1, view_width * 0.2f);
+        ImGui::SetColumnWidth(2, view_width * 0.15f);
 
         for (u32 column = 0; column < current_folder.num_custom_columns; column++) {
             ImGui::SetColumnWidth(custom_columns_start_index + column, custom_column_width);

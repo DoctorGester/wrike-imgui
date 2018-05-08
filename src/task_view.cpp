@@ -14,6 +14,8 @@
 
 #define IMGUI_DEFINE_MATH_OPERATORS
 #include <imgui_internal.h>
+#include <jsmn.h>
+#include <cstdint>
 
 struct RGB {
     float r;
@@ -123,10 +125,10 @@ static void add_rect_filled(ImDrawList* draw_list, const ImVec2& a, const ImVec2
     draw_list->AddRectFilled(a * scale, b * scale, color);
 }
 
-static void add_rect(ImDrawList* draw_list, const ImVec2& a, const ImVec2& b, u32 color) {
+static void add_rect(ImDrawList* draw_list, const ImVec2& a, const ImVec2& b, u32 color, float thickness = 1) {
     float scale = platform_get_pixel_ratio();
 
-    draw_list->AddRect(a * scale, b * scale, color);
+    draw_list->AddRect(a * scale, b * scale, color, 0.0f, ImDrawCornerFlags_All, thickness);
 }
 
 static void add_text(ImDrawList* draw_list, const ImVec2& pos, u32 color, const char* text_begin, const char* text_end) {
@@ -179,7 +181,7 @@ static void draw_status_selector(Custom_Status* status, float alpha) {
     add_rect_filled(draw_list, start, start + ImVec2(left_line_width, size.y), color);
     add_line(draw_list, start + ImVec2(left_line_width, 0), start + ImVec2(size.x, 0), border_color);
     add_line(draw_list, start + ImVec2(left_line_width, size.y), start + size, border_color);
-    add_line(draw_list, start + ImVec2(left_line_width, 0), start + size, border_color);
+    add_line(draw_list, start + ImVec2(size.x, 0), start + size, border_color);
 
     if (status->group == Status_Group_Completed) {
         add_image(draw_list, checkmark.texture_id, checkbox_start, checkbox_start + checkbox_size);
@@ -187,7 +189,7 @@ static void draw_status_selector(Custom_Status* status, float alpha) {
         add_rect_filled(draw_list, checkbox_start, checkbox_start + checkbox_size, IM_COL32_WHITE);
     }
 
-    add_rect(draw_list, checkbox_start, checkbox_start + checkbox_size, color);
+    add_rect(draw_list, checkbox_start, checkbox_start + checkbox_size, color, 2.0f);
     add_text(draw_list, text_start, IM_COL32_BLACK, text_begin, text_end);
 
 //    ImVec2 arrow_position = text_start + ImVec2(text_size.x + 4, 0);
@@ -198,12 +200,147 @@ static void draw_status_selector(Custom_Status* status, float alpha) {
     ImGui::PopFont();
 }
 
+static void draw_parent_folders() {
+    static const ImVec4 font_color_v4 = ImGui::ColorConvertU32ToFloat4(argb_to_agbr(0xff555555));
+    static const u32 border_color = argb_to_agbr(0xffe0e0e0);
+
+    for (u32 parent_index = 0; parent_index < current_task.parents.length; parent_index++) {
+        bool is_last = parent_index == (current_task.parents.length - 1);
+
+        Folder_Id folder_id = current_task.parents[parent_index];
+        Folder_Tree_Node* folder_tree_node = find_folder_tree_node_by_id(folder_id);
+
+        if (folder_tree_node) {
+            ImGui::TextColored(font_color_v4, "%.*s", folder_tree_node->name.length, folder_tree_node->name.start);
+
+            ImVec2 offset = ImVec2(4.0f, 2.0f) * platform_get_pixel_ratio();
+
+            ImGui::GetWindowDrawList()->AddRect(
+                    ImGui::GetItemRectMin() - offset,
+                    ImGui::GetItemRectMax() + offset,
+                    border_color,
+                    2.0f
+            );
+
+            if (!is_last) {
+                ImGui::SameLine();
+            }
+        }
+    }
+}
+
+static void draw_assignees() {
+    // TODO
+    /*
+     * Render at minimum 2 avatar + name as possible, the rest are +X
+     * If 2 avatars with names do not fit, render how many avatars fit,
+     * the rest are +X
+     */
+
+    for (u32 index = 0; index < current_task.assignees.length; index++) {
+        bool is_last = index == (current_task.assignees.length - 1);
+
+        User_Id user_id = current_task.assignees[index];
+        User* user = find_user_by_id(user_id, hash_id(user_id)); // TODO hash cache
+
+        if (user) {
+            const char* pattern_last = "%.*s %.1s.";
+            const char* pattern_preceding = "%.*s %.1s.,";
+
+            ImGui::Text(is_last ? pattern_last : pattern_preceding,
+                        user->first_name.length, user->first_name.start, user->last_name.start
+            );
+
+            if (!is_last) {
+                ImGui::SameLine();
+            }
+        }
+    }
+}
+
+static void draw_authors_and_task_id() {
+    User_Id author_id = current_task.authors[0]; // TODO currently only using the first
+    User* author = find_user_by_id(author_id);
+
+    if (author) {
+        ImGui::SameLine();
+
+        static const u32 color_id_and_author = argb_to_agbr(0xff8c8c8c);
+        ImGui::PushStyleColor(ImGuiCol_Text, color_id_and_author);
+        ImGui::Text("#%lu by %.*s %.1s",
+                    current_task.id,
+                    author->first_name.length, author->first_name.start,
+                    author->last_name);
+        ImGui::PopStyleColor();
+    }
+}
+
+static void draw_task_description(float wrap_width, float alpha) {
+    Rich_Text_String* text_start = current_task.description;
+    Rich_Text_String* text_end = text_start + current_task.description_strings - 1;
+
+    for (Rich_Text_String* paragraph_end = text_start, *paragraph_start = paragraph_end; paragraph_end <= text_end; paragraph_end++) {
+        bool is_newline = paragraph_end->text.length == 0;
+        bool should_flush_text = is_newline || paragraph_end == text_end;
+
+        char* string_start = paragraph_start->text.start;
+        char* string_end = paragraph_end->text.start + paragraph_end->text.length;
+
+        if (is_newline && (string_end - string_start) == 0) {
+            ImGui::NewLine();
+            paragraph_start = paragraph_end + 1;
+            continue;
+        }
+
+        if (should_flush_text && paragraph_end - paragraph_start) {
+#if 0
+            const char* check_mark = "\u2713";
+                const char* check_box = "\u25A1";
+
+                if (paragraph_start->text.length >= 4) {
+                    bool is_check_mark = strncmp(check_mark, paragraph_start->text.start + 1, strlen(check_mark)) == 0;
+                    bool is_check_box = strncmp(check_box, paragraph_start->text.start + 1, strlen(check_box)) == 0;
+
+                    if (is_check_mark || is_check_box) {
+                        ImGui::Checkbox("", &is_check_mark);
+                        ImGui::SameLine();
+                    }
+                }
+#endif
+
+            float indent = paragraph_start->style.list_depth * 15.0f;
+
+            if (indent) {
+                ImGui::Indent(indent);
+                ImGui::Bullet();
+                ImGui::SameLine();
+            }
+
+            add_rich_text(
+                    ImGui::GetWindowDrawList(),
+                    ImGui::GetCursorScreenPos(),
+                    paragraph_start,
+                    paragraph_end,
+                    wrap_width,
+                    alpha
+            );
+
+            if (indent) {
+                ImGui::Unindent(indent);
+            }
+
+            paragraph_start = paragraph_end + 1;
+        }
+    }
+}
+
 void draw_task_contents() {
     // TODO temporary code, resource loading should be moved out somewhere
     if (!checkmark.width) {
         load_png_from_disk("resources/checkmark_task_complete.png", checkmark);
     }
 
+    // TODO modifying alpha of everything is cumbersome, we could use a semi-transparent overlay
     float wrap_width = ImGui::GetColumnWidth(-1) - 30.0f; // Accommodate for scroll bar
 
     ImGuiID task_content_id = ImGui::GetID("task_content");
@@ -220,6 +357,8 @@ void draw_task_contents() {
     ImGui::PopFont();
     ImGui::PopTextWrapPos();
 
+    draw_parent_folders();
+
     ImGui::Separator();
 
     Custom_Status* status = find_custom_status_by_id(current_task.status_id);
@@ -230,35 +369,14 @@ void draw_task_contents() {
         ImGui::Text("...");
     }
 
-    if (current_task.num_assignees) {
+    if (current_task.assignees.length) {
         ImGui::SameLine();
     }
 
-    // TODO
-    /*
-     * Render at minimum 2 avatar + name as possible, the rest are +X
-     * If 2 avatars with names do not fit, render how many avatars fit,
-     * the rest are +X
-     */
+    draw_assignees();
 
-    for (u32 index = 0; index < current_task.num_assignees; index++) {
-        bool is_last = index == (current_task.num_assignees - 1);
-
-        User_Id user_id = current_task.assignees[index];
-        User* user = find_user_by_id(user_id, hash_id(user_id)); // TODO hash cache
-
-        if (user) {
-            const char* pattern_last = "%.*s %.1s.";
-            const char* pattern_preceding = "%.*s %.1s.,";
-
-            ImGui::TextColored(title_color, is_last ? pattern_last : pattern_preceding,
-                               user->firstName.length, user->firstName.start, user->lastName.start
-            );
-
-            if (!is_last) {
-                ImGui::SameLine();
-            }
-        }
+    if (current_task.authors.length) {
+        draw_authors_and_task_id();
     }
 
     ImGui::Separator();
@@ -271,67 +389,35 @@ void draw_task_contents() {
 
     ImGui::BeginChild("task_description_and_comments", ImVec2(-1, -1));
     if (current_task.description_strings > 0) {
-        Rich_Text_String* text_start = current_task.description;
-        Rich_Text_String* text_end = text_start + current_task.description_strings - 1;
-
-        for (Rich_Text_String* paragraph_end = text_start, *paragraph_start = paragraph_end; paragraph_end <= text_end; paragraph_end++) {
-            bool is_newline = paragraph_end->text.length == 0;
-            bool should_flush_text = is_newline || paragraph_end == text_end;
-
-            char* string_start = paragraph_start->text.start;
-            char* string_end = paragraph_end->text.start + paragraph_end->text.length;
-
-            if (is_newline && (string_end - string_start) == 0) {
-                ImGui::NewLine();
-                paragraph_start = paragraph_end + 1;
-                continue;
-            }
-
-            if (should_flush_text && paragraph_end - paragraph_start) {
-#if 0
-                const char* check_mark = "\u2713";
-                const char* check_box = "\u25A1";
-
-                if (paragraph_start->text.length >= 4) {
-                    bool is_check_mark = strncmp(check_mark, paragraph_start->text.start + 1, strlen(check_mark)) == 0;
-                    bool is_check_box = strncmp(check_box, paragraph_start->text.start + 1, strlen(check_box)) == 0;
-
-                    if (is_check_mark || is_check_box) {
-                        ImGui::Checkbox("", &is_check_mark);
-                        ImGui::SameLine();
-                    }
-                }
-#endif
-
-                float indent = paragraph_start->style.list_depth * 15.0f;
-
-                if (indent) {
-                    ImGui::Indent(indent);
-                    ImGui::Bullet();
-                    ImGui::SameLine();
-                }
-
-                add_rich_text(
-                        ImGui::GetWindowDrawList(),
-                        ImGui::GetCursorScreenPos(),
-                        paragraph_start,
-                        paragraph_end,
-                        wrap_width,
-                        alpha
-                );
-
-                if (indent) {
-                    ImGui::Unindent(indent);
-                }
-
-                paragraph_start = paragraph_end + 1;
-            }
-        }
+        draw_task_description(wrap_width, alpha);
     }
-
     ImGui::EndChild();
 
     ImGui::EndChildFrame();
+}
+
+typedef void (*Id_Processor)(char* json, jsmntok_t* token, s32& id);
+
+template <typename T>
+static void token_array_to_id_list(char* json,
+                                   jsmntok_t*& token,
+                                   List<T>& id_list,
+                                   Id_Processor id_processor) {
+    assert(token->type == JSMN_ARRAY);
+
+    if (id_list.length < token->size) {
+        id_list.data = (T*) REALLOC(id_list.data, sizeof(T) * token->size);
+    }
+
+    id_list.length = 0;
+
+    for (u32 array_index = 0, length = (u32) token->size; array_index < length; array_index++) {
+        jsmntok_t* id_token = ++token;
+
+        assert(id_token->type == JSMN_STRING);
+
+        id_processor(json, id_token, id_list[id_list.length++]);
+    }
 }
 
 void process_task_data(char* json, u32 data_size, jsmntok_t*& token) {
@@ -360,7 +446,9 @@ void process_task_data(char* json, u32 data_size, jsmntok_t*& token) {
 #define IS_PROPERTY(s) json_string_equals(json, property_token, (s))
 #define TOKEN_TO_STRING(s) json_token_to_string(json, next_token, (s))
 
-        if (IS_PROPERTY("title")) {
+        if (IS_PROPERTY("id")) {
+            json_token_to_right_part_of_id16(json, next_token, current_task.id);
+        } else if (IS_PROPERTY("title")) {
             TOKEN_TO_STRING(current_task.title);
         } else if (IS_PROPERTY("description")) {
             TOKEN_TO_STRING(description);
@@ -369,21 +457,11 @@ void process_task_data(char* json, u32 data_size, jsmntok_t*& token) {
         } else if (IS_PROPERTY("customStatusId")) {
             json_token_to_right_part_of_id16(json, next_token, current_task.status_id);
         } else if (IS_PROPERTY("responsibleIds")) {
-            assert(next_token->type == JSMN_ARRAY);
-
-            if (current_task.num_assignees < next_token->size) {
-                current_task.assignees = (User_Id*) REALLOC(current_task.assignees, sizeof(User_Id) * next_token->size);
-            }
-
-            current_task.num_assignees = 0;
-
-            for (u32 array_index = 0; array_index < next_token->size; array_index++) {
-                jsmntok_t* id_token = ++token;
-
-                assert(id_token->type == JSMN_STRING);
-
-                json_token_to_id8(json, id_token, current_task.assignees[current_task.num_assignees++]);
-            }
+            token_array_to_id_list(json, token, current_task.assignees, json_token_to_id8);
+        } else if (IS_PROPERTY("authorIds")) {
+            token_array_to_id_list(json, token, current_task.authors, json_token_to_id8);
+        } else if (IS_PROPERTY("parentIds")) {
+            token_array_to_id_list(json, token, current_task.parents, json_token_to_right_part_of_id16);
         } else {
             eat_json(token);
             token--;

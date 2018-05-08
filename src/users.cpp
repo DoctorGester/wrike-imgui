@@ -24,9 +24,9 @@ static void process_users_data_object(char* json, jsmntok_t*&token) {
         if (json_string_equals(json, property_token, "id")) {
             json_token_to_id8(json, next_token, user->id);
         } else if (json_string_equals(json, property_token, "firstName")) {
-            json_token_to_string(json, next_token, user->firstName);
+            json_token_to_string(json, next_token, user->first_name);
         } else if (json_string_equals(json, property_token, "lastName")) {
-            json_token_to_string(json, next_token, user->lastName);
+            json_token_to_string(json, next_token, user->last_name);
         } else {
             eat_json(token);
             token--;

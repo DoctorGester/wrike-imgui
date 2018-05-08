@@ -49,6 +49,24 @@ struct String {
     u32 length = 0;
 };
 
+template<typename T>
+struct List {
+    T* data = NULL;
+    u32 length = 0;
+
+    T& operator *() {
+        return data;
+    }
+
+    T& operator [](const int index) {
+        return data[index];
+    }
+
+    T* operator ->() {
+        return *data;
+    }
+};
+
 inline float lerp(float time_from, float time_to, float scale_to, float max) {
     float delta = (time_to - time_from);
 
