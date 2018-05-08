@@ -13,6 +13,11 @@ typedef signed long Request_Id;
 extern "C"
 void api_request_success(Request_Id request_id, char* content_json, u32 content_length);
 
+struct Custom_Field_Value {
+    Custom_Field_Id field_id;
+    String value;
+};
+
 // TODO is this just another form of Folder_Task? We could merge them
 struct Task {
     Task_Id id;
@@ -25,6 +30,8 @@ struct Task {
 
     Custom_Status_Id status_id;
 
+    List<Custom_Field_Value> custom_field_values{};
+    List<Custom_Field_Id> inherited_custom_fields{};
     List<Folder_Id> parents{};
     List<User_Id> authors{};
     List<User_Id> assignees{};

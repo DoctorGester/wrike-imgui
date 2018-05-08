@@ -269,7 +269,7 @@ static void request_task_by_full_id(String &full_id) {
 
     platform_local_storage_set("last_selected_task", full_id);
 
-    api_request(task_request, "tasks/%.*s", full_id.length, full_id.start);
+    api_request(task_request, "tasks/%.*s?fields=['inheritedCustomColumnIds']", full_id.length, full_id.start);
     started_loading_task_at = tick;
 }
 

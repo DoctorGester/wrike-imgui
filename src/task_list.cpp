@@ -11,6 +11,7 @@
 #include "platform.h"
 #include "users.h"
 #include "workflows.h"
+#include "task_view.h"
 
 enum Task_List_Sort_Field {
     Task_List_Sort_Field_None,
@@ -18,11 +19,6 @@ enum Task_List_Sort_Field {
     Task_List_Sort_Field_Status,
     Task_List_Sort_Field_Assignee,
     Task_List_Sort_Field_Custom_Field
-};
-
-struct Custom_Field_Value {
-    Custom_Field_Id field_id;
-    String value;
 };
 
 struct Folder_Task {
@@ -606,36 +602,6 @@ void draw_task_list() {
     ImGui::EndChildFrame();
 }
 
-static void process_folder_task_custom_field(Custom_Field_Value* custom_field_value, char* json, jsmntok_t*& token) {
-    jsmntok_t* object_token = token++;
-
-    assert(object_token->type == JSMN_OBJECT);
-
-    bool has_id = false;
-
-    for (u32 propety_index = 0; propety_index < object_token->size; propety_index++, token++) {
-        jsmntok_t* property_token = token++;
-
-        assert(property_token->type == JSMN_STRING);
-
-        jsmntok_t* next_token = token;
-
-        if (json_string_equals(json, property_token, "id")) {
-            json_token_to_right_part_of_id16(json, next_token, custom_field_value->field_id);
-            has_id = true;
-        } else if (json_string_equals(json, property_token, "value")) {
-            json_token_to_string(json, next_token, custom_field_value->value);
-        } else {
-            eat_json(token);
-            token--;
-        }
-    }
-
-    if (!has_id) {
-        printf("Custom field has no id...\n");
-    }
-}
-
 static void process_folder_contents_data_object(char* json, jsmntok_t*& token) {
     jsmntok_t* object_token = token++;
 
@@ -708,7 +674,8 @@ static void process_folder_contents_data_object(char* json, jsmntok_t*& token) {
             for (u32 field_index = 0; field_index < next_token->size; field_index++) {
                 Custom_Field_Value* value = &folder_task->custom_field_values[folder_task->num_custom_field_values++];
 
-                process_folder_task_custom_field(value, json, token);
+                // TODO a dependency on task_view is not really good, should we move the code somewhere else?
+                process_task_custom_field_value(value, json, token);
             }
 
             token--;

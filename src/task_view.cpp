@@ -200,10 +200,32 @@ static void draw_status_selector(Custom_Status* status, float alpha) {
     ImGui::PopFont();
 }
 
-static void draw_parent_folders() {
-    static const ImVec4 font_color_v4 = ImGui::ColorConvertU32ToFloat4(argb_to_agbr(0xff555555));
+static void draw_parent_folder(Folder_Tree_Node* folder) {
     static const u32 border_color = argb_to_agbr(0xffe0e0e0);
+    static const u32 text_color = argb_to_agbr(0xff555555);
 
+    const char* text_begin = folder->name.start;
+    const char* text_end = text_begin + folder->name.length;
+
+    ImVec2 offset = ImVec2(4.0f, 2.0f) * platform_get_pixel_ratio();
+    ImVec2 text_size = ImGui::CalcTextSize(text_begin, text_end);
+    ImVec2 start = ImGui::GetCursorScreenPos();
+    ImVec2 size = text_size + offset * 2;
+
+    // Make ID unique when actually using it
+    ImGui::InvisibleButton("folder_ticker", size);
+
+    ImGui::GetWindowDrawList()->AddRect(
+            start,
+            start + size,
+            border_color,
+            2.0f
+    );
+
+    ImGui::GetWindowDrawList()->AddText(start + offset, text_color, text_begin, text_end);
+}
+
+static void draw_parent_folders() {
     for (u32 parent_index = 0; parent_index < current_task.parents.length; parent_index++) {
         bool is_last = parent_index == (current_task.parents.length - 1);
 
@@ -211,16 +233,7 @@ static void draw_parent_folders() {
         Folder_Tree_Node* folder_tree_node = find_folder_tree_node_by_id(folder_id);
 
         if (folder_tree_node) {
-            ImGui::TextColored(font_color_v4, "%.*s", folder_tree_node->name.length, folder_tree_node->name.start);
-
-            ImVec2 offset = ImVec2(4.0f, 2.0f) * platform_get_pixel_ratio();
-
-            ImGui::GetWindowDrawList()->AddRect(
-                    ImGui::GetItemRectMin() - offset,
-                    ImGui::GetItemRectMax() + offset,
-                    border_color,
-                    2.0f
-            );
+            draw_parent_folder(folder_tree_node);
 
             if (!is_last) {
                 ImGui::SameLine();
@@ -420,6 +433,29 @@ static void token_array_to_id_list(char* json,
     }
 }
 
+void process_task_custom_field_value(Custom_Field_Value* custom_field_value, char* json, jsmntok_t*& token) {
+    jsmntok_t* object_token = token++;
+
+    assert(object_token->type == JSMN_OBJECT);
+
+    for (u32 propety_index = 0; propety_index < object_token->size; propety_index++, token++) {
+        jsmntok_t* property_token = token++;
+
+        assert(property_token->type == JSMN_STRING);
+
+        jsmntok_t* next_token = token;
+
+        if (json_string_equals(json, property_token, "id")) {
+            json_token_to_right_part_of_id16(json, next_token, custom_field_value->field_id);
+        } else if (json_string_equals(json, property_token, "value")) {
+            json_token_to_string(json, next_token, custom_field_value->value);
+        } else {
+            eat_json(token);
+            token--;
+        }
+    }
+}
+
 void process_task_data(char* json, u32 data_size, jsmntok_t*& token) {
     // The task stopped existing?
     if (data_size == 0) {
@@ -462,6 +498,29 @@ void process_task_data(char* json, u32 data_size, jsmntok_t*& token) {
             token_array_to_id_list(json, token, current_task.authors, json_token_to_id8);
         } else if (IS_PROPERTY("parentIds")) {
             token_array_to_id_list(json, token, current_task.parents, json_token_to_right_part_of_id16);
+        } else if (IS_PROPERTY("inheritedCustomColumns")) {
+            token_array_to_id_list(json, token, current_task.inherited_custom_fields, json_token_to_right_part_of_id16);
+        } else if (IS_PROPERTY("customFields")) {
+            assert(next_token->type == JSMN_ARRAY);
+
+            token++;
+
+            if (current_task.custom_field_values.length < token->size) {
+                current_task.custom_field_values.data = (Custom_Field_Value*) REALLOC(
+                        current_task.custom_field_values.data,
+                        sizeof(Custom_Field_Value) * token->size
+                );
+            }
+
+            current_task.custom_field_values.length = 0;
+
+            for (u32 field_index = 0; field_index < next_token->size; field_index++) {
+                Custom_Field_Value* value = &current_task.custom_field_values[current_task.custom_field_values.length++];
+
+                process_task_custom_field_value(value, json, token);
+            }
+
+            token--;
         } else {
             eat_json(token);
             token--;
