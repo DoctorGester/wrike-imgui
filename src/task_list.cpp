@@ -542,6 +542,14 @@ void draw_task_list() {
         }
 
         ImGui::Checkbox("Show only active tasks", &show_only_active_tasks);
+        ImGui::SameLine();
+
+        if (ImGui::Button("Expand all")) {
+            for (u32 index = 0; index < folder_task_count; index++) {
+                sorted_folder_tasks[index].is_expanded = true;
+            }
+        }
+
         ImGui::Separator();
 
         u32 loading_end_time = MAX(finished_loading_users_at, MAX(finished_loading_folder_contents_at, finished_loading_statuses_at));
