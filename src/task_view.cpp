@@ -7,6 +7,7 @@
 #include "platform.h"
 #include "users.h"
 #include "workflows.h"
+#include "accounts.h"
 
 #include <imgui.h>
 #include <cstdlib>
@@ -119,36 +120,6 @@ static u32 change_color_luminance(u32 in_color, float luminance) {
     return ImGui::ColorConvertFloat4ToU32({ rgb_out.r, rgb_out.g, rgb_out.b, 1.0f });
 }
 
-static void add_rect_filled(ImDrawList* draw_list, const ImVec2& a, const ImVec2& b, u32 color) {
-    float scale = platform_get_pixel_ratio();
-
-    draw_list->AddRectFilled(a * scale, b * scale, color);
-}
-
-static void add_rect(ImDrawList* draw_list, const ImVec2& a, const ImVec2& b, u32 color, float thickness = 1) {
-    float scale = platform_get_pixel_ratio();
-
-    draw_list->AddRect(a * scale, b * scale, color, 0.0f, ImDrawCornerFlags_All, thickness);
-}
-
-static void add_text(ImDrawList* draw_list, const ImVec2& pos, u32 color, const char* text_begin, const char* text_end) {
-    float scale = platform_get_pixel_ratio();
-
-    draw_list->AddText(pos * scale, color, text_begin, text_end);
-}
-
-static void add_line(ImDrawList* draw_list, const ImVec2& a, const ImVec2& b, u32 color) {
-    float scale = platform_get_pixel_ratio();
-
-    draw_list->AddLine(a * scale, b * scale, color);
-}
-
-static void add_image(ImDrawList* draw_list, u32 texture_id, const ImVec2& a, const ImVec2& b) {
-    float scale = platform_get_pixel_ratio();
-
-    draw_list->AddImage((void*)(intptr_t) texture_id, a * scale, b * scale);
-}
-
 static void draw_status_selector(Custom_Status* status, float alpha) {
     float scale = platform_get_pixel_ratio();
 
@@ -160,37 +131,37 @@ static void draw_status_selector(Custom_Status* status, float alpha) {
 
     const char* text_begin = status->name.start;
     const char* text_end = text_begin + status->name.length;
-    ImVec2 text_size = ImGui::CalcTextSize(text_begin, text_end, false) / scale;
-    ImVec2 checkbox_size = ImVec2(18, 18);
+    ImVec2 text_size = ImGui::CalcTextSize(text_begin, text_end, false);
+    ImVec2 checkbox_size = ImVec2(18, 18) * scale;
 
-    const float left_line_width = 10;
-    const float padding = 21;
+    const float left_line_width = 10 * scale;
+    const float padding = 21 * scale;
 
     float checkbox_offset_x = left_line_width + padding;
-    float text_offset_x = checkbox_offset_x + checkbox_size.x + 8.0f;
+    float text_offset_x = checkbox_offset_x + checkbox_size.x + 8.0f * scale;
 
-    ImVec2 start = ImGui::GetCursorScreenPos() / scale;
-    ImVec2 size = ImVec2(text_size.x + text_offset_x + padding * 2.0f - left_line_width, 50.0f);
+    ImVec2 start = ImGui::GetCursorScreenPos();
+    ImVec2 size = ImVec2(text_size.x + text_offset_x + padding * 2.0f - left_line_width, 50.0f * scale);
     ImVec2 checkbox_start = start + ImVec2(checkbox_offset_x, size.y / 2 - checkbox_size.y / 2);
     ImVec2 text_start = start + ImVec2(text_offset_x, size.y / 2 - text_size.y / 2);
 
     ImDrawList* draw_list = ImGui::GetWindowDrawList();
-    ImGui::InvisibleButton("status_selector", size * scale);
+    ImGui::InvisibleButton("status_selector", size);
 
-    add_rect_filled(draw_list, start, start + size, bg_color);
-    add_rect_filled(draw_list, start, start + ImVec2(left_line_width, size.y), color);
-    add_line(draw_list, start + ImVec2(left_line_width, 0), start + ImVec2(size.x, 0), border_color);
-    add_line(draw_list, start + ImVec2(left_line_width, size.y), start + size, border_color);
-    add_line(draw_list, start + ImVec2(size.x, 0), start + size, border_color);
+    draw_list->AddRectFilled(start, start + size, bg_color);
+    draw_list->AddRectFilled(start, start + ImVec2(left_line_width, size.y), color);
+    draw_list->AddLine(start + ImVec2(left_line_width, 0), start + ImVec2(size.x, 0), border_color);
+    draw_list->AddLine(start + ImVec2(left_line_width, size.y), start + size, border_color);
+    draw_list->AddLine(start + ImVec2(size.x, 0), start + size, border_color);
 
     if (status->group == Status_Group_Completed) {
-        add_image(draw_list, checkmark.texture_id, checkbox_start, checkbox_start + checkbox_size);
+        draw_list->AddImage((void*)(intptr_t) checkmark.texture_id, checkbox_start, checkbox_start + checkbox_size);
     } else {
-        add_rect_filled(draw_list, checkbox_start, checkbox_start + checkbox_size, IM_COL32_WHITE);
+        draw_list->AddRectFilled(checkbox_start, checkbox_start + checkbox_size, IM_COL32_WHITE);
     }
 
-    add_rect(draw_list, checkbox_start, checkbox_start + checkbox_size, color, 2.0f);
-    add_text(draw_list, text_start, IM_COL32_BLACK, text_begin, text_end);
+    draw_list->AddRect(checkbox_start, checkbox_start + checkbox_size, color, 0.0f, ImDrawCornerFlags_All, 2.0f);
+    draw_list->AddText(text_start, IM_COL32_BLACK, text_begin, text_end);
 
 //    ImVec2 arrow_position = text_start + ImVec2(text_size.x + 4, 0);
 //    ImGui::PushStyleColor(ImGuiCol_Text, color);
@@ -200,7 +171,7 @@ static void draw_status_selector(Custom_Status* status, float alpha) {
     ImGui::PopFont();
 }
 
-static void draw_parent_folder(Folder_Tree_Node* folder) {
+static void draw_parent_folder(Folder_Tree_Node* folder, bool can_wrap, float wrap_pos) {
     static const u32 border_color = argb_to_agbr(0xffe0e0e0);
     static const u32 text_color = argb_to_agbr(0xff555555);
 
@@ -209,8 +180,15 @@ static void draw_parent_folder(Folder_Tree_Node* folder) {
 
     ImVec2 offset = ImVec2(4.0f, 2.0f) * platform_get_pixel_ratio();
     ImVec2 text_size = ImGui::CalcTextSize(text_begin, text_end);
-    ImVec2 start = ImGui::GetCursorScreenPos();
     ImVec2 size = text_size + offset * 2;
+
+    float window_start_x = ImGui::GetCursorPosX();
+
+    if (window_start_x + size.x > wrap_pos && can_wrap) {
+        ImGui::NewLine();
+    }
+
+    ImVec2 start = ImGui::GetCursorScreenPos();
 
     // Make ID unique when actually using it
     ImGui::InvisibleButton("folder_ticker", size);
@@ -225,7 +203,7 @@ static void draw_parent_folder(Folder_Tree_Node* folder) {
     ImGui::GetWindowDrawList()->AddText(start + offset, text_color, text_begin, text_end);
 }
 
-static void draw_parent_folders() {
+static void draw_parent_folders(float wrap_pos) {
     for (u32 parent_index = 0; parent_index < current_task.parents.length; parent_index++) {
         bool is_last = parent_index == (current_task.parents.length - 1);
 
@@ -233,7 +211,7 @@ static void draw_parent_folders() {
         Folder_Tree_Node* folder_tree_node = find_folder_tree_node_by_id(folder_id);
 
         if (folder_tree_node) {
-            draw_parent_folder(folder_tree_node);
+            draw_parent_folder(folder_tree_node, parent_index > 0, wrap_pos);
 
             if (!is_last) {
                 ImGui::SameLine();
@@ -286,6 +264,158 @@ static void draw_authors_and_task_id() {
                     author->last_name);
         ImGui::PopStyleColor();
     }
+}
+
+// TODO a naive and slow approach, could cache
+static Custom_Field_Value* find_custom_field_value_by_custom_field_id(Custom_Field_Id id) {
+    for (u32 value_index = 0; value_index < current_task.custom_field_values.length; value_index++) {
+        Custom_Field_Value* value = &current_task.custom_field_values.data[value_index];
+
+        if (value->field_id == id) {
+            return value;
+        }
+    }
+
+    return NULL;
+}
+
+static const char* get_custom_field_placeholder_text_by_custom_field_type(Custom_Field_Type type) {
+    switch (type) {
+        default: return "Enter data";
+        case Custom_Field_Type_DropDown: return "Select";
+        case Custom_Field_Type_Contacts: return "Add User";
+        case Custom_Field_Type_Date: return "mm/dd/yy";
+    }
+}
+
+static bool draw_custom_fields(float wrap_pos) {
+    static const u32 key_value_text_color = argb_to_agbr(0xff111111);
+    static const u32 placeholder_text_color = argb_to_agbr(0xffaeaeae);
+    static const u32 border_color = argb_to_agbr(0xffeeeeee);
+    static const u32 background_color = argb_to_agbr(0xfffafafa);
+
+    bool drew_at_least_one_custom_field = false;
+
+    ImGui::PushFont(font_bold);
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2());
+
+    ImVec2 top_left_corner = ImGui::GetCursorScreenPos();
+    float previous_line_end_x = top_left_corner.x;
+
+    ImDrawList* draw_list = ImGui::GetWindowDrawList();
+
+    // Save to restore them later
+    // We need to keep the sizes instead of raw pointers because buffer resizes might occur
+    s32 vtx_buffer_old_size = draw_list->VtxBuffer.Size;
+    s32 idx_buffer_old_size = draw_list->IdxBuffer.Size;
+    u32 vtx_background_idx = draw_list->_VtxCurrentIdx;
+
+    // Reserve buffer space to fill later when we know the total size
+    draw_list->PrimReserve(6, 4);
+
+    for (u32 field_index = 0; field_index < current_task.inherited_custom_fields.length; field_index++) {
+        Custom_Field_Id custom_field_id = current_task.inherited_custom_fields[field_index];
+        Custom_Field* custom_field = find_custom_field_by_id(custom_field_id);
+
+        if (!custom_field) {
+            continue;
+        }
+
+        drew_at_least_one_custom_field = true;
+
+        Custom_Field_Value* possible_value = find_custom_field_value_by_custom_field_id(custom_field_id);
+
+        const char* key_text_begin = custom_field->title.start;
+        const char* key_text_end = key_text_begin + custom_field->title.length;
+
+        ImVec2 cursor = ImGui::GetCursorPos();
+        ImVec2 key_text_size = ImGui::CalcTextSize(key_text_begin, key_text_end, false);
+
+        const float scale = platform_get_pixel_ratio();
+        const ImVec2 padding = ImVec2(27.0f, 5.0f) * scale;
+        const ImVec2 text_margin_right = ImVec2(9.0f, 0.0f) * scale;
+
+        ImVec2 value_size = ImVec2(100.0f * scale, key_text_size.y + padding.y * 2);
+
+        String value_text;
+
+        if (possible_value) {
+            value_text = possible_value->value;
+        } else {
+            const char* placeholder_text = get_custom_field_placeholder_text_by_custom_field_type(custom_field->type);
+
+            value_text.start = (char*) placeholder_text;
+            value_text.length = (u32) strlen(placeholder_text);
+        }
+
+        ImVec2 box_size = key_text_size + padding * 2 + text_margin_right + ImVec2(value_size.x, 0.0f);
+
+        if (cursor.x + box_size.x > wrap_pos && field_index > 0) {
+            ImVec2 cursor_screen = ImGui::GetCursorScreenPos();
+            ImVec2 row_line_start = ImVec2(top_left_corner.x, cursor_screen.y + box_size.y);
+            ImVec2 row_line_end = cursor_screen + ImVec2(0, box_size.y);
+
+            draw_list->AddLine(row_line_start, row_line_end, border_color);
+
+            ImVec2 previous_line_part_start = ImVec2(previous_line_end_x, cursor_screen.y);
+
+            draw_list->AddLine(previous_line_part_start, cursor_screen, border_color);
+
+            previous_line_end_x = row_line_end.x;
+
+            ImGui::NewLine();
+        }
+
+        ImVec2 screen_start = ImGui::GetCursorScreenPos();
+        ImVec2 separator_top = screen_start + padding + text_margin_right + ImVec2(key_text_size.x, 0);
+        ImVec2 separator_bot = screen_start + padding + text_margin_right + key_text_size;
+        ImVec2 value_text_start = separator_top + text_margin_right;
+
+        const char* value_text_begin = value_text.start;
+        const char* value_text_end = value_text_begin + value_text.length;
+
+        const u32 value_color = possible_value ? key_value_text_color : placeholder_text_color;
+
+        draw_list->AddText(screen_start + padding, key_value_text_color, key_text_begin, key_text_end);
+        draw_list->AddLine(separator_top, separator_bot, border_color);
+        draw_list->AddLine(screen_start + ImVec2(box_size.x, 0), screen_start + box_size, border_color);
+        draw_list->AddText(font_regular, font_regular->FontSize, value_text_start, value_color, value_text_begin, value_text_end);
+
+        ImGui::Dummy(box_size);
+        ImGui::SameLine();
+    }
+
+    if (drew_at_least_one_custom_field) {
+        ImGui::NewLine();
+    }
+
+    // Fill background
+    {
+        ImVec2 bottom_right_corner = ImVec2(
+                ImGui::GetWindowPos().x + ImGui::GetWindowContentRegionWidth(),
+                ImGui::GetCursorScreenPos().y
+        );
+
+        // Here we keep raw pointers instead of sizes because a resize won't occur without PrimReserve
+        ImDrawVert* current_vtx_write = draw_list->_VtxWritePtr;
+        ImDrawIdx* current_idx_write = draw_list->_IdxWritePtr;
+        u32 current_vtx_current_idx = draw_list->_VtxCurrentIdx;
+
+        draw_list->_VtxWritePtr = draw_list->VtxBuffer.Data + vtx_buffer_old_size;
+        draw_list->_IdxWritePtr = draw_list->IdxBuffer.Data + idx_buffer_old_size;
+        draw_list->_VtxCurrentIdx = vtx_background_idx;
+
+        draw_list->PrimRect(top_left_corner, bottom_right_corner, background_color);
+
+        draw_list->_VtxWritePtr = current_vtx_write;
+        draw_list->_IdxWritePtr = current_idx_write;
+        draw_list->_VtxCurrentIdx = current_vtx_current_idx;
+    }
+
+    ImGui::PopStyleVar();
+    ImGui::PopFont();
+
+    return drew_at_least_one_custom_field;
 }
 
 static void draw_task_description(float wrap_width, float alpha) {
@@ -354,7 +484,7 @@ void draw_task_contents() {
     }
 
     // TODO modifying alpha of everything is cumbersome, we could use a semi-transparent overlay
-    float wrap_width = ImGui::GetColumnWidth(-1) - 30.0f; // Accommodate for scroll bar
+    float wrap_width = ImGui::GetColumnWidth(-1) - 50.0f * platform_get_pixel_ratio(); // Accommodate for scroll bar
 
     ImGuiID task_content_id = ImGui::GetID("task_content");
     ImGui::BeginChildFrame(task_content_id, ImVec2(-1, -1), ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
@@ -370,9 +500,11 @@ void draw_task_contents() {
     ImGui::PopFont();
     ImGui::PopTextWrapPos();
 
-    draw_parent_folders();
+    draw_parent_folders(wrap_pos);
 
     ImGui::Separator();
+
+    ImGui::BeginChild("task_contents", ImVec2(-1, -1));
 
     Custom_Status* status = find_custom_status_by_id(current_task.status_id);
 
@@ -400,10 +532,16 @@ void draw_task_contents() {
 
     ImGui::Separator();
 
-    ImGui::BeginChild("task_description_and_comments", ImVec2(-1, -1));
+    if (current_task.inherited_custom_fields.length) {
+        if (draw_custom_fields(wrap_pos)) {
+            ImGui::Separator();
+        }
+    }
+
     if (current_task.description_strings > 0) {
         draw_task_description(wrap_width, alpha);
     }
+
     ImGui::EndChild();
 
     ImGui::EndChildFrame();
@@ -498,17 +636,17 @@ void process_task_data(char* json, u32 data_size, jsmntok_t*& token) {
             token_array_to_id_list(json, token, current_task.authors, json_token_to_id8);
         } else if (IS_PROPERTY("parentIds")) {
             token_array_to_id_list(json, token, current_task.parents, json_token_to_right_part_of_id16);
-        } else if (IS_PROPERTY("inheritedCustomColumns")) {
+        } else if (IS_PROPERTY("inheritedCustomColumnIds")) {
             token_array_to_id_list(json, token, current_task.inherited_custom_fields, json_token_to_right_part_of_id16);
         } else if (IS_PROPERTY("customFields")) {
             assert(next_token->type == JSMN_ARRAY);
 
             token++;
 
-            if (current_task.custom_field_values.length < token->size) {
+            if (current_task.custom_field_values.length < next_token->size) {
                 current_task.custom_field_values.data = (Custom_Field_Value*) REALLOC(
                         current_task.custom_field_values.data,
-                        sizeof(Custom_Field_Value) * token->size
+                        sizeof(Custom_Field_Value) * next_token->size
                 );
             }
 

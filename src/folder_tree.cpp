@@ -17,7 +17,7 @@ struct Parent_Child_Pair {
 
 static Lazy_Array<Folder_Tree_Node*, 64> child_nodes{};
 static Lazy_Array<Parent_Child_Pair, 64> parent_child_pairs{};
-static Id_Hash_Map<Folder_Id, Folder_Tree_Node*> folder_id_to_node_map;
+static Id_Hash_Map<Folder_Id, Folder_Tree_Node*> folder_id_to_node_map{};
 
 static u32 current_node = 0;
 
