@@ -314,6 +314,8 @@ void parse_text_into_rich_string_recursively(Array<Rich_Text_Token>& tokens, Ric
                             break;
                         }
 
+                        case Tag_Type_List_Item:
+                        case Tag_Type_Any:
                         case Tag_Type_Other: {
                             break;
                         }

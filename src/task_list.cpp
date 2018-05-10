@@ -177,6 +177,10 @@ static inline int compare_folder_tasks_based_on_current_sort(Sorted_Folder_Task*
         case Task_List_Sort_Field_Custom_Field: {
             return compare_tasks_custom_fields(a, b, sort_custom_field->type) * sort_direction;
         }
+
+        case Task_List_Sort_Field_None: {
+            assert(!"Invalid sort field");
+        }
     }
 
     return 0;
