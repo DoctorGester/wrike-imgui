@@ -218,4 +218,6 @@ size_t base32_decode(const unsigned char *coded, size_t input_length, unsigned c
         if (n < 5)
             return written;
     }
+
+    return written;
 }

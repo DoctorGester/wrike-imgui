@@ -803,7 +803,7 @@ XXH64_finalize(U64 h64, const void* ptr, size_t len,
     }
     /* impossible to reach */
     assert(0);
-
+    return 0;
 }
 
 FORCE_INLINE U64
