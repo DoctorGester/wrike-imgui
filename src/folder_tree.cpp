@@ -128,7 +128,7 @@ static void process_folder_tree_data_object(char* json, jsmntok_t*& token) {
 }
 
 void match_tree_parent_child_pairs() {
-    printf("Total pairs: %lu\n", parent_child_pairs.length);
+    printf("Total pairs: %i\n", parent_child_pairs.length);
 
     u32 found_pairs = 0;
 
@@ -146,7 +146,7 @@ void match_tree_parent_child_pairs() {
         }
     }
 
-    printf("Found pairs %lu\n", found_pairs);
+    printf("Found pairs %i\n", found_pairs);
 }
 
 static void process_folder_tree_data(char* json, u32 data_size, jsmntok_t*& token) {

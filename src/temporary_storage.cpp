@@ -48,7 +48,7 @@ void* talloc(u32 size) {
 
         temporary_heap_pointers[previous_size] = heap_pointer;
 
-        printf("Requested allocation of %lu bytes which exceeded %lu size of temporary storage, %p was allocated on heap\n",
+        printf("Requested allocation of %i bytes which exceeded %i size of temporary storage, %p was allocated on heap\n",
                size, available_memory_bytes, heap_pointer);
 
         return heap_pointer;

@@ -90,7 +90,7 @@ jsmntok_t* parse_json_into_tokens(char* content_json, u32 json_length, u32& resu
 
     u32 parsed_tokens = (u32) num_tokens;
 
-    printf("Parsed %lu tokens in %fms\n", parsed_tokens, platform_get_app_time_ms() - start_time);
+    printf("Parsed %i tokens in %fms\n", parsed_tokens, platform_get_app_time_ms() - start_time);
 
     result_parsed_tokens = (u32) parsed_tokens;
 

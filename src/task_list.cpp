@@ -230,7 +230,7 @@ static void sort_by_field(Task_List_Sort_Field sort_by) {
 
     float start = platform_get_app_time_ms();
     sort_tasks_hierarchically(top_level_tasks.data, top_level_tasks.length);
-    printf("Sorting %lu elements by %i took %fms\n", top_level_tasks.length, sort_by, platform_get_app_time_ms() - start);
+    printf("Sorting %i elements by %i took %fms\n", top_level_tasks.length, sort_by, platform_get_app_time_ms() - start);
 }
 
 static void sort_by_custom_field(Custom_Field_Id field_id) {
@@ -248,7 +248,7 @@ static void sort_by_custom_field(Custom_Field_Id field_id) {
 
     float start = platform_get_app_time_ms();
     sort_tasks_hierarchically(top_level_tasks.data, top_level_tasks.length);
-    printf("Sorting %lu elements by %lu took %fms\n", top_level_tasks.length, field_id,
+    printf("Sorting %i elements by %i took %fms\n", top_level_tasks.length, field_id,
            platform_get_app_time_ms() - start);
 }
 

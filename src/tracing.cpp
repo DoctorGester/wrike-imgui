@@ -41,7 +41,7 @@ void log_record(Memory_Record& record) {
 
     bytes_to_human_readable_size(record.size, size, unit);
 
-    ImGui::Text("%s:%lu %s %p %.1f %s", file, record.line, record.function, record.pointer, size, unit);
+    ImGui::Text("%s:%i %s %p %.1f %s", file, record.line, record.function, record.pointer, size, unit);
 }
 
 void draw_memory_records() {
@@ -51,7 +51,7 @@ void draw_memory_records() {
     bytes_to_human_readable_size(total_allocated_memory, size, unit);
 
     ImGui::Text("Total memory occupied: %.1f %s", size, unit);
-    ImGui::Text("Total blocks: %lu", history_length);
+    ImGui::Text("Total blocks: %i", history_length);
 
     for (u32 index = 0; index < history_length; index++) {
         log_record(memory_records[index]);
@@ -141,7 +141,7 @@ void* realloc_and_log(const char* file, const char* function, u32 line, void* re
             }
         }
 
-        printf("WARNING: Reallocation of an unmanaged pointer %p with size %lu at %s %s:%lu\n", realloc_what, new_size, function, file, line);
+        printf("WARNING: Reallocation of an unmanaged pointer %p with size %i at %s %s:%i\n", realloc_what, new_size, function, file, line);
 
         return pointer;
     } else {
@@ -168,5 +168,5 @@ void free_and_log(const char* file, const char* function, u32 line, void* free_w
         }
     }
 
-    printf("WARNING: Freeing of an unmanaged pointer %p at %s %s:%lu\n", free_what, function, file, line);
+    printf("WARNING: Freeing of an unmanaged pointer %p at %s %s:%i\n", free_what, function, file, line);
 }

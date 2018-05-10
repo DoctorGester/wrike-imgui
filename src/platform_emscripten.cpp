@@ -109,7 +109,7 @@ static int emscripten_keyboard_callback(int eventType, const EmscriptenKeyboardE
     }
 #if DEBUGPRINT_KEYBOARD
     printf(
-            "%d key: %s, code: %s, ctrl: %d, shift: %d, alt: %d, meta: %d, repeat: %d, which: %lu\n",
+            "%d key: %s, code: %s, ctrl: %d, shift: %d, alt: %d, meta: %d, repeat: %d, which: %i\n",
             eventType,
             keyEvent->key,
             keyEvent->code,

@@ -395,7 +395,7 @@ void search_folder_tree() {
 
     long long int time = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now()-start2).count();
 
-    printf("Took %llu to sort %lu elements\n", time, total_nodes);
+    printf("Took %llu to sort %i elements\n", time, total_nodes);
     //qsort(sorted_nodes, total_nodes, sizeof(Sorted_Node), compare_nodes2);
 }
 

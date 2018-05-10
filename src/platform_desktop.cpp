@@ -217,7 +217,7 @@ static void poll_curl_messages() {
 
         float time = (float) (((double) SDL_GetPerformanceCounter() - request->started_at) / SDL_GetPerformanceFrequency());
 
-        printf("GET %s completed with %lu, time: %fs\n", request->debug_url, http_status_code, time);
+        printf("GET %s completed with %i, time: %fs\n", request->debug_url, http_status_code, time);
 
         double total, name, conn, app, pre, start;
         curl_easy_getinfo(curl, CURLINFO_TOTAL_TIME, &total);
@@ -413,7 +413,7 @@ static size_t handle_curl_write(char *ptr, size_t size, size_t nmemb, void *user
 }
 
 void platform_api_get(Request_Id& request_id, char* url) {
-    printf("Requested api get for %lu/%s\n", request_id, url);
+    printf("Requested api get for %i/%s\n", request_id, url);
 
     const char* url_prefix = "https://www.wrike.com/api/v3/";
     const u32 buffer_length = strlen(url_prefix) + strlen(url) + 1;

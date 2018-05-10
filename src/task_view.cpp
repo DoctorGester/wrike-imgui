@@ -258,10 +258,10 @@ static void draw_authors_and_task_id() {
 
         static const u32 color_id_and_author = argb_to_agbr(0xff8c8c8c);
         ImGui::PushStyleColor(ImGuiCol_Text, color_id_and_author);
-        ImGui::Text("#%lu by %.*s %.1s",
+        ImGui::Text("#%i by %.*s %.1s",
                     current_task.id,
                     author->first_name.length, author->first_name.start,
-                    author->last_name);
+                    author->last_name.start);
         ImGui::PopStyleColor();
     }
 }
@@ -720,5 +720,5 @@ void process_task_data(char* json, u32 data_size, jsmntok_t*& token) {
         }
     }
 
-    printf("Parsed description with a total length of %lu\n", total_text_length);
+    printf("Parsed description with a total length of %i\n", total_text_length);
 }
