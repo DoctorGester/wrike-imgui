@@ -13,6 +13,7 @@ typedef unsigned long long u64;
 typedef unsigned int u32;
 typedef unsigned short u16;
 typedef unsigned char u8;
+typedef char s8;
 typedef long long s64;
 typedef int s32;
 typedef short s16;
@@ -39,7 +40,7 @@ const u32 color_background_dark = argb_to_agbr(0xFF284159);
 const u32 color_link = argb_to_agbr(0x004488ff);
 
 struct Memory_Image {
-    unsigned int texture_id;
+    unsigned int texture_id = 0;
     unsigned width = 0;
     unsigned height = 0;
 };
@@ -138,4 +139,5 @@ inline void fill_id16(const u8 type1, s32 id1, const u8 type2, s32 id2, u8* outp
     base32_encode(input, ARRAY_SIZE(input), output);
 }
 
+s32 hackenstein(const char* a, const char* b, u32 a_length, u32 b_length);
 s32 string_atoi(String* string);

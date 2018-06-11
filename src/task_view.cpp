@@ -120,17 +120,17 @@ static u32 change_color_luminance(u32 in_color, float luminance) {
     return ImGui::ColorConvertFloat4ToU32({ rgb_out.r, rgb_out.g, rgb_out.b, 1.0f });
 }
 
-static void draw_status_selector(Custom_Status* status, float alpha) {
+static void draw_status_selector(u32 status_color, String status_name, bool is_completed, float alpha) {
     float scale = platform_get_pixel_ratio();
 
-    u32 color = change_color_luminance(status->color, 0.42f);
-    u32 bg_color = change_color_luminance(status->color, 0.94f);
-    u32 border_color = change_color_luminance(status->color, 0.89f);
+    u32 color = change_color_luminance(status_color, 0.42f);
+    u32 bg_color = change_color_luminance(status_color, 0.94f);
+    u32 border_color = change_color_luminance(status_color, 0.89f);
 
     ImGui::PushFont(font_bold);
 
-    const char* text_begin = status->name.start;
-    const char* text_end = text_begin + status->name.length;
+    const char* text_begin = status_name.start;
+    const char* text_end = text_begin + status_name.length;
     ImVec2 text_size = ImGui::CalcTextSize(text_begin, text_end, false);
     ImVec2 checkbox_size = ImVec2(18, 18) * scale;
 
@@ -154,7 +154,7 @@ static void draw_status_selector(Custom_Status* status, float alpha) {
     draw_list->AddLine(start + ImVec2(left_line_width, size.y), start + size, border_color);
     draw_list->AddLine(start + ImVec2(size.x, 0), start + size, border_color);
 
-    if (status->group == Status_Group_Completed) {
+    if (is_completed) {
         draw_list->AddImage((void*)(intptr_t) checkmark.texture_id, checkbox_start, checkbox_start + checkbox_size);
     } else {
         draw_list->AddRectFilled(checkbox_start, checkbox_start + checkbox_size, IM_COL32_WHITE);
@@ -220,50 +220,149 @@ static void draw_parent_folders(float wrap_pos) {
     }
 }
 
-static void draw_assignees() {
-    // TODO
+static void draw_assignees(float wrap_pos) {
+    const float avatar_side_px = 32.0f * platform_get_pixel_ratio();
+    const int assignees_to_consider_for_name_plus_avatar_display = 2;
+
     /*
      * Render at minimum 2 avatar + name as possible, the rest are +X
      * If 2 avatars with names do not fit, render how many avatars fit,
      * the rest are +X
      */
 
-    for (u32 index = 0; index < current_task.assignees.length; index++) {
-        bool is_last = index == (current_task.assignees.length - 1);
+    struct Assignee {
+        User* user;
+        String name;
+        float name_width;
+    };
 
+    List<Assignee> assignees;
+    assignees.data = (Assignee*) talloc(sizeof(Assignee) * current_task.assignees.length);
+    assignees.length = 0;
+
+    float name_plus_avatar_total_width = 0.0f;
+
+    u32 name_plus_avatar_assignees = 0;
+
+    float margin = ImGui::GetStyle().FramePadding.x * 2.0f;
+
+    for (u32 index = 0; index < current_task.assignees.length; index++) {
         User_Id user_id = current_task.assignees[index];
         User* user = find_user_by_id(user_id, hash_id(user_id)); // TODO hash cache
 
-        if (user) {
-            const char* pattern_last = "%.*s %.1s.";
-            const char* pattern_preceding = "%.*s %.1s.,";
+        if (!user) {
+            continue;
+        }
 
-            ImGui::Text(is_last ? pattern_last : pattern_preceding,
-                        user->first_name.length, user->first_name.start, user->last_name.start
-            );
+        Assignee new_assignee;
+        new_assignee.user = user;
+        new_assignee.name.length = user->first_name.length + 1 + 1 + 1; // Space, one letter, dot
+        new_assignee.name.start = (char*) talloc(new_assignee.name.length);
+
+        sprintf(new_assignee.name.start, "%.*s %.1s.", user->first_name.length, user->first_name.start, user->last_name.start);
+
+        new_assignee.name_width = ImGui::CalcTextSize(new_assignee.name.start, new_assignee.name.start + new_assignee.name.length, false).x + margin;
+
+        assignees.data[assignees.length++] = new_assignee;
+
+        if (index < assignees_to_consider_for_name_plus_avatar_display) {
+            name_plus_avatar_total_width += new_assignee.name_width + avatar_side_px + margin;
+            name_plus_avatar_assignees++;
+        }
+    }
+
+    u32 remaining_after_name_plus_avatar_display = assignees.length - name_plus_avatar_assignees;
+
+    // Then add a +X avatar-sized circle where X is remaining
+    if (remaining_after_name_plus_avatar_display) {
+        name_plus_avatar_total_width += avatar_side_px + margin;
+    }
+
+    float window_start_x = ImGui::GetCursorPosX();
+
+    if (window_start_x + name_plus_avatar_total_width > wrap_pos) {
+        // If we don't fit then render everyone who fits as avatars
+        float available_space = wrap_pos - window_start_x;
+
+        u32 can_fit_avatars = MAX(1, (u32) floor(available_space / (avatar_side_px + margin)));
+        u32 fits_avatars = MIN(can_fit_avatars, assignees.length);
+
+        if (available_space < 0) {
+            fits_avatars = 1;
+        }
+
+        for (u32 assignee_index = 0; assignee_index < fits_avatars; assignee_index++) {
+            bool is_last = assignee_index == (fits_avatars - 1);
 
             if (!is_last) {
+                Assignee* assignee = &assignees[assignee_index];
+
+                ImGui::Button("A", { avatar_side_px, avatar_side_px });
                 ImGui::SameLine();
+            } else {
+                u32 remaining_after_avatars = assignees.length - fits_avatars;
+
+                if (!remaining_after_avatars) {
+                    ImGui::Button("A", { avatar_side_px, avatar_side_px });
+                } else {
+                    // TODO poor results with more than 9 additional assignees
+                    char text[3]{'+', (s8) (48 + remaining_after_avatars + 1), '\0'};
+
+                    ImGui::Button(text, {avatar_side_px, avatar_side_px});
+                }
             }
+        }
+    } else {
+        for (u32 assignee_index = 0; assignee_index < name_plus_avatar_assignees; assignee_index++) {
+            Assignee* assignee = &assignees[assignee_index];
+
+            ImGui::Button("A", { avatar_side_px, avatar_side_px });
+            ImGui::SameLine();
+            ImGui::TextUnformatted(assignee->name.start, assignee->name.start + assignee->name.length);
+            ImGui::SameLine();
+        }
+
+        if (remaining_after_name_plus_avatar_display) {
+            // TODO poor results with more than 9 additional assignees
+            char text[3] { '+', (s8) (48 + remaining_after_name_plus_avatar_display), '\0' };
+
+            ImGui::Button(text, { avatar_side_px, avatar_side_px });
+        } else {
+            ImGui::NewLine();
         }
     }
 }
 
-static void draw_authors_and_task_id() {
+static float draw_authors_and_task_id_and_return_new_wrap_pos(float wrap_pos) {
     User_Id author_id = current_task.authors[0]; // TODO currently only using the first
     User* author = find_user_by_id(author_id);
 
     if (author) {
         ImGui::SameLine();
 
+        float right_border_x_absolute = ImGui::GetWindowPos().x + wrap_pos;
+        ImVec2 cursor = ImGui::GetCursorScreenPos();
+
         static const u32 color_id_and_author = argb_to_agbr(0xff8c8c8c);
-        ImGui::PushStyleColor(ImGuiCol_Text, color_id_and_author);
-        ImGui::Text("#%i by %.*s %.1s",
-                    current_task.id,
-                    author->first_name.length, author->first_name.start,
-                    author->last_name.start);
-        ImGui::PopStyleColor();
+
+        char* buffer = (char*) talloc(256);
+        sprintf(buffer, "#%i by %.*s %.1s",
+                current_task.id,
+                author->first_name.length, author->first_name.start,
+                author->last_name.start);
+
+        u32 length = (u32) strlen(buffer);
+
+        float text_width = ImGui::CalcTextSize(buffer, buffer + length, false).x;
+        float left_border_x = right_border_x_absolute - text_width;
+
+        ImGui::GetWindowDrawList()->AddText({ left_border_x, cursor.y }, color_id_and_author, buffer, buffer + length);
+        ImGui::NewLine();
+
+        return wrap_pos - text_width;
     }
+
+    return wrap_pos;
 }
 
 // TODO a naive and slow approach, could cache
@@ -312,6 +411,7 @@ static bool draw_custom_fields(float wrap_pos) {
 
     // Reserve buffer space to fill later when we know the total size
     draw_list->PrimReserve(6, 4);
+    draw_list->PrimRect({0,0}, {0,0}, 0);
 
     for (u32 field_index = 0; field_index < current_task.inherited_custom_fields.length; field_index++) {
         Custom_Field_Id custom_field_id = current_task.inherited_custom_fields[field_index];
@@ -506,22 +606,31 @@ void draw_task_contents() {
 
     ImGui::BeginChild("task_contents", ImVec2(-1, -1));
 
-    Custom_Status* status = find_custom_status_by_id(current_task.status_id);
+    {
+        Custom_Status* status = find_custom_status_by_id(current_task.status_id);
 
-    if (status) {
-        draw_status_selector(status, alpha);
-    } else {
-        ImGui::Text("...");
-    }
+        if (status) {
+            draw_status_selector(status->color, status->name, status->group == Status_Group_Completed, alpha);
+        } else {
+            static const u32 active_status_color = argb_to_agbr(0xFF2196F3);
+            static const char* active_status_name = "Active";
 
-    if (current_task.assignees.length) {
-        ImGui::SameLine();
-    }
+            String name { (char*) active_status_name, (u32) strlen(active_status_name) };
 
-    draw_assignees();
+            draw_status_selector(active_status_color, name, false, alpha);
+        }
 
-    if (current_task.authors.length) {
-        draw_authors_and_task_id();
+        float header_wrap_pos = wrap_pos;
+
+        if (current_task.authors.length) {
+            header_wrap_pos = draw_authors_and_task_id_and_return_new_wrap_pos(wrap_pos);
+        }
+
+        if (current_task.assignees.length) {
+            ImGui::SameLine();
+        }
+
+        draw_assignees(header_wrap_pos);
     }
 
     ImGui::Separator();

@@ -244,6 +244,8 @@ bool platform_init() {
 
     create_webgl_context();
 
+    setup_io();
+
     frame_pixel_ratio = (float) emscripten_get_device_pixel_ratio();
 
     FunImGui::initGraphics(vertex_shader_source, fragment_shader_source);
