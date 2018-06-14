@@ -8,6 +8,7 @@
 #include "common.h"
 #include "temporary_storage.h"
 #include "tracing.h"
+#include "platform.h"
 
 u32 argb_to_agbr(u32 argb) {
     u32 a = argb & 0xFF000000;
@@ -73,7 +74,7 @@ void test_template2(T t) {
     printf("%i", sizeof(t));
 }
 
-static void load_image_into_gpu_memory(Memory_Image& image, void* pixels) {
+void load_image_into_gpu_memory(Memory_Image& image, void* pixels) {
     GLuint texture_id = 0;
 
     glGenTextures(1, &texture_id);

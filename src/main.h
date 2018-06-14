@@ -11,7 +11,9 @@ void loop();
 typedef signed long Request_Id;
 
 extern "C"
-void api_request_success(Request_Id request_id, char* content_json, u32 content_length);
+void api_request_success(Request_Id request_id, char* content, u32 content_length);
+
+#define PRINTLIKE(string_index, first_to_check) __attribute__((__format__ (__printf__, string_index, first_to_check)))
 
 struct Custom_Field_Value {
     Custom_Field_Id field_id;
@@ -71,6 +73,7 @@ extern Task current_task;
 extern Task_Id selected_folder_task_id;
 
 void request_task_by_task_id(Task_Id task_id);
+PRINTLIKE(2, 3) void get_request(Request_Id& request_id, const char* format, ...);
 
 // TODO move this into imgui extension file?
 namespace ImGui {

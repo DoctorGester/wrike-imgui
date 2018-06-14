@@ -300,7 +300,7 @@ void draw_task_list_header(float view_width, float custom_column_width, Custom_F
 
         char* column_title_null_terminated = string_to_temporary_null_terminated_string(column_title);
 
-        Custom_Field_Id custom_field_id = NULL;
+        Custom_Field_Id custom_field_id = 0;
 
         if (column >= custom_columns_start_index) {
             custom_field_id = current_folder.custom_columns[column - custom_columns_start_index];

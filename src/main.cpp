@@ -7,6 +7,7 @@
 #define IMGUI_DEFINE_MATH_OPERATORS
 #include <imgui_internal.h>
 #include <jsmn.h>
+#include <lodepng.h>
 
 #include "jsmn.h"
 #include "folder_tree.h"
@@ -24,13 +25,9 @@
 #include "users.h"
 #include "workflows.h"
 
-#define PRINTLIKE(string_index, first_to_check) __attribute__((__format__ (__printf__, string_index, first_to_check)))
-
 static FrameMonitor* frame_monitor = nullptr;
 
 const Request_Id NO_REQUEST = -1;
-
-static Request_Id request_id_counter = 0;
 
 Request_Id folder_tree_request = NO_REQUEST;
 Request_Id folder_header_request = NO_REQUEST;
@@ -45,9 +42,6 @@ bool custom_statuses_were_loaded = false;
 
 static bool draw_memory_debug = false;
 static bool draw_side_menu = true;
-
-// TODO use temporary storage there
-static char temporary_request_buffer[512];
 
 static Memory_Image logo;
 
@@ -81,7 +75,12 @@ u32 finished_loading_statuses_at = 0;
 u32 started_loading_users_at = 0;
 u32 finished_loading_users_at = 0;
 
-PRINTLIKE(2, 3) static void api_request(Request_Id& request_id, const char* format, ...) {
+static Request_Id request_id_counter = 0;
+
+PRINTLIKE(2, 3) void api_request(Request_Id& request_id, const char* format, ...) {
+    // TODO use temporary storage there
+    static char temporary_request_buffer[512];
+
     va_list args;
     va_start(args, format);
 
@@ -92,6 +91,22 @@ PRINTLIKE(2, 3) static void api_request(Request_Id& request_id, const char* form
     request_id = request_id_counter++;
 
     platform_api_get(request_id, temporary_request_buffer);
+}
+
+PRINTLIKE(2, 3) void get_request(Request_Id& request_id, const char* format, ...) {
+    // TODO use temporary storage there
+    static char temporary_request_buffer[512];
+
+    va_list args;
+    va_start(args, format);
+
+    vsprintf(temporary_request_buffer, format, args);
+
+    va_end(args);
+
+    request_id = request_id_counter++;
+
+    platform_get(request_id, temporary_request_buffer);
 }
 
 static void process_json_content(char*& json_reference, Data_Process_Callback callback, char* json, jsmntok_t* tokens, u32 num_tokens) {
@@ -115,51 +130,74 @@ static void request_workflow_for_account(Account_Id account_id) {
 
     fill_id8('A', account_id, output_account_id);
 
-    api_request(workflows_request, "accounts/%.*s/workflows", ARRAY_SIZE(output_account_id), output_account_id);
+    api_request(workflows_request, "accounts/%.*s/workflows", (u32) ARRAY_SIZE(output_account_id), output_account_id);
 
     started_loading_statuses_at = tick;
 }
 
 extern "C"
 EXPORT
-void api_request_success(Request_Id request_id, char* content_json, u32 content_length) {
+void api_request_success(Request_Id request_id, char* content, u32 content_length) {
 //    printf("Got request %lu with content at %p\n", request_id, (void*) content_json);
 
+    User* user_or_null = find_user_by_avatar_request_id(request_id);
+
+    if (user_or_null) {
+        // TODO this leaks both content and decoded pixelsß
+        Memory_Image& avatar = user_or_null->avatar;
+
+        unsigned char* pixels;
+        unsigned error = lodepng_decode32(&pixels, &avatar.width, &avatar.height, (const unsigned char*) content, content_length);
+
+        if (error) {
+            printf("Error while decoding PNG: %u\n", error);
+        } else {
+            load_image_into_gpu_memory(avatar, pixels);
+        }
+
+        free(content);
+        free(pixels);
+
+        return;
+    }
+
+    // Otherwise, it's json
+
     u32 parsed_tokens;
-    jsmntok_t* json_tokens = parse_json_into_tokens(content_json, content_length, parsed_tokens);
+    jsmntok_t* json_tokens = parse_json_into_tokens(content, content_length, parsed_tokens);
 
     // TODO simplify, beautify! 3 last arguments are the same, can be a struct
     if (request_id == folder_tree_request) {
         folder_tree_request = NO_REQUEST;
-        process_folder_tree_request(content_json, json_tokens, parsed_tokens);
+        process_folder_tree_request(content, json_tokens, parsed_tokens);
     } else if (request_id == folder_contents_request) {
         folder_contents_request = NO_REQUEST;
 
-        process_json_content(folder_tasks_json_content, process_folder_contents_data, content_json, json_tokens, parsed_tokens);
+        process_json_content(folder_tasks_json_content, process_folder_contents_data, content, json_tokens, parsed_tokens);
         finished_loading_folder_contents_at = tick;
     } else if (request_id == folder_header_request) {
         folder_header_request = NO_REQUEST;
 
-        process_json_content(folder_header_json_content, process_folder_header_data, content_json, json_tokens, parsed_tokens);
+        process_json_content(folder_header_json_content, process_folder_header_data, content, json_tokens, parsed_tokens);
         finished_loading_folder_header_at = tick;
     } else if (request_id == task_request) {
         task_request = NO_REQUEST;
 
-        process_json_content(task_json_content, process_task_data, content_json, json_tokens, parsed_tokens);
+        process_json_content(task_json_content, process_task_data, content, json_tokens, parsed_tokens);
         finished_loading_task_at = tick;
     } else if (request_id == contacts_request) {
         contacts_request = NO_REQUEST;
-        process_json_content(users_json_content, process_users_data, content_json, json_tokens, parsed_tokens);
+        process_json_content(users_json_content, process_users_data, content, json_tokens, parsed_tokens);
         finished_loading_users_at = tick;
     } else if (request_id == accounts_request) {
         accounts_request = NO_REQUEST;
-        process_json_content(accounts_json_content, process_accounts_data, content_json, json_tokens, parsed_tokens);
+        process_json_content(accounts_json_content, process_accounts_data, content, json_tokens, parsed_tokens);
 
         select_account();
         request_workflow_for_account(selected_account_id);
     } else if (request_id == workflows_request) {
         workflows_request = NO_REQUEST;
-        process_json_content(workflows_json_content, process_workflows_data, content_json, json_tokens, parsed_tokens);
+        process_json_content(workflows_json_content, process_workflows_data, content, json_tokens, parsed_tokens);
 
         custom_statuses_were_loaded = true;
     }

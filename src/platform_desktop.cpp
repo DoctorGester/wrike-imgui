@@ -1,6 +1,6 @@
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_opengl.h>
-#include <curl/multi.h>
+#include <curl/curl.h>
 #include "common.h"
 #include "platform.h"
 #include "funimgui.h"
@@ -18,12 +18,9 @@ struct Running_Request {
 static SDL_Window* application_window = NULL;
 static SDL_GLContext gl_context;
 
-static CURLM* curl_multi = NULL;
 static Running_Request** running_requests = NULL;
 static u32 num_running_requests = 0;
 static SDL_mutex* requests_process_mutex = NULL;
-static SDL_cond* new_requests_signal = NULL;
-
 
 static Uint64 application_time = 0;
 static bool mouse_pressed[3] = { false, false, false };
@@ -187,85 +184,6 @@ static void setup_io() {
     io.ClipboardUserData = NULL;
 }
 
-static void poll_curl_messages() {
-    int messages_left = 0;
-
-    CURLMsg* message = NULL;
-
-    while ((message = curl_multi_info_read(curl_multi, &messages_left))) {
-        if (message->msg != CURLMSG_DONE) {
-            continue;
-        }
-
-        CURL* curl = message->easy_handle;
-        CURLcode result_code = message->data.result;
-
-        if (result_code != CURLE_OK) {
-            printf("Got CURL code %d\n", result_code);
-            continue;
-        }
-
-        u32 http_status_code = 0;
-
-        Running_Request* request = NULL;
-
-        curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_status_code);
-        curl_easy_getinfo(curl, CURLINFO_PRIVATE, &request);
-
-        assert(request);
-        assert(http_status_code);
-
-        float time = (float) (((double) SDL_GetPerformanceCounter() - request->started_at) / SDL_GetPerformanceFrequency());
-
-        printf("GET %s completed with %i, time: %fs\n", request->debug_url, http_status_code, time);
-
-        double total, name, conn, app, pre, start;
-        curl_easy_getinfo(curl, CURLINFO_TOTAL_TIME, &total);
-        curl_easy_getinfo(curl, CURLINFO_NAMELOOKUP_TIME, &name);
-        curl_easy_getinfo(curl, CURLINFO_CONNECT_TIME, &conn);
-        curl_easy_getinfo(curl, CURLINFO_APPCONNECT_TIME, &app);
-        curl_easy_getinfo(curl, CURLINFO_PRETRANSFER_TIME, &pre);
-        curl_easy_getinfo(curl, CURLINFO_STARTTRANSFER_TIME, &start);
-
-        printf("CURL TIME: total %f\n", total);
-        printf("CURL TIME: name %f\n", name);
-        printf("CURL TIME: conn %f\n", conn);
-        printf("CURL TIME: app %f\n", app);
-        printf("CURL TIME: pre %f\n", pre);
-        printf("CURL TIME: start %f\n", start);
-
-        request->status_code_or_zero = http_status_code;
-
-        curl_multi_remove_handle(curl_multi, curl);
-        curl_easy_cleanup(curl);
-    }
-}
-
-static int curl_multi_thread_spin(void*) {
-    curl_multi = curl_multi_init();
-
-    while (true) {
-        int running_transfers = 0;
-
-        SDL_LockMutex(requests_process_mutex);
-
-        curl_multi_perform(curl_multi, &running_transfers);
-
-        if (num_running_requests) {
-            poll_curl_messages();
-        } else {
-            if (SDL_CondWait(new_requests_signal, requests_process_mutex) == -1) {
-                // Fatal error, do we need to unlock there too?
-                break;
-            }
-        }
-
-        SDL_UnlockMutex(requests_process_mutex);
-    }
-
-    return 0;
-}
-
 static void process_completed_api_requests() {
     SDL_LockMutex(requests_process_mutex);
 
@@ -312,10 +230,7 @@ bool platform_init() {
 
     setup_io();
 
-    new_requests_signal = SDL_CreateCond();
     requests_process_mutex = SDL_CreateMutex();
-
-    SDL_CreateThread(curl_multi_thread_spin, "CURLMultiThread", (void*) NULL);
 
     // TODO bad API, we shouldn't be making external calls in platform impl, move those out
     FunImGui::initGraphics(vertex_shader_source, fragment_shader_source);
@@ -412,16 +327,98 @@ static size_t handle_curl_write(char *ptr, size_t size, size_t nmemb, void *user
     return received_data_length;
 }
 
+int curl_thread_request(void* data) {
+    CURL* curl = data;
+    CURLcode result = curl_easy_perform(curl);
+
+    SDL_LockMutex(requests_process_mutex);
+
+    if (result != CURLE_OK) {
+        printf("curl_easy_perform() failed: %s\n", curl_easy_strerror(result));
+    } else {
+        u32 http_status_code = 0;
+
+        Running_Request* request = NULL;
+
+        curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_status_code);
+        curl_easy_getinfo(curl, CURLINFO_PRIVATE, &request);
+
+        assert(request);
+        assert(http_status_code);
+
+        float time = (float) (((double) SDL_GetPerformanceCounter() - request->started_at) / SDL_GetPerformanceFrequency());
+
+        printf("GET %s completed with %i, time: %fs\n", request->debug_url, http_status_code, time);
+
+        double total, name, conn, app, pre, start;
+        curl_easy_getinfo(curl, CURLINFO_TOTAL_TIME, &total);
+        curl_easy_getinfo(curl, CURLINFO_NAMELOOKUP_TIME, &name);
+        curl_easy_getinfo(curl, CURLINFO_CONNECT_TIME, &conn);
+        curl_easy_getinfo(curl, CURLINFO_APPCONNECT_TIME, &app);
+        curl_easy_getinfo(curl, CURLINFO_PRETRANSFER_TIME, &pre);
+        curl_easy_getinfo(curl, CURLINFO_STARTTRANSFER_TIME, &start);
+
+        printf("CURL TIME: total %f\n", total);
+        printf("CURL TIME: name %f\n", name);
+        printf("CURL TIME: conn %f\n", conn);
+        printf("CURL TIME: app %f\n", app);
+        printf("CURL TIME: pre %f\n", pre);
+        printf("CURL TIME: start %f\n", start);
+
+        // TODO I have a feeling this could just be an atomic write and we could get rid of a mutex altogether
+        request->status_code_or_zero = http_status_code;
+    }
+
+    SDL_UnlockMutex(requests_process_mutex);
+
+    curl_easy_cleanup(curl);
+
+    return 0;
+}
+
+static void push_request(Running_Request* request) {
+    SDL_LockMutex(requests_process_mutex);
+
+    // TODO I have a feeling this could just be an atomic write and we could get rid of a mutex altogether
+    u32 new_request_index = num_running_requests++;
+    running_requests = (Running_Request**) REALLOC(running_requests, num_running_requests * sizeof(Running_Request*));
+
+    running_requests[new_request_index] = request;
+
+    SDL_UnlockMutex(requests_process_mutex);
+}
+
+void platform_get(Request_Id& request_id, char* full_url) {
+    printf("Requested simple get for %li/%s\n", request_id, full_url);
+
+    u32 url_length = strlen(full_url);
+
+    Running_Request* new_request = (Running_Request*) CALLOC(1, sizeof(Running_Request));
+    new_request->status_code_or_zero = 0;
+    new_request->request_id = request_id;
+    new_request->debug_url = (char*) MALLOC(url_length + 1);
+    new_request->started_at = SDL_GetPerformanceCounter();
+    strcpy(new_request->debug_url, full_url);
+
+    CURL* curl_easy = curl_easy_init();
+    curl_easy_setopt(curl_easy, CURLOPT_URL, new_request->debug_url);
+    curl_easy_setopt(curl_easy, CURLOPT_PRIVATE, new_request);
+    curl_easy_setopt(curl_easy, CURLOPT_WRITEDATA, new_request);
+    curl_easy_setopt(curl_easy, CURLOPT_WRITEFUNCTION, &handle_curl_write);
+    curl_easy_setopt(curl_easy, CURLOPT_BUFFERSIZE, CURL_MAX_READ_SIZE);
+
+    push_request(new_request);
+
+    SDL_CreateThread(curl_thread_request, "CURLThread", curl_easy);
+}
+
 void platform_api_get(Request_Id& request_id, char* url) {
-    printf("Requested api get for %i/%s\n", request_id, url);
+    printf("Requested api get for %li/%s\n", request_id, url);
 
     const char* url_prefix = "https://www.wrike.com/api/v3/";
     const u32 buffer_length = strlen(url_prefix) + strlen(url) + 1;
     char* buffer = (char*) talloc(buffer_length);
     snprintf(buffer, buffer_length, "%s%s", url_prefix, url);
-
-    u32 new_request_index = num_running_requests++;
-    running_requests = (Running_Request**) REALLOC(running_requests, num_running_requests * sizeof(Running_Request*));
 
     // TODO cleanup those
     curl_slist* header_chunk = NULL;
@@ -437,22 +434,16 @@ void platform_api_get(Request_Id& request_id, char* url) {
     memcpy(new_request->debug_url, buffer, buffer_length);
 
     CURL* curl_easy = curl_easy_init();
-    curl_easy_setopt(curl_easy, CURLOPT_URL, buffer);
+    curl_easy_setopt(curl_easy, CURLOPT_URL, new_request->debug_url);
     curl_easy_setopt(curl_easy, CURLOPT_HTTPHEADER, header_chunk);
     curl_easy_setopt(curl_easy, CURLOPT_PRIVATE, new_request);
     curl_easy_setopt(curl_easy, CURLOPT_WRITEDATA, new_request);
     curl_easy_setopt(curl_easy, CURLOPT_WRITEFUNCTION, &handle_curl_write);
     curl_easy_setopt(curl_easy, CURLOPT_BUFFERSIZE, CURL_MAX_READ_SIZE);
 
+    push_request(new_request);
 
-    SDL_LockMutex(requests_process_mutex);
-
-    curl_multi_add_handle(curl_multi, curl_easy);
-
-    running_requests[new_request_index] = new_request;
-
-    SDL_CondSignal(new_requests_signal);
-    SDL_UnlockMutex(requests_process_mutex);
+    SDL_CreateThread(curl_thread_request, "CURLThread", curl_easy);
 }
 
 // TODO super duper temporary coderino

@@ -99,6 +99,10 @@ typedef enum LodePNGColorType
 } LodePNGColorType;
 
 #ifdef LODEPNG_COMPILE_DECODER
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /*
 Converts PNG data in memory to raw pixel data.
 out: Output parameter. Pointer to buffer that will contain the raw pixel data.
@@ -125,6 +129,10 @@ unsigned lodepng_decode32(unsigned char** out, unsigned* w, unsigned* h,
 /*Same as lodepng_decode_memory, but always decodes to 24-bit RGB raw image*/
 unsigned lodepng_decode24(unsigned char** out, unsigned* w, unsigned* h,
                           const unsigned char* in, size_t insize);
+#ifdef __cplusplus
+}
+#endif
+
 
 #ifdef LODEPNG_COMPILE_DISK
 /*

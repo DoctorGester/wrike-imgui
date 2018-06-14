@@ -78,6 +78,7 @@ inline float lerp(float time_from, float time_to, float scale_to, float max) {
     return ((scale_to / max) * delta);
 }
 
+void load_image_into_gpu_memory(Memory_Image& image, void* pixels);
 bool load_png_from_disk(const char* path, Memory_Image& out);
 
 #define MIN(a, b) ((a) < (b) ? (a) : (b))

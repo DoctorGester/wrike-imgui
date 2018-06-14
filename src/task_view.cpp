@@ -220,6 +220,18 @@ static void draw_parent_folders(float wrap_pos) {
     }
 }
 
+static bool check_and_request_avatar_if_necessary(User* user) {
+    if (!user->avatar.texture_id) {
+        if (user->avatar_request_id == NO_REQUEST) {
+            get_request(user->avatar_request_id, "%.*s", user->avatar_url.length, user->avatar_url.start);
+        }
+
+        return false;
+    }
+
+    return true;
+}
+
 static void draw_assignees(float wrap_pos) {
     const float avatar_side_px = 32.0f * platform_get_pixel_ratio();
     const int assignees_to_consider_for_name_plus_avatar_display = 2;
@@ -293,22 +305,32 @@ static void draw_assignees(float wrap_pos) {
 
         for (u32 assignee_index = 0; assignee_index < fits_avatars; assignee_index++) {
             bool is_last = assignee_index == (fits_avatars - 1);
+            Assignee* assignee = &assignees[assignee_index];
+            ImVec2 avatar_size = { avatar_side_px, avatar_side_px };
 
             if (!is_last) {
-                Assignee* assignee = &assignees[assignee_index];
+                if (check_and_request_avatar_if_necessary(assignee->user)) {
+                    ImGui::Image((void*)(intptr_t) assignee->user->avatar.texture_id, avatar_size);
+                } else {
+                    ImGui::Button("A", avatar_size);
+                }
 
-                ImGui::Button("A", { avatar_side_px, avatar_side_px });
                 ImGui::SameLine();
             } else {
                 u32 remaining_after_avatars = assignees.length - fits_avatars;
 
                 if (!remaining_after_avatars) {
-                    ImGui::Button("A", { avatar_side_px, avatar_side_px });
+                    if (check_and_request_avatar_if_necessary(assignee->user)) {
+                        ImGui::Image((void*)(intptr_t) assignee->user->avatar.texture_id, avatar_size);
+                    } else {
+                        ImGui::Button("A", avatar_size);
+                    }
                 } else {
                     // TODO poor results with more than 9 additional assignees
-                    char text[3]{'+', (s8) (48 + remaining_after_avatars + 1), '\0'};
+                    const char ascii_numbers_start = 48;
+                    char text[3]{'+', (s8) (ascii_numbers_start + remaining_after_avatars + 1), '\0'};
 
-                    ImGui::Button(text, {avatar_side_px, avatar_side_px});
+                    ImGui::Button(text, avatar_size);
                 }
             }
         }
@@ -316,7 +338,12 @@ static void draw_assignees(float wrap_pos) {
         for (u32 assignee_index = 0; assignee_index < name_plus_avatar_assignees; assignee_index++) {
             Assignee* assignee = &assignees[assignee_index];
 
-            ImGui::Button("A", { avatar_side_px, avatar_side_px });
+            if (check_and_request_avatar_if_necessary(assignee->user)) {
+                ImGui::Image((void*)(intptr_t) assignee->user->avatar.texture_id, { avatar_side_px, avatar_side_px });
+            } else {
+                ImGui::Button("A", { avatar_side_px, avatar_side_px });
+            }
+
             ImGui::SameLine();
             ImGui::TextUnformatted(assignee->name.start, assignee->name.start + assignee->name.length);
             ImGui::SameLine();
@@ -615,7 +642,9 @@ void draw_task_contents() {
             static const u32 active_status_color = argb_to_agbr(0xFF2196F3);
             static const char* active_status_name = "Active";
 
-            String name { (char*) active_status_name, (u32) strlen(active_status_name) };
+            String name{};
+            name.start = (char*) active_status_name;
+            name.length = (u32) strlen(active_status_name);
 
             draw_status_selector(active_status_color, name, false, alpha);
         }

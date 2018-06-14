@@ -14,6 +14,9 @@ static void process_users_data_object(char* json, jsmntok_t*&token) {
 
     User* user = &users[users_count++];
 
+    user->avatar_request_id = NO_REQUEST;
+    user->avatar = {};
+
     for (u32 propety_index = 0; propety_index < object_token->size; propety_index++, token++) {
         jsmntok_t* property_token = token++;
 
@@ -27,6 +30,8 @@ static void process_users_data_object(char* json, jsmntok_t*&token) {
             json_token_to_string(json, next_token, user->first_name);
         } else if (json_string_equals(json, property_token, "lastName")) {
             json_token_to_string(json, next_token, user->last_name);
+        } else if (json_string_equals(json, property_token, "avatarUrl")) {
+            json_token_to_string(json, next_token, user->avatar_url);
         } else {
             eat_json(token);
             token--;
@@ -52,6 +57,17 @@ void process_users_data(char* json, u32 data_size, jsmntok_t*&token) {
     for (u32 array_index = 0; array_index < data_size; array_index++) {
         process_users_data_object(json, token);
     }
+}
+
+// Naive and slow, don't use too often
+User* find_user_by_avatar_request_id(Request_Id avatar_request_id) {
+    for (User* it = users; it != users + users_count; it++) {
+        if (it->avatar_request_id == avatar_request_id) {
+            return it;
+        }
+    }
+
+    return NULL;
 }
 
 User* find_user_by_id(User_Id id, u32 id_hash) {
