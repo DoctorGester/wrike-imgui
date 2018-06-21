@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <assert.h>
+#include <cctype>
 
 struct Parent_Child_Pair {
     Folder_Tree_Node* parent;
@@ -30,6 +31,8 @@ Folder_Tree_Node* all_nodes;
 Folder_Tree_Node** starred_nodes = NULL;
 u32 total_nodes;
 u32 total_starred = 0;
+
+List<Folder_Tree_Node*> search_result{};
 
 void folder_tree_init() {
     id_hash_map_init(&folder_id_to_node_map);
@@ -135,60 +138,44 @@ static void process_folder_tree_data_object(char* json, jsmntok_t*& token) {
     }
 }
 
-static void search_folder_tree(char* query) {
-    u32 node_index = 0;
+void folder_tree_search(char* query) {
     u32 query_length = strlen(query);
 
     if (!query_length) {
         return;
     }
 
-    char query_start = *query;
+    char* query_lowercase = (char*) talloc(query_length + 1);
 
-    List<Folder_Tree_Node*> result{};
+    for (u32 index = 0; index < query_length; index++) {
+        query_lowercase[index] = (char) tolower(query[index]);
+    }
+
+    query_lowercase[query_length] = 0;
+
+    if (!search_result.data) {
+        search_result.data = (Folder_Tree_Node**) MALLOC(sizeof(Folder_Tree_Node*) * total_nodes);
+    }
+
+    search_result.length = 0;
 
     char* it = search_index;
 
-    for (u32 index = 0; index < total_nodes; index++) {
+    for (u32 node_index = 0; node_index < total_nodes; node_index++) {
         u32 length_or_zero = (u8) *it;
 
         it++;
 
         if (!length_or_zero) {
-            length_or_zero = strlen(it);
+            length_or_zero = (u32) strlen(it);
         }
 
-        if (string_in_substring(it, query, length_or_zero)) {
-
+        if (string_in_substring(it, query_lowercase, length_or_zero)) {
+            search_result[search_result.length++] = &all_nodes[node_index];
         }
 
-        /*for (char* end = it + length_or_zero; it != end; it++) {
-            char c = *it;
-
-            if (c == query_start) {
-                if (query_length == 1) {
-                    printf("Found %.*s\n", end - it, it);
-
-                    it = end;
-                    break;
-                } else {
-
-                }
-            }
-        }*/
+        it += length_or_zero;
     }
-
-    /*for (char* it = search_index, * end = it + total_names_length; it != end; it++) {
-        char c = *it;
-
-        if (c == query_start) {
-            if ()
-        }
-
-        if (!c) {
-            node_index++;
-        }
-    }*/
 }
 
 static void match_tree_parent_child_pairs() {
@@ -229,7 +216,12 @@ static void build_folder_tree_search_index() {
             *index_position = (u8) name.length;
         }
 
-        memcpy(++index_position, node->name.start, node->name.length);
+        index_position++;
+
+        for (u32 index = 0; index < name.length; index++) {
+            index_position[index] = (char) tolower(name.start[index]);
+        }
+
         index_position += node->name.length;
 
         if (!length_fits_char) {

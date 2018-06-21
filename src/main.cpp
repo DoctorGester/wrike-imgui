@@ -76,6 +76,8 @@ u32 finished_loading_users_at = 0;
 
 static Request_Id request_id_counter = 0;
 
+char search_buffer[128];
+
 PRINTLIKE(3, 4) void api_request(Http_Method method, Request_Id& request_id, const char* format, ...) {
     // TODO use temporary storage there
     static char temporary_request_buffer[512];
@@ -383,9 +385,6 @@ void draw_folder_tree_node(Folder_Tree_Node* tree_node) {
     }
 }
 
-char search_buffer[128];
-
-
 void ImGui::LoadingIndicator(u32 started_showing_at) {
     float scale = platform_get_pixel_ratio();
     ImVec2 cursor = ImGui::GetCursorScreenPos() + (ImVec2(12, 12) * scale);
@@ -415,43 +414,6 @@ void ImGui::Image(Memory_Image& image) {
     ImGui::Image((void*)(intptr_t) image.texture_id, get_scaled_image_size(image));
 }
 
-struct Sorted_Node {
-    Folder_Tree_Node* source_node;
-};
-
-static List<Sorted_Node> sorted_nodes{};
-
-void search_folder_tree() {
-    if (!all_nodes) {
-        return;
-    }
-
-    if (!sorted_nodes.data) {
-        sorted_nodes.data = (Sorted_Node*) MALLOC(sizeof(Sorted_Node) * total_nodes);
-    }
-
-    u32 buffer_length = strlen(search_buffer);
-
-    if (buffer_length == 0) {
-        return;
-    }
-
-    u64 filter_start = platform_get_app_time_precise();
-
-    sorted_nodes.length = 0;
-
-    for (u32 index = 0; index < total_nodes; index++) {
-        Folder_Tree_Node* folder_node = &all_nodes[index];
-        String name = folder_node->name;
-
-        if (string_in_substring(name.start, search_buffer, name.length)) {
-            sorted_nodes[sorted_nodes.length++].source_node = folder_node;
-        }
-    }
-
-    printf("Took %f to sort %i elements\n", platform_get_delta_time_ms(filter_start), total_nodes);
-}
-
 void draw_folder_tree_search_input() {
     static const u32 bottom_border_active_color = argb_to_agbr(0xFF4488ff);
     static const u32 bottom_border_hover_color = argb_to_agbr(0x99ffffff);
@@ -465,7 +427,11 @@ void draw_folder_tree_search_input() {
     ImGui::PushItemWidth(-1);
 
     if (ImGui::InputText("##tree_search", search_buffer, ARRAY_SIZE(search_buffer))) {
-        search_folder_tree();
+        u64 search_start = platform_get_app_time_precise();
+
+        folder_tree_search(search_buffer);
+
+        printf("Took %f to search %i elements by %s\n", platform_get_delta_time_ms(search_start), total_nodes, search_buffer);
     }
 
     ImGui::PopItemWidth();
@@ -518,13 +484,14 @@ void draw_folder_tree() {
     }
 
     u32 buffer_length = strlen(search_buffer);
-    if (buffer_length > 0 && sorted_nodes.data) {
-        for (Sorted_Node* node = sorted_nodes.data; node != sorted_nodes.data + sorted_nodes.length; node++) {
-            char* name = string_to_temporary_null_terminated_string(node->source_node->name);
+    if (buffer_length > 0 && search_result.data) {
+        for (Folder_Tree_Node** node_pointer = search_result.data; node_pointer != search_result.data + search_result.length; node_pointer++) {
+            Folder_Tree_Node* node = *node_pointer;
+            char* name = string_to_temporary_null_terminated_string(node->name);
 
-            ImGui::PushID(node->source_node->id);
+            ImGui::PushID(node->id);
             if (ImGui::Selectable(name)) {
-                select_folder_node_and_request_contents_if_necessary(node->source_node);
+                select_folder_node_and_request_contents_if_necessary(node);
             }
             ImGui::PopID();
         }
