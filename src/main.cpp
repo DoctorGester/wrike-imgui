@@ -3,7 +3,6 @@
 #include <imgui.h>
 #include "framemonitor.h"
 #include <cmath>
-#include <chrono>
 #define IMGUI_DEFINE_MATH_OPERATORS
 #include <imgui_internal.h>
 #include <jsmn.h>
@@ -418,30 +417,17 @@ void ImGui::Image(Memory_Image& image) {
 
 struct Sorted_Node {
     Folder_Tree_Node* source_node;
-    s32 distance;
 };
 
-static Sorted_Node* sorted_nodes = NULL;
-
-int compare_nodes2(const void* ap, const void* bp) {
-    Sorted_Node* a = (Sorted_Node*) ap;
-    Sorted_Node* b = (Sorted_Node*) bp;
-
-    return a->distance - b->distance;
-}
+static List<Sorted_Node> sorted_nodes{};
 
 void search_folder_tree() {
     if (!all_nodes) {
         return;
     }
 
-    if (!sorted_nodes) {
-        sorted_nodes = (Sorted_Node*) MALLOC(sizeof(Sorted_Node) * total_nodes);
-
-        for (u32 index = 0; index < total_nodes; index++) {
-            Sorted_Node& sorted_node = sorted_nodes[index];
-            sorted_node.source_node = &all_nodes[index];
-        }
+    if (!sorted_nodes.data) {
+        sorted_nodes.data = (Sorted_Node*) MALLOC(sizeof(Sorted_Node) * total_nodes);
     }
 
     u32 buffer_length = strlen(search_buffer);
@@ -450,21 +436,20 @@ void search_folder_tree() {
         return;
     }
 
-    auto start2 = std::chrono::steady_clock::now();
+    u64 filter_start = platform_get_app_time_precise();
+
+    sorted_nodes.length = 0;
 
     for (u32 index = 0; index < total_nodes; index++) {
-        Sorted_Node& sorted_node = sorted_nodes[index];
-        String& name = sorted_node.source_node->name;
-        sorted_node.distance = hackenstein(name.start, search_buffer, name.length, buffer_length);
+        Folder_Tree_Node* folder_node = &all_nodes[index];
+        String name = folder_node->name;
+
+        if (string_in_substring(name.start, search_buffer, name.length)) {
+            sorted_nodes[sorted_nodes.length++].source_node = folder_node;
+        }
     }
 
-    //std::sort(sorted_nodes, sorted_nodes + total_nodes, compare_nodes);
-    qsort(sorted_nodes, total_nodes, sizeof(Sorted_Node), compare_nodes2);
-
-    long long int time = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now()-start2).count();
-
-    printf("Took %llu to sort %i elements\n", time, total_nodes);
-    //qsort(sorted_nodes, total_nodes, sizeof(Sorted_Node), compare_nodes2);
+    printf("Took %f to sort %i elements\n", platform_get_delta_time_ms(filter_start), total_nodes);
 }
 
 void draw_folder_tree_search_input() {
@@ -533,10 +518,8 @@ void draw_folder_tree() {
     }
 
     u32 buffer_length = strlen(search_buffer);
-    if (buffer_length > 0 && sorted_nodes) {
-        for (u32 i = 0; i < 30; i++) {
-            Sorted_Node* node = &sorted_nodes[i];
-
+    if (buffer_length > 0 && sorted_nodes.data) {
+        for (Sorted_Node* node = sorted_nodes.data; node != sorted_nodes.data + sorted_nodes.length; node++) {
             char* name = string_to_temporary_null_terminated_string(node->source_node->name);
 
             ImGui::PushID(node->source_node->id);
@@ -773,8 +756,6 @@ static void imgui_free_wrapper(void* ptr, void* user_data) {
 EXPORT
 bool init()
 {
-    auto init_start = std::chrono::steady_clock::now();
-
     init_temporary_storage();
     create_imgui_context();
 
@@ -799,10 +780,6 @@ bool init()
     frame_monitor = new FrameMonitor;
 
     load_png_from_disk("resources/wrike_logo.png", logo);
-
-    s64 init_time = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - init_start).count();
-
-    printf("Initializiation took %lli ms\n", init_time);
 
     return result;
 }
