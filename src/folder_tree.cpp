@@ -20,6 +20,8 @@ static Lazy_Array<Parent_Child_Pair, 64> parent_child_pairs{};
 static Id_Hash_Map<Folder_Id, Folder_Tree_Node*> folder_id_to_node_map{};
 
 static u32 current_node = 0;
+static u32 total_names_length = 0;
+static char* search_index = NULL;
 
 static char* json_content = NULL;
 
@@ -74,6 +76,12 @@ static void process_folder_tree_data_object(char* json, jsmntok_t*& token) {
         // TODO string comparison there is inefficient, can be faster
         if (json_string_equals(json, property_token, "title")) {
             json_token_to_string(json, value_token, new_node->name);
+
+            total_names_length += new_node->name.length + 1;
+
+            if (new_node->name.length > 255) {
+                total_names_length++;
+            }
         } else if (json_string_equals(json, property_token, "id")) {
             json_token_to_right_part_of_id16(json, value_token, new_node->id);
         } else if (json_string_equals(json, property_token, "scope")) {
@@ -127,7 +135,63 @@ static void process_folder_tree_data_object(char* json, jsmntok_t*& token) {
     }
 }
 
-void match_tree_parent_child_pairs() {
+static void search_folder_tree(char* query) {
+    u32 node_index = 0;
+    u32 query_length = strlen(query);
+
+    if (!query_length) {
+        return;
+    }
+
+    char query_start = *query;
+
+    List<Folder_Tree_Node*> result{};
+
+    char* it = search_index;
+
+    for (u32 index = 0; index < total_nodes; index++) {
+        u32 length_or_zero = (u8) *it;
+
+        it++;
+
+        if (!length_or_zero) {
+            length_or_zero = strlen(it);
+        }
+
+        if (string_in_substring(it, query, length_or_zero)) {
+
+        }
+
+        /*for (char* end = it + length_or_zero; it != end; it++) {
+            char c = *it;
+
+            if (c == query_start) {
+                if (query_length == 1) {
+                    printf("Found %.*s\n", end - it, it);
+
+                    it = end;
+                    break;
+                } else {
+
+                }
+            }
+        }*/
+    }
+
+    /*for (char* it = search_index, * end = it + total_names_length; it != end; it++) {
+        char c = *it;
+
+        if (c == query_start) {
+            if ()
+        }
+
+        if (!c) {
+            node_index++;
+        }
+    }*/
+}
+
+static void match_tree_parent_child_pairs() {
     printf("Total pairs: %i\n", parent_child_pairs.length);
 
     u32 found_pairs = 0;
@@ -149,6 +213,31 @@ void match_tree_parent_child_pairs() {
     printf("Found pairs %i\n", found_pairs);
 }
 
+static void build_folder_tree_search_index() {
+    search_index = (char*) REALLOC(search_index, total_names_length);
+    memset(search_index, 0, total_names_length);
+
+    char* index_position = search_index;
+
+    // Format is char length (or 0 if length exceeds u8) / char[] name
+    for (u32 node_index = 0; node_index < total_nodes; node_index++) {
+        Folder_Tree_Node* node = &all_nodes[node_index];
+        String name = node->name;
+        bool length_fits_char = name.length < 256;
+
+        if (length_fits_char) {
+            *index_position = (u8) name.length;
+        }
+
+        memcpy(++index_position, node->name.start, node->name.length);
+        index_position += node->name.length;
+
+        if (!length_fits_char) {
+            index_position++;
+        }
+    }
+}
+
 static void process_folder_tree_data(char* json, u32 data_size, jsmntok_t*& token) {
     all_nodes = (Folder_Tree_Node*) MALLOC(sizeof(Folder_Tree_Node) * data_size);
     total_nodes = data_size;
@@ -168,6 +257,8 @@ void process_folder_tree_request(char* json, jsmntok_t* tokens, u32 num_tokens) 
 
     json_content = json;
 
+    total_names_length = 0;
+
     process_json_data_segment(json, tokens, num_tokens, process_folder_tree_data);
     match_tree_parent_child_pairs();
 
@@ -182,4 +273,6 @@ void process_folder_tree_request(char* json, jsmntok_t* tokens, u32 num_tokens) 
     }
 
     lazy_array_clear(parent_child_pairs);
+
+    build_folder_tree_search_index();
 }

@@ -18,7 +18,6 @@
 #include <jsmn.h>
 #include <cstdint>
 #include <cctype>
-#include <chrono>
 
 struct RGB {
     float r;
@@ -179,7 +178,7 @@ static char* string_contains_substring_ignore_case(String string, char* query_lo
 }
 
 static void update_user_search(char* query) {
-    auto start_time = std::chrono::steady_clock::now();
+    u64 start_time = platform_get_app_time_precise();
 
     if (!filtered_users.data) {
         filtered_users.data = (User**) MALLOC(sizeof(User*) * users.length);
@@ -216,9 +215,7 @@ static void update_user_search(char* query) {
         }
     }
 
-    s64 time = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now()-start_time).count();
-
-    printf("Took %llu microseconds to filter %i elements out of %i\n", time, filtered_users.length, users.length);
+    printf("Took %f ms to filter %i elements out of %i\n", platform_get_delta_time_ms(start_time), filtered_users.length, users.length);
 }
 
 static void draw_status_selector(u32 status_color, String status_name, bool is_completed, float alpha) {
@@ -471,7 +468,7 @@ static bool draw_unassign_button(ImVec2 top_left, float button_side) {
     bool is_clipped = !ImGui::ItemAdd(bounds, id);
 
     bool hovered, held;
-    bool pressed = ImGui::ButtonBehavior(bounds, id, &hovered, &held, ImGuiButtonFlags_AllowItemOverlap);
+    bool pressed = ImGui::ButtonBehavior(bounds, id, &hovered, &held);
 
     if (is_clipped) return pressed;
 
@@ -512,7 +509,7 @@ static bool draw_assignee(Assignee* assignee, float avatar_side_px) {
 
     ImGui::InvisibleButton("assignee", { avatar_side_px, avatar_side_px });
 
-    bool is_hovered = ImGui::IsItemHovered();
+    bool is_hovered = ImGui::IsItemHovered(ImGuiHoveredFlags_RectOnly);
 
     ImGui::SetItemAllowOverlap();
 
@@ -545,7 +542,7 @@ static bool draw_assignee_with_name(Assignee* assignee, float avatar_side_px, fl
     ImGui::PushID(assignee->user);
 
     ImGui::InvisibleButton("assignee", { total_width, avatar_side_px });
-    bool is_hovered = ImGui::IsItemHovered();
+    bool is_hovered = ImGui::IsItemHovered(ImGuiHoveredFlags_RectOnly);
 
     ImGui::SetItemAllowOverlap();
 
