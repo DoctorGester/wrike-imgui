@@ -518,9 +518,13 @@ float platform_get_pixel_ratio() {
     return (float) framebuffer_w / window_w;
 }
 
-float platform_get_app_time_ms() {
-    static u64 start_time = SDL_GetPerformanceCounter();
-    static u64 frequency = SDL_GetPerformanceFrequency();
+u64 platform_get_app_time_precise() {
+    return SDL_GetPerformanceCounter();
+}
 
-    return (float) ((SDL_GetPerformanceCounter() - start_time) * 1000.0 / frequency);
+float platform_get_delta_time_ms(u64 delta_to) {
+    static u64 frequency = SDL_GetPerformanceFrequency();
+    u64 now = platform_get_app_time_precise();
+
+    return (float) ((now - delta_to) * 1000.0 / frequency);
 }

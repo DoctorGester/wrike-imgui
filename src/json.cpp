@@ -81,7 +81,7 @@ static jsmntok_t* parse_json_iteratively(const char* json, u32 json_length, s32 
 }
 
 jsmntok_t* parse_json_into_tokens(char* content_json, u32 json_length, u32& result_parsed_tokens) {
-    float start_time = platform_get_app_time_ms();
+    u64 start_time = platform_get_app_time_precise();
 
     s32 num_tokens = 0;
     jsmntok_t* json_tokens = parse_json_iteratively(content_json, json_length, num_tokens);
@@ -90,7 +90,7 @@ jsmntok_t* parse_json_into_tokens(char* content_json, u32 json_length, u32& resu
 
     u32 parsed_tokens = (u32) num_tokens;
 
-    printf("Parsed %i tokens in %fms\n", parsed_tokens, platform_get_app_time_ms() - start_time);
+    printf("Parsed %i tokens in %fms\n", parsed_tokens, platform_get_delta_time_ms(start_time));
 
     result_parsed_tokens = (u32) parsed_tokens;
 

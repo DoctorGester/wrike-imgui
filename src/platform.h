@@ -16,7 +16,9 @@ void platform_begin_frame();
 void platform_end_frame();
 
 float platform_get_pixel_ratio();
-float platform_get_app_time_ms();
+
+u64 platform_get_app_time_precise();
+float platform_get_delta_time_ms(u64 delta_to);
 
 void platform_open_in_wrike(String& permalink);
 

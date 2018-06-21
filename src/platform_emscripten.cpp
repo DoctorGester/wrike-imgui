@@ -272,11 +272,10 @@ void platform_begin_frame() {
     io.DisplaySize = ImVec2((float) width, (float) height);
     io.DisplayFramebufferScale = ImVec2(frame_pixel_ratio, frame_pixel_ratio);
 
-    static float last = 0;
+    static u64 last = 0;
 
-    float now = platform_get_app_time_ms();
-    io.DeltaTime = (now - last) / 1000.0f;
-    last = now;
+    io.DeltaTime = platform_get_delta_time_ms(last);
+    last = platform_get_app_time_precise();
 
     glClearColor(0.1f, 0.1f, 0.1f, 1);
     glClear(GL_COLOR_BUFFER_BIT);
@@ -332,6 +331,20 @@ float platform_get_pixel_ratio() {
     return frame_pixel_ratio;
 }
 
-float platform_get_app_time_ms() {
-    return (float) emscripten_get_now(); // TODO performance overhead, cache
+u64 platform_get_app_time_precise() {
+    double time = emscripten_get_now();
+    u64 output;
+
+    memcpy(&output, &time, sizeof(double));
+
+    return output;
+}
+
+float platform_get_delta_time_ms(u64 delta_to) {
+    double now = emscripten_get_now();
+    double double_delta_to;
+
+    memcpy(&double_delta_to, &delta_to, sizeof(u64));
+
+    return (float) (double_delta_to - now);
 }
