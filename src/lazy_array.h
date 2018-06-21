@@ -5,6 +5,7 @@
 
 // TODO looks terribly slow to be honest. Though base might be cached when accessing in a loop
 // TODO maybe a lot of MALLOC/free for SubTaskIds/CustomFieldValues is not a bad idea?
+// TODO http://floooh.github.io/2018/06/17/handles-vs-pointers.html this is a way better idea
 template <typename T>
 struct Relative_Pointer {
     T** base;

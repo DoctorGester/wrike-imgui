@@ -13,6 +13,9 @@ typedef signed long Request_Id;
 extern "C"
 void api_request_success(Request_Id request_id, char* content, u32 content_length);
 
+extern "C"
+void image_load_success(Request_Id request_id, u8* pixel_data, u32 width, u32 height);
+
 #define PRINTLIKE(string_index, first_to_check) __attribute__((__format__ (__printf__, string_index, first_to_check)))
 
 struct Custom_Field_Value {
@@ -73,7 +76,10 @@ extern Task current_task;
 extern Task_Id selected_folder_task_id;
 
 void request_task_by_task_id(Task_Id task_id);
-PRINTLIKE(2, 3) void get_request(Request_Id& request_id, const char* format, ...);
+void add_assignee_to_task(Task_Id task_id, User_Id user_id);
+void remove_assignee_from_task(Task_Id task_id, User_Id user_id);
+
+PRINTLIKE(2, 3) void image_request(Request_Id& request_id, const char* format, ...);
 
 // TODO move this into imgui extension file?
 namespace ImGui {

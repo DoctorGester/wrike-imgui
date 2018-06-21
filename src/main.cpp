@@ -7,7 +7,6 @@
 #define IMGUI_DEFINE_MATH_OPERATORS
 #include <imgui_internal.h>
 #include <jsmn.h>
-#include <lodepng.h>
 
 #include "jsmn.h"
 #include "folder_tree.h"
@@ -36,6 +35,7 @@ Request_Id task_request = NO_REQUEST;
 Request_Id contacts_request = NO_REQUEST;
 Request_Id accounts_request = NO_REQUEST;
 Request_Id workflows_request = NO_REQUEST;
+Request_Id modify_task_request = NO_REQUEST;
 
 bool had_last_selected_folder_so_doesnt_need_to_load_the_root_folder = false;
 bool custom_statuses_were_loaded = false;
@@ -77,7 +77,7 @@ u32 finished_loading_users_at = 0;
 
 static Request_Id request_id_counter = 0;
 
-PRINTLIKE(2, 3) void api_request(Request_Id& request_id, const char* format, ...) {
+PRINTLIKE(3, 4) void api_request(Http_Method method, Request_Id& request_id, const char* format, ...) {
     // TODO use temporary storage there
     static char temporary_request_buffer[512];
 
@@ -90,10 +90,10 @@ PRINTLIKE(2, 3) void api_request(Request_Id& request_id, const char* format, ...
 
     request_id = request_id_counter++;
 
-    platform_api_get(request_id, temporary_request_buffer);
+    platform_api_request(request_id, temporary_request_buffer, method);
 }
 
-PRINTLIKE(2, 3) void get_request(Request_Id& request_id, const char* format, ...) {
+PRINTLIKE(2, 3) void image_request(Request_Id& request_id, const char* format, ...) {
     // TODO use temporary storage there
     static char temporary_request_buffer[512];
 
@@ -106,17 +106,23 @@ PRINTLIKE(2, 3) void get_request(Request_Id& request_id, const char* format, ...
 
     request_id = request_id_counter++;
 
-    platform_get(request_id, temporary_request_buffer);
+    platform_load_remote_image(request_id, temporary_request_buffer);
 }
 
-static void process_json_content(char*& json_reference, Data_Process_Callback callback, char* json, jsmntok_t* tokens, u32 num_tokens) {
+struct Json_With_Tokens {
+    char* json;
+    jsmntok_t* tokens;
+    u32 num_tokens;
+};
+
+static void process_json_content(char*& json_reference, Data_Process_Callback callback, Json_With_Tokens json_with_tokens) {
     if (json_reference) {
         FREE(json_reference);
     }
 
-    json_reference = json;
+    json_reference = json_with_tokens.json;
 
-    process_json_data_segment(json, tokens, num_tokens, callback);
+    process_json_data_segment(json_with_tokens.json, json_with_tokens.tokens, json_with_tokens.num_tokens, callback);
 }
 
 static void select_account() {
@@ -130,7 +136,7 @@ static void request_workflow_for_account(Account_Id account_id) {
 
     fill_id8('A', account_id, output_account_id);
 
-    api_request(workflows_request, "accounts/%.*s/workflows", (u32) ARRAY_SIZE(output_account_id), output_account_id);
+    api_request(Http_Get, workflows_request, "accounts/%.*s/workflows", (u32) ARRAY_SIZE(output_account_id), output_account_id);
 
     started_loading_statuses_at = tick;
 }
@@ -139,67 +145,65 @@ extern "C"
 EXPORT
 void api_request_success(Request_Id request_id, char* content, u32 content_length) {
 //    printf("Got request %lu with content at %p\n", request_id, (void*) content_json);
+    Json_With_Tokens json_with_tokens;
+    json_with_tokens.json = content;
+    json_with_tokens.tokens = parse_json_into_tokens(content, content_length, json_with_tokens.num_tokens);
 
-    User* user_or_null = find_user_by_avatar_request_id(request_id);
-
-    if (user_or_null) {
-        // TODO this leaks both content and decoded pixelsß
-        Memory_Image& avatar = user_or_null->avatar;
-
-        unsigned char* pixels;
-        unsigned error = lodepng_decode32(&pixels, &avatar.width, &avatar.height, (const unsigned char*) content, content_length);
-
-        if (error) {
-            printf("Error while decoding PNG: %u\n", error);
-        } else {
-            load_image_into_gpu_memory(avatar, pixels);
-        }
-
-        free(content);
-        free(pixels);
-
-        return;
-    }
-
-    // Otherwise, it's json
-
-    u32 parsed_tokens;
-    jsmntok_t* json_tokens = parse_json_into_tokens(content, content_length, parsed_tokens);
-
-    // TODO simplify, beautify! 3 last arguments are the same, can be a struct
     if (request_id == folder_tree_request) {
         folder_tree_request = NO_REQUEST;
-        process_folder_tree_request(content, json_tokens, parsed_tokens);
+        process_folder_tree_request(content, json_with_tokens.tokens, json_with_tokens.num_tokens);
     } else if (request_id == folder_contents_request) {
         folder_contents_request = NO_REQUEST;
 
-        process_json_content(folder_tasks_json_content, process_folder_contents_data, content, json_tokens, parsed_tokens);
+        process_json_content(folder_tasks_json_content, process_folder_contents_data, json_with_tokens);
         finished_loading_folder_contents_at = tick;
     } else if (request_id == folder_header_request) {
         folder_header_request = NO_REQUEST;
 
-        process_json_content(folder_header_json_content, process_folder_header_data, content, json_tokens, parsed_tokens);
+        process_json_content(folder_header_json_content, process_folder_header_data, json_with_tokens);
         finished_loading_folder_header_at = tick;
     } else if (request_id == task_request) {
         task_request = NO_REQUEST;
 
-        process_json_content(task_json_content, process_task_data, content, json_tokens, parsed_tokens);
+        process_json_content(task_json_content, process_task_data, json_with_tokens);
         finished_loading_task_at = tick;
     } else if (request_id == contacts_request) {
         contacts_request = NO_REQUEST;
-        process_json_content(users_json_content, process_users_data, content, json_tokens, parsed_tokens);
+        process_json_content(users_json_content, process_users_data, json_with_tokens);
         finished_loading_users_at = tick;
     } else if (request_id == accounts_request) {
         accounts_request = NO_REQUEST;
-        process_json_content(accounts_json_content, process_accounts_data, content, json_tokens, parsed_tokens);
+        process_json_content(accounts_json_content, process_accounts_data, json_with_tokens);
 
         select_account();
         request_workflow_for_account(selected_account_id);
     } else if (request_id == workflows_request) {
         workflows_request = NO_REQUEST;
-        process_json_content(workflows_json_content, process_workflows_data, content, json_tokens, parsed_tokens);
+        process_json_content(workflows_json_content, process_workflows_data, json_with_tokens);
 
         custom_statuses_were_loaded = true;
+    }
+
+    if (request_id == modify_task_request) {
+        modify_task_request = NO_REQUEST;
+
+        process_json_content(task_json_content, process_task_data, json_with_tokens);
+    }
+}
+
+extern "C"
+EXPORT
+void image_load_success(Request_Id request_id, u8* pixel_data, u32 width, u32 height) {
+    User* user_or_null = find_user_by_avatar_request_id(request_id);
+
+    if (user_or_null) {
+        Memory_Image& avatar = user_or_null->avatar;
+        avatar.width = width;
+        avatar.height = height;
+
+        load_image_into_gpu_memory(avatar, pixel_data);
+
+        free(pixel_data);
     }
 }
 
@@ -267,10 +271,10 @@ void request_folder_contents(String &folder_id) {
 
     s32 id = uchars_to_s32(result + 6);
 
-    api_request(folder_contents_request, "folders/%.*s/tasks%s", (int) folder_id.length, folder_id.start, "?fields=['customFields','superTaskIds','responsibleIds']&subTasks=true");
+    api_request(Http_Get, folder_contents_request, "folders/%.*s/tasks%s", (int) folder_id.length, folder_id.start, "?fields=['customFields','superTaskIds','responsibleIds']&subTasks=true");
 
     if (id >= 0) {
-        api_request(folder_header_request, "folders/%.*s%s", (int) folder_id.length, folder_id.start, "?fields=['customColumnIds']");
+        api_request(Http_Get, folder_header_request, "folders/%.*s%s", (int) folder_id.length, folder_id.start, "?fields=['customColumnIds']");
     } else {
         folder_header_request = NO_REQUEST;
         process_current_folder_as_logical();
@@ -307,7 +311,7 @@ static void request_task_by_full_id(String &full_id) {
 
     platform_local_storage_set("last_selected_task", full_id);
 
-    api_request(task_request, "tasks/%.*s?fields=['inheritedCustomColumnIds']", full_id.length, full_id.start);
+    api_request(Http_Get, task_request, "tasks/%.*s?fields=['inheritedCustomColumnIds']", full_id.length, full_id.start);
     started_loading_task_at = tick;
 }
 
@@ -321,6 +325,32 @@ void request_task_by_task_id(Task_Id task_id) {
     id_as_string.length = 16;
 
     request_task_by_full_id(id_as_string);
+}
+
+void add_assignee_to_task(Task_Id task_id, User_Id user_id) {
+    u8 output_account_and_task_id[16];
+    u8 output_user_id[8];
+
+    fill_id16('A', selected_account_id, 'T', task_id, output_account_and_task_id);
+    fill_id8('U', user_id, output_user_id);
+
+    api_request(Http_Put, modify_task_request, "tasks/%.*s?addResponsibles=[\"%.*s\"]",
+                (u32) ARRAY_SIZE(output_account_and_task_id), output_account_and_task_id,
+                (u32) ARRAY_SIZE(output_user_id), output_user_id
+    );
+}
+
+void remove_assignee_from_task(Task_Id task_id, User_Id user_id) {
+    u8 output_account_and_task_id[16];
+    u8 output_user_id[8];
+
+    fill_id16('A', selected_account_id, 'T', task_id, output_account_and_task_id);
+    fill_id8('U', user_id, output_user_id);
+
+    api_request(Http_Put, modify_task_request, "tasks/%.*s?removeResponsibles=[\"%.*s\"]",
+                (u32) ARRAY_SIZE(output_account_and_task_id), output_account_and_task_id,
+                (u32) ARRAY_SIZE(output_user_id), output_user_id
+    );
 }
 
 void draw_folder_tree_node(Folder_Tree_Node* tree_node) {
@@ -425,7 +455,7 @@ void search_folder_tree() {
     for (u32 index = 0; index < total_nodes; index++) {
         Sorted_Node& sorted_node = sorted_nodes[index];
         String& name = sorted_node.source_node->name;
-        sorted_node.distance = levenshtein(name.start, search_buffer, name.length, buffer_length);
+        sorted_node.distance = hackenstein(name.start, search_buffer, name.length, buffer_length);
     }
 
     //std::sort(sorted_nodes, sorted_nodes + total_nodes, compare_nodes);
@@ -754,15 +784,13 @@ bool init()
 
     setup_ui_style();
 
-    api_request(accounts_request, "accounts?fields=['customFields']");
-    api_request(folder_tree_request, "folders?fields=['starred']");
-    api_request(contacts_request, "contacts");
+    api_request(Http_Get, accounts_request, "accounts?fields=['customFields']");
+    api_request(Http_Get, folder_tree_request, "folders?fields=['starred']");
+    api_request(Http_Get, contacts_request, "contacts");
 
     started_loading_users_at = tick;
 
     folder_tree_init();
-
-    memset(search_buffer, 0, sizeof(search_buffer));
 
     load_persisted_settings();
 

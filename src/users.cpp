@@ -2,8 +2,7 @@
 #include "json.h"
 #include "id_hash_map.h"
 
-static User* users = NULL;
-static u32 users_count = 0;
+List<User> users{};
 
 static Id_Hash_Map<User_Id, User*> id_to_user_map{};
 
@@ -12,7 +11,7 @@ static void process_users_data_object(char* json, jsmntok_t*&token) {
 
     assert(object_token->type == JSMN_OBJECT);
 
-    User* user = &users[users_count++];
+    User* user = &users[users.length++];
 
     user->avatar_request_id = NO_REQUEST;
     user->avatar = {};
@@ -42,8 +41,8 @@ static void process_users_data_object(char* json, jsmntok_t*&token) {
 }
 
 void process_users_data(char* json, u32 data_size, jsmntok_t*&token) {
-    if (users_count < data_size) {
-        users = (User*) REALLOC(users, sizeof(User) * data_size);
+    if (users.length < data_size) {
+        users.data = (User*) REALLOC(users.data, sizeof(User) * data_size);
     }
 
     if (id_to_user_map.table) {
@@ -52,7 +51,7 @@ void process_users_data(char* json, u32 data_size, jsmntok_t*&token) {
 
     id_hash_map_init(&id_to_user_map);
 
-    users_count = 0;
+    users.length = 0;
 
     for (u32 array_index = 0; array_index < data_size; array_index++) {
         process_users_data_object(json, token);
@@ -61,7 +60,7 @@ void process_users_data(char* json, u32 data_size, jsmntok_t*&token) {
 
 // Naive and slow, don't use too often
 User* find_user_by_avatar_request_id(Request_Id avatar_request_id) {
-    for (User* it = users; it != users + users_count; it++) {
+    for (User* it = users.data; it != users.data + users.length; it++) {
         if (it->avatar_request_id == avatar_request_id) {
             return it;
         }

@@ -1,13 +1,20 @@
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_opengl.h>
 #include <curl/curl.h>
+#include <lodepng.h>
 #include "common.h"
 #include "platform.h"
 #include "funimgui.h"
 #include "main.h"
 
+enum Request_Type {
+    Request_Type_API,
+    Request_Type_Load_Image
+};
+
 struct Running_Request {
     u32 status_code_or_zero;
+    Request_Type request_type;
     Request_Id request_id;
     char* debug_url = NULL;
     char* data_read = NULL;
@@ -184,7 +191,22 @@ static void setup_io() {
     io.ClipboardUserData = NULL;
 }
 
-static void process_completed_api_requests() {
+static void process_completed_image_request(Running_Request* request) {
+    u8* pixels; // Managed by receiver
+
+    u32 width, height;
+    u32 error = lodepng_decode32(&pixels, &width, &height, (const u8*) request->data_read, request->data_length);
+
+    if (error) {
+        printf("Error while decoding PNG: %u\n", error);
+    } else {
+        image_load_success(request->request_id, pixels, width, height);
+    }
+
+    FREE(request->data_read);
+}
+
+static void process_completed_requests() {
     SDL_LockMutex(requests_process_mutex);
 
     for (s32 index = 0; index < num_running_requests; index++) {
@@ -194,7 +216,19 @@ static void process_completed_api_requests() {
             if (request->status_code_or_zero == 200) {
                 u64 start_process_request = SDL_GetPerformanceCounter();
 
-                api_request_success(request->request_id, request->data_read, request->data_length);
+                switch (request->request_type) {
+                    case Request_Type_API: {
+                        api_request_success(request->request_id, request->data_read, request->data_length);
+
+                        break;
+                    }
+
+                    case Request_Type_Load_Image: {
+                        process_completed_image_request(request);
+
+                        break;
+                    }
+                }
 
                 u64 delta = SDL_GetPerformanceCounter() - start_process_request;
 
@@ -252,7 +286,7 @@ void platform_loop() {
             break;
         }
 
-        process_completed_api_requests();
+        process_completed_requests();
 
         loop();
 
@@ -369,9 +403,9 @@ int curl_thread_request(void* data) {
         request->status_code_or_zero = http_status_code;
     }
 
-    SDL_UnlockMutex(requests_process_mutex);
-
     curl_easy_cleanup(curl);
+
+    SDL_UnlockMutex(requests_process_mutex);
 
     return 0;
 }
@@ -388,12 +422,13 @@ static void push_request(Running_Request* request) {
     SDL_UnlockMutex(requests_process_mutex);
 }
 
-void platform_get(Request_Id& request_id, char* full_url) {
-    printf("Requested simple get for %li/%s\n", request_id, full_url);
+void platform_load_remote_image(Request_Id& request_id, char* full_url) {
+    printf("Requested image load for %li/%s\n", request_id, full_url);
 
     u32 url_length = strlen(full_url);
 
     Running_Request* new_request = (Running_Request*) CALLOC(1, sizeof(Running_Request));
+    new_request->request_type = Request_Type_Load_Image;
     new_request->status_code_or_zero = 0;
     new_request->request_id = request_id;
     new_request->debug_url = (char*) MALLOC(url_length + 1);
@@ -412,7 +447,7 @@ void platform_get(Request_Id& request_id, char* full_url) {
     SDL_CreateThread(curl_thread_request, "CURLThread", curl_easy);
 }
 
-void platform_api_get(Request_Id& request_id, char* url) {
+void platform_api_request(Request_Id& request_id, char* url, Http_Method method) {
     printf("Requested api get for %li/%s\n", request_id, url);
 
     const char* url_prefix = "https://www.wrike.com/api/v3/";
@@ -427,6 +462,7 @@ void platform_api_get(Request_Id& request_id, char* url) {
 
     // TODO optimize
     Running_Request* new_request = (Running_Request*) CALLOC(1, sizeof(Running_Request));
+    new_request->request_type = Request_Type_API;
     new_request->status_code_or_zero = 0;
     new_request->request_id = request_id;
     new_request->debug_url = (char*) MALLOC(buffer_length);
@@ -440,6 +476,10 @@ void platform_api_get(Request_Id& request_id, char* url) {
     curl_easy_setopt(curl_easy, CURLOPT_WRITEDATA, new_request);
     curl_easy_setopt(curl_easy, CURLOPT_WRITEFUNCTION, &handle_curl_write);
     curl_easy_setopt(curl_easy, CURLOPT_BUFFERSIZE, CURL_MAX_READ_SIZE);
+
+    if (method == Http_Put) {
+        curl_easy_setopt(curl_easy, CURLOPT_CUSTOMREQUEST, "PUT");
+    }
 
     push_request(new_request);
 

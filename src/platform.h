@@ -3,6 +3,11 @@
 
 #pragma once
 
+enum Http_Method {
+    Http_Get,
+    Http_Put
+};
+
 bool platform_init();
 void platform_loop();
 
@@ -15,7 +20,7 @@ float platform_get_app_time_ms();
 
 void platform_open_in_wrike(String& permalink);
 
-void platform_api_get(Request_Id& request_id, char* url);
-void platform_get(Request_Id& request_id, char* full_url);
+void platform_api_request(Request_Id& request_id, char* url, Http_Method method);
+void platform_load_remote_image(Request_Id& request_id, char* full_url);
 void platform_local_storage_set(const char* key, String& value); // TODO bad definition...
 char* platform_local_storage_get(const char* key); // You own the memory!

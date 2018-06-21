@@ -17,6 +17,8 @@
 #include <imgui_internal.h>
 #include <jsmn.h>
 #include <cstdint>
+#include <cctype>
+#include <chrono>
 
 struct RGB {
     float r;
@@ -31,6 +33,11 @@ struct HSL {
 };
 
 static Memory_Image checkmark{};
+static const char* add_assignee_text = "+ Add assignee";
+static List<User*> filtered_users{};
+
+static const float status_picker_row_height = 50.0f;
+static const float assignee_avatar_side = 32.0f;
 
 static HSL rgb_to_hsl(RGB rgb) {
     HSL hsl;
@@ -120,6 +127,100 @@ static u32 change_color_luminance(u32 in_color, float luminance) {
     return ImGui::ColorConvertFloat4ToU32({ rgb_out.r, rgb_out.g, rgb_out.b, 1.0f });
 }
 
+// TODO could this be constexpr if we got rid of the whole platform_get_scale() thing?
+// TODO add actual antialiasing from imgui_draw
+static void fill_antialiased_textured_circle(ImDrawList* draw_list, ImVec2 centre, float radius, u32 num_segments) {
+    draw_list->PrimReserve(num_segments * 3, num_segments + 1);
+
+    draw_list->_VtxWritePtr[0].pos = centre;
+    draw_list->_VtxWritePtr[0].uv = { 0.5f, 0.5f };
+    draw_list->_VtxWritePtr[0].col = IM_COL32_WHITE;
+
+    draw_list->_VtxWritePtr++;
+
+    for (int i = 0; i < num_segments; i++) {
+        float angle = ((float) i / (float) num_segments) * (2.0f * IM_PI);
+
+        ImVec2 xy = ImVec2(centre.x + cosf(angle) * radius, centre.y + sinf(angle) * radius);
+        ImVec2 uv = ImVec2(cosf(angle), sinf(angle)) / 2.0f + ImVec2(0.5f, 0.5f);
+
+        draw_list->_VtxWritePtr[0].pos = xy;
+        draw_list->_VtxWritePtr[0].uv = uv;
+        draw_list->_VtxWritePtr[0].col = IM_COL32_WHITE;
+        draw_list->_VtxWritePtr++;
+    }
+
+    u32 current_idx = draw_list->_VtxCurrentIdx;
+
+    for (int i0 = num_segments - 1, i1 = 0; i1 < num_segments; i0 = i1++) {
+        draw_list->_IdxWritePtr[0] = (ImDrawIdx) (current_idx);
+        draw_list->_IdxWritePtr[1] = (ImDrawIdx) (current_idx + 1 + i0);
+        draw_list->_IdxWritePtr[2] = (ImDrawIdx) (current_idx + 1 + i1);
+
+        draw_list->_IdxWritePtr += 3;
+    }
+
+    draw_list->_VtxCurrentIdx += num_segments + 1;
+}
+
+static char* string_contains_substring_ignore_case(String string, char* query_lowercase) {
+    static const u32 buffer_length = 512;
+    static char string_buffer[buffer_length];
+
+    assert(string.length < buffer_length);
+
+    for (u32 index = 0; index < string.length; index++) {
+        string_buffer[index] = (char) tolower(string.start[index]);
+    }
+
+    string_buffer[string.length] = 0;
+
+    return string_in_substring(string_buffer, query_lowercase, string.length);
+}
+
+static void update_user_search(char* query) {
+    auto start_time = std::chrono::steady_clock::now();
+
+    if (!filtered_users.data) {
+        filtered_users.data = (User**) MALLOC(sizeof(User*) * users.length);
+    }
+
+    filtered_users.length = 0;
+
+    u32 query_length = (u32) strlen(query);
+    bool add_all = query_length == 0;
+
+    char* query_lowercase = (char*) talloc(query_length + 1);
+
+    // Query to lowercase
+    {
+        for (u32 index = 0; index < query_length; index++) {
+            query_lowercase[index] = (char) tolower(query[index]);
+        }
+
+        query_lowercase[query_length] = 0;
+    }
+
+    for (User* it = users.data; it != users.data + users.length; it++) {
+        if (add_all) {
+            filtered_users[filtered_users.length++] = it;
+
+            continue;
+        }
+
+        char* first_name_contains_query = string_contains_substring_ignore_case(it->first_name, query_lowercase);
+        char* last_name_contains_query = string_contains_substring_ignore_case(it->last_name, query_lowercase);
+
+        if (first_name_contains_query || last_name_contains_query) {
+            filtered_users[filtered_users.length++] = it;
+        }
+    }
+
+    s64 time = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now()-start_time).count();
+
+    printf("Took %llu microseconds to filter %i elements out of %i\n", time, filtered_users.length, users.length);
+}
+
 static void draw_status_selector(u32 status_color, String status_name, bool is_completed, float alpha) {
     float scale = platform_get_pixel_ratio();
 
@@ -141,7 +242,7 @@ static void draw_status_selector(u32 status_color, String status_name, bool is_c
     float text_offset_x = checkbox_offset_x + checkbox_size.x + 8.0f * scale;
 
     ImVec2 start = ImGui::GetCursorScreenPos();
-    ImVec2 size = ImVec2(text_size.x + text_offset_x + padding * 2.0f - left_line_width, 50.0f * scale);
+    ImVec2 size = ImVec2(text_size.x + text_offset_x + padding * 2.0f - left_line_width, status_picker_row_height * scale);
     ImVec2 checkbox_start = start + ImVec2(checkbox_offset_x, size.y / 2 - checkbox_size.y / 2);
     ImVec2 text_start = start + ImVec2(text_offset_x, size.y / 2 - text_size.y / 2);
 
@@ -223,7 +324,7 @@ static void draw_parent_folders(float wrap_pos) {
 static bool check_and_request_avatar_if_necessary(User* user) {
     if (!user->avatar.texture_id) {
         if (user->avatar_request_id == NO_REQUEST) {
-            get_request(user->avatar_request_id, "%.*s", user->avatar_url.length, user->avatar_url.start);
+            image_request(user->avatar_request_id, "%.*s", user->avatar_url.length, user->avatar_url.start);
         }
 
         return false;
@@ -232,8 +333,257 @@ static bool check_and_request_avatar_if_necessary(User* user) {
     return true;
 }
 
+static bool draw_contact_picker_assignee_selection_button(ImDrawList* draw_list, User* user, ImVec2 size, float spacing) {
+    static const u32 hover_color = 0x11000000;
+    static const u32 active_color = hover_color * 2;
+
+    ImVec2 top_left = ImGui::GetCursorScreenPos();
+    ImVec2 bottom_right = top_left + size;
+
+    ImGui::PushID(user);
+
+    bool clicked = ImGui::InvisibleButton("select_assignee", size);
+    bool hovered = ImGui::IsItemHovered();
+    bool active = ImGui::IsItemActive();
+
+    if (active) {
+        draw_list->AddRectFilled(top_left, bottom_right, active_color);
+    } else if (hovered) {
+        draw_list->AddRectFilled(top_left, bottom_right, hover_color);
+    }
+
+    if (check_and_request_avatar_if_necessary(user)) {
+        draw_list->AddImage((void*)(intptr_t) user->avatar.texture_id, top_left, top_left + ImVec2(size.y, size.y));
+    } else {
+        // TODO dummy image?
+    }
+
+    s32 buffer_length = snprintf(NULL, 0, "%.*s %.*s", user->first_name.length, user->first_name.start, user->last_name.length, user->last_name.start);
+
+    s8* name_start = (s8*) talloc((u32) buffer_length + 1);
+    s8* name_end = name_start + buffer_length;
+
+    snprintf(name_start, buffer_length + 1, "%.*s %.*s", user->first_name.length, user->first_name.start, user->last_name.length, user->last_name.start);
+
+    ImVec2 text_size = ImGui::CalcTextSize(name_start, name_end);
+    ImVec2 text_top_left = top_left +
+                           ImVec2(size.y, 0.0f) +
+                           ImVec2(spacing, 0.0f) +
+                           ImVec2(0.0f, size.y / 2.0f - text_size.y / 2.0f);
+
+    draw_list->AddText(text_top_left, 0xff000000, name_start, name_start + strlen(name_start));
+
+    ImGui::PopID();
+
+    return clicked;
+}
+
+static void draw_add_assignee_button_and_contact_picker() {
+    const float avatar_side_px = assignee_avatar_side * platform_get_pixel_ratio();
+    const ImVec2 contact_picker_size = ImVec2(300.0f, 330.0f) * platform_get_pixel_ratio();
+
+    ImVec2 contact_picker_position = ImGui::GetCursorScreenPos();
+
+    ImGuiID contact_picker_id = ImGui::GetID("contact_picker");
+
+    bool should_open_contact_picker = false;
+    bool is_contact_picker_open = ImGui::IsPopupOpen(contact_picker_id);
+
+    if (is_contact_picker_open) {
+        ImGui::NewLine();
+    } else {
+        if (current_task.assignees.length) {
+            should_open_contact_picker = ImGui::Button("+", { avatar_side_px, avatar_side_px });
+        } else {
+            should_open_contact_picker = ImGui::Button(add_assignee_text, {0, avatar_side_px});
+        }
+    }
+
+    if (should_open_contact_picker) {
+        ImGui::OpenPopup("contact_picker");
+    }
+
+    ImGui::SetNextWindowPos(contact_picker_position);
+    ImGui::SetNextWindowSize(contact_picker_size);
+
+    if (is_contact_picker_open && ImGui::IsKeyDown(ImGui::GetKeyIndex(ImGuiKey_Escape))) {
+        ImGui::ClosePopup(contact_picker_id);
+    }
+
+    if (ImGui::BeginPopupEx(contact_picker_id, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoResize)) {
+        static const u32 placeholder_color = 0x80000000;
+        static const u32 search_buffer_size = 512;
+        static char search_buffer[search_buffer_size];
+
+        if (!filtered_users.data) {
+            update_user_search((char*) "");
+        }
+
+        ImVec2 placeholder_text_position = ImGui::GetCursorScreenPos() + ImGui::GetStyle().FramePadding;
+
+        if (should_open_contact_picker) {
+            ImGui::SetKeyboardFocusHere();
+        }
+
+        if (ImGui::InputText("##contact_search", search_buffer, search_buffer_size)) {
+            update_user_search(search_buffer);
+        }
+
+        if (strlen(search_buffer) == 0) {
+            const char* text = "Add by name or e-mail";
+
+            ImGui::GetWindowDrawList()->AddText(placeholder_text_position, placeholder_color, text, text + strlen(text));
+        }
+
+        ImGuiListClipper clipper(filtered_users.length);
+        ImDrawList* draw_list = ImGui::GetWindowDrawList();
+        float button_width = ImGui::GetContentRegionAvailWidth();
+        float spacing = ImGui::GetStyle().FramePadding.x;
+
+        while (clipper.Step()) {
+            for (User** it = filtered_users.data + clipper.DisplayStart; it != filtered_users.data + clipper.DisplayEnd; it++) {
+                if (draw_contact_picker_assignee_selection_button(draw_list, *it, { button_width, avatar_side_px }, spacing)) {
+                    add_assignee_to_task(current_task.id, (*it)->id);
+
+                    ImGui::CloseCurrentPopup();
+                }
+            }
+        }
+
+        clipper.End();
+
+        ImGui::EndPopup();
+    }
+}
+
+struct Assignee {
+    User* user;
+    String name;
+    float name_width;
+};
+
+static bool draw_unassign_button(ImVec2 top_left, float button_side) {
+    ImVec2 size { button_side, button_side };
+
+    ImGuiID id = ImGui::GetID("unassign");
+
+    const ImRect bounds(top_left, top_left + size);
+    bool is_clipped = !ImGui::ItemAdd(bounds, id);
+
+    bool hovered, held;
+    bool pressed = ImGui::ButtonBehavior(bounds, id, &hovered, &held, ImGuiButtonFlags_AllowItemOverlap);
+
+    if (is_clipped) return pressed;
+
+    ImDrawList* draw_list = ImGui::GetWindowDrawList();
+    ImVec2 center = top_left + size / 2.0f;
+
+    draw_list->AddCircleFilled(center, button_side / 2.0f, 0xff000000, 16);
+
+    draw_list->AddLine(center - size / 4.0f,
+                       center + size / 4.0f,
+                       0xffffffff);
+
+    draw_list->AddLine(center + ImVec2(button_side, -button_side) / 4.0f,
+                       center + ImVec2(-button_side, button_side) / 4.0f,
+                       0xffffffff);
+
+    return pressed;
+}
+
+static void draw_circular_user_avatar(ImDrawList* draw_list, User* user, ImVec2 top_left, float avatar_side_px) {
+    ImTextureID avatar_texture_id = (ImTextureID)(intptr_t) user->avatar.texture_id;
+
+    if (check_and_request_avatar_if_necessary(user)) {
+        float half_avatar_side = avatar_side_px / 2.0f;
+
+        draw_list->PushTextureID(avatar_texture_id);
+        fill_antialiased_textured_circle(draw_list, top_left + ImVec2(half_avatar_side, half_avatar_side), half_avatar_side, 32);
+        draw_list->PopTextureID();
+    } else {
+        // TODO dummy image?
+    }
+}
+
+static bool draw_assignee(Assignee* assignee, float avatar_side_px) {
+    ImVec2 top_left = ImGui::GetCursorScreenPos();
+
+    ImGui::PushID(assignee->user);
+
+    ImGui::InvisibleButton("assignee", { avatar_side_px, avatar_side_px });
+
+    bool is_hovered = ImGui::IsItemHovered();
+
+    ImGui::SetItemAllowOverlap();
+
+    ImDrawList* draw_list = ImGui::GetWindowDrawList();
+
+    draw_circular_user_avatar(draw_list, assignee->user, top_left, avatar_side_px);
+
+    bool is_unassign_clicked = false;
+
+    if (is_hovered) {
+        const float unassign_button_side = 12.0f * platform_get_pixel_ratio();
+
+        ImVec2 unassign_top_left = top_left +
+                                   ImVec2(avatar_side_px, 0.0f) -
+                                   ImVec2(unassign_button_side * 0.8f, 0.0f);
+
+        is_unassign_clicked = draw_unassign_button(unassign_top_left, unassign_button_side);
+    }
+
+    ImGui::PopID();
+
+    return is_unassign_clicked;
+}
+
+static bool draw_assignee_with_name(Assignee* assignee, float avatar_side_px, float spacing) {
+    ImVec2 top_left = ImGui::GetCursorScreenPos();
+
+    float total_width = avatar_side_px + spacing + assignee->name_width;
+
+    ImGui::PushID(assignee->user);
+
+    ImGui::InvisibleButton("assignee", { total_width, avatar_side_px });
+    bool is_hovered = ImGui::IsItemHovered();
+
+    ImGui::SetItemAllowOverlap();
+
+    ImDrawList* draw_list = ImGui::GetWindowDrawList();
+
+    ImVec2 bottom_right = top_left + ImVec2(total_width, avatar_side_px);
+    ImVec2 text_top_left = top_left + ImVec2(
+            avatar_side_px + spacing,
+            avatar_side_px / 2.0f - ImGui::GetFontSize() / 2.0f
+    );
+
+    if (is_hovered) {
+        draw_list->AddRectFilled(top_left, bottom_right, 0x11000000, 8.0f * platform_get_pixel_ratio());
+    }
+
+    draw_circular_user_avatar(draw_list, assignee->user, top_left, avatar_side_px);
+
+    draw_list->AddText(text_top_left, 0xff000000, assignee->name.start, assignee->name.start + assignee->name.length);
+
+    bool is_unassign_clicked = false;
+
+    if (is_hovered) {
+        const float unassign_button_side = 12.0f * platform_get_pixel_ratio();
+
+        ImVec2 unassign_top_left = top_left +
+                                   ImVec2(total_width, 0.0f) -
+                                   ImVec2(unassign_button_side * 0.8f, 0.0f);
+
+        is_unassign_clicked = draw_unassign_button(unassign_top_left, unassign_button_side);
+    }
+
+    ImGui::PopID();
+
+    return is_unassign_clicked;
+}
+
 static void draw_assignees(float wrap_pos) {
-    const float avatar_side_px = 32.0f * platform_get_pixel_ratio();
+    const float avatar_side_px = assignee_avatar_side * platform_get_pixel_ratio();
     const int assignees_to_consider_for_name_plus_avatar_display = 2;
 
     /*
@@ -241,12 +591,6 @@ static void draw_assignees(float wrap_pos) {
      * If 2 avatars with names do not fit, render how many avatars fit,
      * the rest are +X
      */
-
-    struct Assignee {
-        User* user;
-        String name;
-        float name_width;
-    };
 
     List<Assignee> assignees;
     assignees.data = (Assignee*) talloc(sizeof(Assignee) * current_task.assignees.length);
@@ -257,6 +601,9 @@ static void draw_assignees(float wrap_pos) {
     u32 name_plus_avatar_assignees = 0;
 
     float margin = ImGui::GetStyle().FramePadding.x * 2.0f;
+    float add_assignee_button_width = avatar_side_px + margin;
+
+    name_plus_avatar_total_width += add_assignee_button_width;
 
     for (u32 index = 0; index < current_task.assignees.length; index++) {
         User_Id user_id = current_task.assignees[index];
@@ -278,7 +625,7 @@ static void draw_assignees(float wrap_pos) {
         assignees.data[assignees.length++] = new_assignee;
 
         if (index < assignees_to_consider_for_name_plus_avatar_display) {
-            name_plus_avatar_total_width += new_assignee.name_width + avatar_side_px + margin;
+            name_plus_avatar_total_width += new_assignee.name_width + margin + avatar_side_px + margin;
             name_plus_avatar_assignees++;
         }
     }
@@ -294,9 +641,9 @@ static void draw_assignees(float wrap_pos) {
 
     if (window_start_x + name_plus_avatar_total_width > wrap_pos) {
         // If we don't fit then render everyone who fits as avatars
-        float available_space = wrap_pos - window_start_x;
+        float available_space = MAX(0, wrap_pos - window_start_x - add_assignee_button_width);
 
-        u32 can_fit_avatars = MAX(1, (u32) floor(available_space / (avatar_side_px + margin)));
+        u32 can_fit_avatars = MAX(1, (u32) floorf(available_space / (avatar_side_px + margin)));
         u32 fits_avatars = MIN(can_fit_avatars, assignees.length);
 
         if (available_space < 0) {
@@ -309,10 +656,8 @@ static void draw_assignees(float wrap_pos) {
             ImVec2 avatar_size = { avatar_side_px, avatar_side_px };
 
             if (!is_last) {
-                if (check_and_request_avatar_if_necessary(assignee->user)) {
-                    ImGui::Image((void*)(intptr_t) assignee->user->avatar.texture_id, avatar_size);
-                } else {
-                    ImGui::Button("A", avatar_size);
+                if (draw_assignee(assignee, avatar_side_px)) {
+                    remove_assignee_from_task(current_task.id, assignee->user->id);
                 }
 
                 ImGui::SameLine();
@@ -320,10 +665,8 @@ static void draw_assignees(float wrap_pos) {
                 u32 remaining_after_avatars = assignees.length - fits_avatars;
 
                 if (!remaining_after_avatars) {
-                    if (check_and_request_avatar_if_necessary(assignee->user)) {
-                        ImGui::Image((void*)(intptr_t) assignee->user->avatar.texture_id, avatar_size);
-                    } else {
-                        ImGui::Button("A", avatar_size);
+                    if (draw_assignee(assignee, avatar_side_px)) {
+                        remove_assignee_from_task(current_task.id, assignee->user->id);
                     }
                 } else {
                     // TODO poor results with more than 9 additional assignees
@@ -338,14 +681,10 @@ static void draw_assignees(float wrap_pos) {
         for (u32 assignee_index = 0; assignee_index < name_plus_avatar_assignees; assignee_index++) {
             Assignee* assignee = &assignees[assignee_index];
 
-            if (check_and_request_avatar_if_necessary(assignee->user)) {
-                ImGui::Image((void*)(intptr_t) assignee->user->avatar.texture_id, { avatar_side_px, avatar_side_px });
-            } else {
-                ImGui::Button("A", { avatar_side_px, avatar_side_px });
+            if (draw_assignee_with_name(assignee, avatar_side_px, margin)) {
+                remove_assignee_from_task(current_task.id, assignee->user->id);
             }
 
-            ImGui::SameLine();
-            ImGui::TextUnformatted(assignee->name.start, assignee->name.start + assignee->name.length);
             ImGui::SameLine();
         }
 
@@ -651,15 +990,32 @@ void draw_task_contents() {
 
         float header_wrap_pos = wrap_pos;
 
+        // TODO those y_offset things are hacky, we probably shouldn't use InvisibleButton but rather ButtonBehavior
         if (current_task.authors.length) {
+            float y_offset = (status_picker_row_height - ImGui::GetFontSize()) / 2.0f * platform_get_pixel_ratio();
+
+            ImGui::SetCursorPosY(ImGui::GetCursorPosY() + y_offset);
+
             header_wrap_pos = draw_authors_and_task_id_and_return_new_wrap_pos(wrap_pos);
+
+            ImGui::SetCursorPosY(ImGui::GetCursorPosY() - y_offset);
         }
 
         if (current_task.assignees.length) {
             ImGui::SameLine();
+
+            float y_offset = (status_picker_row_height - assignee_avatar_side) / 2.0f * platform_get_pixel_ratio();
+
+            ImGui::SetCursorPosY(ImGui::GetCursorPosY() + y_offset);
+
+            draw_assignees(header_wrap_pos);
+
+            ImGui::SetCursorPosY(ImGui::GetCursorPosY() - y_offset);
         }
 
-        draw_assignees(header_wrap_pos);
+        ImGui::SameLine();
+
+        draw_add_assignee_button_and_contact_picker();
     }
 
     ImGui::Separator();

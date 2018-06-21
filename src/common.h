@@ -114,9 +114,9 @@ inline s32 uchars_to_s32(const u8* chars) {
 inline void fill_id8(const u8 type, s32 id, u8* output) {
     u8 input[] = {
             type,
-            (u8) (id << 24),
-            (u8) (id << 16),
-            (u8) (id << 8),
+            (u8) (id >> 24),
+            (u8) (id >> 16),
+            (u8) (id >> 8),
             (u8) id
     };
 
@@ -142,3 +142,4 @@ inline void fill_id16(const u8 type1, s32 id1, const u8 type2, s32 id2, u8* outp
 
 s32 hackenstein(const char* a, const char* b, u32 a_length, u32 b_length);
 s32 string_atoi(String* string);
+s8* string_in_substring(const s8* big, const s8* small, size_t slen);

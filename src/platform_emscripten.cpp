@@ -286,8 +286,29 @@ void platform_end_frame() {
 
 }
 
-void platform_api_get(Request_Id &request_id, char* url) {
-    EM_ASM({ api_get(Pointer_stringify($0), $1) }, &url[0], request_id);
+void platform_load_remote_image(Request_Id& request_id, char* full_url) {
+    EM_ASM({ load_image(Pointer_stringify($0), $1) }, &full_url[0], request_id);
+}
+
+void platform_api_request(Request_Id& request_id, char* url, Http_Method method) {
+    const s8* method_as_string;
+    switch (method) {
+        case Http_Put: {
+            method_as_string = "PUT";
+            break;
+        }
+
+        case Http_Get: {
+            method_as_string = "GET";
+            break;
+        }
+
+        default: {
+            assert(!"Unknown request method");
+        }
+    }
+
+    EM_ASM({ api_get(Pointer_stringify($0), $1, Pointer_stringify($2)) }, &url[0], request_id, method_as_string);
 }
 
 void platform_local_storage_set(const char* key, String &value) {
