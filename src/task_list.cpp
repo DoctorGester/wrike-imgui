@@ -366,7 +366,7 @@ void draw_task_list_header(float view_width, float custom_column_width, Custom_F
     ImGui::EndColumns();
 }
 
-void draw_task_column(Sorted_Folder_Task* sorted_task, u32 column, Custom_Field* custom_field_or_null, u16 level, float alpha) {
+void draw_task_column(Sorted_Folder_Task* sorted_task, u32 column, Custom_Field* custom_field_or_null, u16 level) {
     Folder_Task* task = sorted_task->source_task;
 
     if (column == 0) {
@@ -409,14 +409,13 @@ void draw_task_column(Sorted_Folder_Task* sorted_task, u32 column, Custom_Field*
 
         ImGui::SameLine();
 
-        ImGui::TextColored(ImVec4(0, 0, 0, alpha), "%.*s", task->title.length, task->title.start);
+        ImGui::Text("%.*s", task->title.length, task->title.start);
 
         if (clicked && !expand_arrow_clicked) {
             request_task_by_task_id(task->id);
         }
     } else if (column == 1 && sorted_task->cached_status) {
         ImVec4 color = ImGui::ColorConvertU32ToFloat4(sorted_task->cached_status->color);
-        color.w = alpha;
 
         ImGui::TextColored(color, "[%.*s]", sorted_task->cached_status->name.length,
                            sorted_task->cached_status->name.start);
@@ -440,8 +439,7 @@ void draw_task_column(Sorted_Folder_Task* sorted_task, u32 column, Custom_Field*
                 name_pattern = "%.*s %.1s.,";
             }
 
-            ImGui::TextColored(ImVec4(0, 0, 0, alpha), name_pattern,
-                               user->first_name.length, user->first_name.start, user->last_name.start);
+            ImGui::Text(name_pattern, user->first_name.length, user->first_name.start, user->last_name.start);
 
             if (is_not_last) {
                 ImGui::SameLine();
@@ -460,7 +458,7 @@ void draw_task_column(Sorted_Folder_Task* sorted_task, u32 column, Custom_Field*
             Custom_Field_Value* value = &task->custom_field_values[j];
 
             if (value->field_id == custom_field_or_null->id) {
-                ImGui::TextColored(ImVec4(0, 0, 0, alpha), "%.*s", value->value.length, value->value.start);
+                ImGui::Text("%.*s", value->value.length, value->value.start);
                 found = true;
                 break;
             }
@@ -483,21 +481,21 @@ void map_columns_to_custom_fields(Custom_Field** column_to_custom_field) {
     }
 }
 
-void draw_task_column_hierarchical(Sorted_Folder_Task* task, u32 column, Custom_Field* custom_field_or_null, u16 level, float alpha) {
+void draw_task_column_hierarchical(Sorted_Folder_Task* task, u32 column, Custom_Field* custom_field_or_null, u16 level) {
     if (show_only_active_tasks && task->cached_status->group != Status_Group_Active) {
         return;
     }
 
-    draw_task_column(task, column, custom_field_or_null, level, alpha);
+    draw_task_column(task, column, custom_field_or_null, level);
 
     if (task->is_expanded) {
         for (u32 sub_task_index = 0; sub_task_index < task->num_sub_tasks; sub_task_index++) {
-            draw_task_column_hierarchical(task->sub_tasks[sub_task_index], column, custom_field_or_null, level + 1, alpha);
+            draw_task_column_hierarchical(task->sub_tasks[sub_task_index], column, custom_field_or_null, level + 1);
         }
     }
 }
 
-void draw_all_task_columns(Custom_Field** column_to_custom_field, u32 total_columns, float alpha) {
+void draw_all_task_columns(Custom_Field** column_to_custom_field, u32 total_columns) {
     for (u32 column = 0; column < total_columns; column++) {
         Custom_Field* custom_field = column >= custom_columns_start_index ?
                                      column_to_custom_field[column - custom_columns_start_index] :
@@ -513,7 +511,7 @@ void draw_all_task_columns(Custom_Field** column_to_custom_field, u32 total_colu
                 continue;
             }
 
-            draw_task_column_hierarchical(task, column, custom_field, 0, alpha);
+            draw_task_column_hierarchical(task, column, custom_field, 0);
         }
         //}
 
@@ -550,10 +548,6 @@ void draw_task_list() {
         }
 
         ImGui::Separator();
-
-        u32 loading_end_time = MAX(finished_loading_users_at, MAX(finished_loading_folder_contents_at, finished_loading_statuses_at));
-
-        float alpha = lerp(loading_end_time, tick, 1.0f, 8);
 
         // TODO we could put those into a clipper as well
 #if 0
@@ -602,12 +596,26 @@ void draw_task_list() {
             ImGui::SetColumnWidth(custom_columns_start_index + column, custom_column_width);
         }
 
-        draw_all_task_columns(column_to_custom_field, total_columns, alpha);
+        draw_all_task_columns(column_to_custom_field, total_columns);
 
         ImGui::EndColumns();
         ImGui::EndChild();
+
+        u32
+            loading_end_time = MAX(finished_loading_folder_contents_at, finished_loading_statuses_at);
+            loading_end_time = MAX(finished_loading_users_at, loading_end_time);
+            loading_end_time = MAX(finished_loading_statuses_at, loading_end_time);
+
+        float alpha = lerp(loading_end_time, tick, 1.0f, 8);
+
+        ImGui::FadeInOverlay(alpha);
     } else {
-        ImGui::LoadingIndicator(MIN(started_loading_users_at, MIN(started_loading_folder_contents_at, started_loading_statuses_at)));
+        u32
+            loading_start_time = MIN(started_loading_folder_contents_at, started_loading_statuses_at);
+            loading_start_time = MIN(started_loading_users_at, loading_start_time);
+            loading_start_time = MIN(started_loading_statuses_at, loading_start_time);
+
+        ImGui::LoadingIndicator(loading_start_time);
     }
 
     ImGui::EndChildFrame();

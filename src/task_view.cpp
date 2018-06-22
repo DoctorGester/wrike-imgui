@@ -1176,17 +1176,8 @@ void draw_task_contents() {
 
     ImGui::EndChild();
 
-    {
-        float alpha = lerp(MAX(finished_loading_task_at, finished_loading_users_at), tick, 1.0f, 8);
-        float rounding = ImGui::GetStyle().FrameRounding;
-
-        ImVec2 top_left = ImGui::GetWindowPos();
-        ImVec2 size = ImGui::GetWindowSize();
-
-        u32 overlay_color = IM_COL32(255, 255, 255, 255 - (u32) (alpha * 255.0f));
-
-        ImGui::GetOverlayDrawList()->AddRectFilled(top_left, top_left + size, overlay_color, rounding);
-    }
+    float alpha = lerp(MAX(finished_loading_task_at, finished_loading_users_at), tick, 1.0f, 8);
+    ImGui::FadeInOverlay(alpha);
 
     ImGui::EndChildFrame();
 }

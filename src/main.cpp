@@ -200,6 +200,7 @@ void api_request_success(Request_Id request_id, char* content, u32 content_lengt
         process_json_content(workflows_json_content, process_workflows_data, json_with_tokens);
 
         custom_statuses_were_loaded = true;
+        finished_loading_statuses_at = tick;
     } else if (request_id == suggested_folders_request) {
         suggested_folders_request = NO_REQUEST;
         process_json_content(suggested_folders_json_content, process_suggested_folders_data, json_with_tokens);
@@ -397,6 +398,17 @@ ImVec2 get_scaled_image_size(Memory_Image& image) {
 
 void ImGui::Image(Memory_Image& image) {
     ImGui::Image((void*)(intptr_t) image.texture_id, get_scaled_image_size(image));
+}
+
+void ImGui::FadeInOverlay(float alpha) {
+    float rounding = ImGui::GetStyle().FrameRounding;
+
+    ImVec2 top_left = ImGui::GetWindowPos();
+    ImVec2 size = ImGui::GetWindowSize();
+
+    u32 overlay_color = IM_COL32(255, 255, 255, 255 - (u32) (alpha * 255.0f));
+
+    ImGui::GetOverlayDrawList()->AddRectFilled(top_left, top_left + size, overlay_color, rounding);
 }
 
 void draw_folder_tree_search_input() {
