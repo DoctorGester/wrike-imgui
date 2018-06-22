@@ -36,7 +36,7 @@ Request_Id accounts_request = NO_REQUEST;
 Request_Id workflows_request = NO_REQUEST;
 Request_Id modify_task_request = NO_REQUEST;
 Request_Id suggested_folders_request = NO_REQUEST;
-Request_Id suggested_users_request = NO_REQUEST;
+Request_Id suggested_contacts_request = NO_REQUEST;
 
 bool had_last_selected_folder_so_doesnt_need_to_load_the_root_folder = false;
 bool custom_statuses_were_loaded = false;
@@ -61,6 +61,7 @@ static char* folder_tasks_json_content = NULL;
 static char* workflows_json_content = NULL;
 static char* folder_header_json_content = NULL;
 static char* suggested_folders_json_content = NULL; // TODO looks like a lot of waste
+static char* suggested_users_json_content = NULL; // TODO also there
 
 u32 tick = 0;
 
@@ -153,6 +154,8 @@ static void request_suggested_folders_for_account(Account_Id account_id) {
     fill_id8('A', account_id, output_account_id);
 
     api_request(Http_Get, suggested_folders_request, "accounts/%.*s/folders?suggestedParents", (u32) ARRAY_SIZE(output_account_id), output_account_id);
+
+    api_request(Http_Get, suggested_contacts_request, "internal/accounts/%.*s/contacts?suggestType=Responsibles", (u32) ARRAY_SIZE(output_account_id), output_account_id);
 }
 
 extern "C"
@@ -200,9 +203,10 @@ void api_request_success(Request_Id request_id, char* content, u32 content_lengt
     } else if (request_id == suggested_folders_request) {
         suggested_folders_request = NO_REQUEST;
         process_json_content(suggested_folders_json_content, process_suggested_folders_data, json_with_tokens);
-    }
-
-    if (request_id == modify_task_request) {
+    } else if (request_id == suggested_contacts_request) {
+        suggested_contacts_request = NO_REQUEST;
+        process_json_content(suggested_users_json_content, process_suggested_users_data, json_with_tokens);
+    } else if (request_id == modify_task_request) {
         modify_task_request = NO_REQUEST;
 
         process_json_content(task_json_content, process_task_data, json_with_tokens);

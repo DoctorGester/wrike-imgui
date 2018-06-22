@@ -14,8 +14,11 @@ struct User {
 };
 
 extern List<User> users;
+extern List<User> suggested_users;
 
 void process_users_data(char* json, u32 data_size, jsmntok_t*& token);
+void process_suggested_users_data(char* json, u32 data_size, jsmntok_t*&token);
+
 User* find_user_by_id(User_Id id, u32 id_hash = 0);
 User* find_user_by_avatar_request_id(Request_Id avatar_request_id);
 

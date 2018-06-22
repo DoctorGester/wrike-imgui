@@ -3,15 +3,16 @@
 #include "id_hash_map.h"
 
 List<User> users{};
+List<User> suggested_users{};
 
 static Id_Hash_Map<User_Id, User*> id_to_user_map{};
 
-static void process_users_data_object(char* json, jsmntok_t*&token) {
+static User* process_users_data_object(List<User>& target_users, char* json, jsmntok_t*&token) {
     jsmntok_t* object_token = token++;
 
     assert(object_token->type == JSMN_OBJECT);
 
-    User* user = &users[users.length++];
+    User* user = &target_users[target_users.length++];
 
     user->avatar_request_id = NO_REQUEST;
     user->avatar = {};
@@ -37,7 +38,7 @@ static void process_users_data_object(char* json, jsmntok_t*&token) {
         }
     }
 
-    id_hash_map_put(&id_to_user_map, user, user->id, hash_id(user->id));
+    return user;
 }
 
 void process_users_data(char* json, u32 data_size, jsmntok_t*&token) {
@@ -54,12 +55,32 @@ void process_users_data(char* json, u32 data_size, jsmntok_t*&token) {
     users.length = 0;
 
     for (u32 array_index = 0; array_index < data_size; array_index++) {
-        process_users_data_object(json, token);
+        User* user = process_users_data_object(users, json, token);
+
+        id_hash_map_put(&id_to_user_map, user, user->id, hash_id(user->id));;
+    }
+}
+
+void process_suggested_users_data(char* json, u32 data_size, jsmntok_t*&token) {
+    if (suggested_users.length < data_size) {
+        suggested_users.data = (User*) REALLOC(suggested_users.data, sizeof(User) * data_size);
+    }
+
+    suggested_users.length = 0;
+
+    for (u32 array_index = 0; array_index < data_size; array_index++) {
+        process_users_data_object(suggested_users, json, token);
     }
 }
 
 // Naive and slow, don't use too often
 User* find_user_by_avatar_request_id(Request_Id avatar_request_id) {
+    for (User* it = suggested_users.data; it != suggested_users.data + suggested_users.length; it++) {
+        if (it->avatar_request_id == avatar_request_id) {
+            return it;
+        }
+    }
+
     for (User* it = users.data; it != users.data + users.length; it++) {
         if (it->avatar_request_id == avatar_request_id) {
             return it;

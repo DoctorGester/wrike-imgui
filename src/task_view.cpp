@@ -389,7 +389,6 @@ static void draw_folder_picker_contents(bool set_focus) {
 
         clipper.End();
     }
-
 }
 
 static void draw_folder_picker_button(float wrap_pos) {
@@ -568,10 +567,21 @@ static void draw_add_assignee_button_and_contact_picker() {
             ImGui::GetWindowDrawList()->AddText(placeholder_text_position, placeholder_color, text, text + strlen(text));
         }
 
-        ImGuiListClipper clipper(filtered_users.length);
         ImDrawList* draw_list = ImGui::GetWindowDrawList();
         float button_width = ImGui::GetContentRegionAvailWidth();
         float spacing = ImGui::GetStyle().FramePadding.x;
+
+        if (strlen(search_buffer) == 0) {
+            for (User* it = suggested_users.data; it != suggested_users.data + suggested_users.length; it++) {
+                if (draw_contact_picker_assignee_selection_button(draw_list, it, {button_width, avatar_side_px}, spacing)) {
+                    add_assignee_to_task(current_task.id, it->id);
+
+                    ImGui::CloseCurrentPopup();
+                }
+            }
+        }
+
+        ImGuiListClipper clipper(filtered_users.length);
 
         while (clipper.Step()) {
             for (User** it = filtered_users.data + clipper.DisplayStart; it != filtered_users.data + clipper.DisplayEnd; it++) {
