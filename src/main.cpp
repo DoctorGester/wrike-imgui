@@ -35,12 +35,14 @@ Request_Id contacts_request = NO_REQUEST;
 Request_Id accounts_request = NO_REQUEST;
 Request_Id workflows_request = NO_REQUEST;
 Request_Id modify_task_request = NO_REQUEST;
+Request_Id suggested_folders_request = NO_REQUEST;
+Request_Id suggested_users_request = NO_REQUEST;
 
 bool had_last_selected_folder_so_doesnt_need_to_load_the_root_folder = false;
 bool custom_statuses_were_loaded = false;
 
 static bool draw_memory_debug = false;
-static bool draw_side_menu = true;
+static bool draw_side_menu = false;
 
 static Memory_Image logo;
 
@@ -58,6 +60,7 @@ static char* accounts_json_content = NULL;
 static char* folder_tasks_json_content = NULL;
 static char* workflows_json_content = NULL;
 static char* folder_header_json_content = NULL;
+static char* suggested_folders_json_content = NULL; // TODO looks like a lot of waste
 
 u32 tick = 0;
 
@@ -144,6 +147,14 @@ static void request_workflow_for_account(Account_Id account_id) {
     started_loading_statuses_at = tick;
 }
 
+static void request_suggested_folders_for_account(Account_Id account_id) {
+    u8 output_account_id[8];
+
+    fill_id8('A', account_id, output_account_id);
+
+    api_request(Http_Get, suggested_folders_request, "accounts/%.*s/folders?suggestedParents", (u32) ARRAY_SIZE(output_account_id), output_account_id);
+}
+
 extern "C"
 EXPORT
 void api_request_success(Request_Id request_id, char* content, u32 content_length) {
@@ -179,12 +190,16 @@ void api_request_success(Request_Id request_id, char* content, u32 content_lengt
         process_json_content(accounts_json_content, process_accounts_data, json_with_tokens);
 
         select_account();
+        request_suggested_folders_for_account(selected_account_id);
         request_workflow_for_account(selected_account_id);
     } else if (request_id == workflows_request) {
         workflows_request = NO_REQUEST;
         process_json_content(workflows_json_content, process_workflows_data, json_with_tokens);
 
         custom_statuses_were_loaded = true;
+    } else if (request_id == suggested_folders_request) {
+        suggested_folders_request = NO_REQUEST;
+        process_json_content(suggested_folders_json_content, process_suggested_folders_data, json_with_tokens);
     }
 
     if (request_id == modify_task_request) {
@@ -567,9 +582,9 @@ void draw_ui() {
 
     ImGui::Columns(draw_side_menu_this_frame ? 3 : 2);
 
-    if (ImGui::IsWindowAppearing()) {
-        ImGui::SetColumnWidth(0, 300.0f);
-    }
+//    if (ImGui::IsWindowAppearing()) {
+//        ImGui::SetColumnWidth(0, 300.0f);
+//    }
 
     if (draw_side_menu_this_frame) {
         draw_folder_tree();

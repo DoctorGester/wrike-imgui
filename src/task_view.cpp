@@ -301,28 +301,22 @@ static bool draw_parent_folder_ticker(const char* text_begin, const char* text_e
     return is_pressed;
 }
 
-static bool draw_folder_picker_folder_selection_button(ImDrawList* draw_list, Folder_Tree_Node* folder_node, ImVec2 size, float spacing) {
+static bool draw_folder_picker_folder_selection_button(ImDrawList* draw_list, String name, ImVec2 size, float spacing) {
     static const u32 hover_color = 0x11000000;
     static const u32 active_color = hover_color * 2;
 
     ImVec2 top_left = ImGui::GetCursorScreenPos();
     ImVec2 bottom_right = top_left + size;
 
-    ImGui::PushID(folder_node);
-
     bool clicked = ImGui::InvisibleButton("select_assignee", size);
     bool hovered = ImGui::IsItemHovered();
     bool active = ImGui::IsItemActive();
-
-    ImGui::PopID();
 
     if (active) {
         draw_list->AddRectFilled(top_left, bottom_right, active_color);
     } else if (hovered) {
         draw_list->AddRectFilled(top_left, bottom_right, hover_color);
     }
-
-    String name = folder_node->name;
 
     ImVec2 text_size = ImGui::CalcTextSize(name.start, name.start + name.length);
     ImVec2 text_top_left = top_left + ImVec2(spacing, size.y / 2.0f - text_size.y / 2.0f);
@@ -359,23 +353,37 @@ static void draw_folder_picker_contents(bool set_focus) {
             for (Folder_Tree_Node** it = search_result.data + clipper.DisplayStart; it != search_result.data + clipper.DisplayEnd; it++) {
                 Folder_Tree_Node* folder_tree_node = *it;
 
-                if (draw_folder_picker_folder_selection_button(draw_list, folder_tree_node, selection_button_size, padding)) {
+                ImGui::PushID(folder_tree_node);
+
+                if (draw_folder_picker_folder_selection_button(draw_list, folder_tree_node->name, selection_button_size, padding)) {
                     add_parent_folder(current_task.id, folder_tree_node->id);
 
                     ImGui::CloseCurrentPopup();
                 }
+
+                ImGui::PopID();
             }
         }
 
         clipper.End();
     } else {
+        for (Suggested_Folder* it = suggested_folders.data; it != suggested_folders.data + suggested_folders.length; it++) {
+            ImGui::PushID(it);
+            draw_folder_picker_folder_selection_button(draw_list, it->title, selection_button_size, padding);
+            ImGui::PopID();
+        }
+
         ImGuiListClipper clipper(total_nodes);
 
         while (clipper.Step()) {
             for (Folder_Tree_Node* it = all_nodes + clipper.DisplayStart; it != all_nodes + clipper.DisplayEnd; it++) {
-                if (draw_folder_picker_folder_selection_button(draw_list, it, selection_button_size, padding)) {
+                ImGui::PushID(it);
+
+                if (draw_folder_picker_folder_selection_button(draw_list, it->name, selection_button_size, padding)) {
                     ImGui::CloseCurrentPopup();
                 }
+
+                ImGui::PopID();
             }
         }
 

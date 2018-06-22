@@ -32,6 +32,8 @@ Folder_Tree_Node** starred_nodes = NULL;
 u32 total_nodes;
 u32 total_starred = 0;
 
+List<Suggested_Folder> suggested_folders{};
+
 void folder_tree_init() {
     id_hash_map_init(&folder_id_to_node_map);
 }
@@ -244,6 +246,31 @@ static void process_folder_tree_data(char* json, u32 data_size, jsmntok_t*& toke
     }
 }
 
+static void process_folder_contents_data_object(char* json, jsmntok_t*& token) {
+    jsmntok_t* object_token = token++;
+
+    assert(object_token->type == JSMN_OBJECT);
+
+    Suggested_Folder* suggested_folder = &suggested_folders[suggested_folders.length++];
+
+    for (u32 propety_index = 0; propety_index < object_token->size; propety_index++, token++) {
+        jsmntok_t* property_token = token++;
+
+        assert(property_token->type == JSMN_STRING);
+
+        jsmntok_t* next_token = token;
+
+        if (json_string_equals(json, property_token, "title")) {
+            json_token_to_string(json, next_token, suggested_folder->title);
+        } else if (json_string_equals(json, property_token, "id")) {
+            json_token_to_right_part_of_id16(json, next_token, suggested_folder->id);
+        } else {
+            eat_json(token);
+            token--;
+        }
+    }
+}
+
 // TODO not a good signature, should we be leaving those in globals?
 // TODO also we are managing char* json there, but not managing tokens!
 void process_folder_tree_request(char* json, jsmntok_t* tokens, u32 num_tokens) {
@@ -271,4 +298,16 @@ void process_folder_tree_request(char* json, jsmntok_t* tokens, u32 num_tokens) 
     lazy_array_clear(parent_child_pairs);
 
     build_folder_tree_search_index();
+}
+
+void process_suggested_folders_data(char* json, u32 data_size, jsmntok_t*& token) {
+    if (suggested_folders.length < data_size) {
+        suggested_folders.data = (Suggested_Folder*) REALLOC(suggested_folders.data, sizeof(Suggested_Folder) * data_size);
+    }
+
+    suggested_folders.length = 0;
+
+    for (u32 array_index = 0; array_index < data_size; array_index++) {
+        process_folder_contents_data_object(json, token);
+    }
 }
