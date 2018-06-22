@@ -76,6 +76,8 @@ u32 finished_loading_users_at = 0;
 
 static Request_Id request_id_counter = 0;
 
+List<Folder_Tree_Node*> folder_tree_search_result{};
+
 char search_buffer[128];
 
 PRINTLIKE(3, 4) void api_request(Http_Method method, Request_Id& request_id, const char* format, ...) {
@@ -208,60 +210,6 @@ void image_load_success(Request_Id request_id, u8* pixel_data, u32 width, u32 he
     }
 }
 
-int levenstein_cache[1024];
-
-int levenshtein(const char* a, const char* b, u32 a_length, u32 b_length) {
-    assert(a_length <= ARRAY_SIZE(levenstein_cache));
-
-    int index = 0;
-    int bIndex = 0;
-    int distance;
-    int bDistance;
-    int result;
-    char code;
-
-    /* Shortcut optimizations / degenerate cases. */
-    if (a == b) {
-        return 0;
-    }
-
-    if (a_length == 0) {
-        return b_length;
-    }
-
-    if (b_length == 0) {
-        return a_length;
-    }
-
-    /* initialize the vector. */
-    while (index < a_length) {
-        levenstein_cache[index] = index + 1;
-        index++;
-    }
-
-    /* Loop. */
-    while (bIndex < b_length) {
-        code = b[bIndex];
-        result = distance = bIndex++;
-        index = -1;
-
-        while (++index < a_length) {
-            bDistance = code == a[index] ? distance : distance + 1;
-            distance = levenstein_cache[index];
-
-            levenstein_cache[index] = result = distance > result
-                                    ? bDistance > result
-                                      ? result + 1
-                                      : bDistance
-                                    : bDistance > distance
-                                      ? distance + 1
-                                      : bDistance;
-        }
-    }
-
-    return result;
-}
-
 void request_folder_contents(String &folder_id) {
     platform_local_storage_set("last_selected_folder", folder_id);
 
@@ -328,30 +276,48 @@ void request_task_by_task_id(Task_Id task_id) {
     request_task_by_full_id(id_as_string);
 }
 
-void add_assignee_to_task(Task_Id task_id, User_Id user_id) {
+void modify_task_e16(Task_Id task_id, const u8 entity_prefix, s32 entity_id, const char* command) {
     u8 output_account_and_task_id[16];
-    u8 output_user_id[8];
+    u8 output_entity_id[16];
 
     fill_id16('A', selected_account_id, 'T', task_id, output_account_and_task_id);
-    fill_id8('U', user_id, output_user_id);
+    fill_id16('A', selected_account_id, entity_prefix, entity_id, output_entity_id);
 
-    api_request(Http_Put, modify_task_request, "tasks/%.*s?addResponsibles=[\"%.*s\"]",
+    api_request(Http_Put, modify_task_request, "tasks/%.*s?%s=[\"%.*s\"]",
                 (u32) ARRAY_SIZE(output_account_and_task_id), output_account_and_task_id,
-                (u32) ARRAY_SIZE(output_user_id), output_user_id
+                command,
+                (u32) ARRAY_SIZE(output_entity_id), output_entity_id
     );
 }
 
-void remove_assignee_from_task(Task_Id task_id, User_Id user_id) {
+void modify_task_e8(Task_Id task_id, const u8 entity_prefix, s32 entity_id, const char* command) {
     u8 output_account_and_task_id[16];
-    u8 output_user_id[8];
+    u8 output_entity_id[8];
 
     fill_id16('A', selected_account_id, 'T', task_id, output_account_and_task_id);
-    fill_id8('U', user_id, output_user_id);
+    fill_id8(entity_prefix, entity_id, output_entity_id);
 
-    api_request(Http_Put, modify_task_request, "tasks/%.*s?removeResponsibles=[\"%.*s\"]",
+    api_request(Http_Put, modify_task_request, "tasks/%.*s?%s=[\"%.*s\"]",
                 (u32) ARRAY_SIZE(output_account_and_task_id), output_account_and_task_id,
-                (u32) ARRAY_SIZE(output_user_id), output_user_id
+                command,
+                (u32) ARRAY_SIZE(output_entity_id), output_entity_id
     );
+}
+
+void add_parent_folder(Task_Id task_id, Folder_Id folder_id) {
+    modify_task_e16(task_id, 'G', folder_id, "addParents");
+}
+
+void remove_parent_folder(Task_Id task_id, Folder_Id folder_id) {
+    modify_task_e16(task_id, 'G', folder_id, "removeParents");
+}
+
+void add_assignee_to_task(Task_Id task_id, User_Id user_id) {
+    modify_task_e8(task_id, 'U', user_id, "addResponsibles");
+}
+
+void remove_assignee_from_task(Task_Id task_id, User_Id user_id) {
+    modify_task_e8(task_id, 'U', user_id, "removeResponsibles");
 }
 
 void draw_folder_tree_node(Folder_Tree_Node* tree_node) {
@@ -429,7 +395,7 @@ void draw_folder_tree_search_input() {
     if (ImGui::InputText("##tree_search", search_buffer, ARRAY_SIZE(search_buffer))) {
         u64 search_start = platform_get_app_time_precise();
 
-        folder_tree_search(search_buffer);
+        folder_tree_search(search_buffer, &folder_tree_search_result);
 
         printf("Took %f to search %i elements by %s\n", platform_get_delta_time_ms(search_start), total_nodes, search_buffer);
     }
@@ -484,8 +450,8 @@ void draw_folder_tree() {
     }
 
     u32 buffer_length = strlen(search_buffer);
-    if (buffer_length > 0 && search_result.data) {
-        for (Folder_Tree_Node** node_pointer = search_result.data; node_pointer != search_result.data + search_result.length; node_pointer++) {
+    if (buffer_length > 0 && folder_tree_search_result.data) {
+        for (Folder_Tree_Node** node_pointer = folder_tree_search_result.data; node_pointer != folder_tree_search_result.data + folder_tree_search_result.length; node_pointer++) {
             Folder_Tree_Node* node = *node_pointer;
             char* name = string_to_temporary_null_terminated_string(node->name);
 

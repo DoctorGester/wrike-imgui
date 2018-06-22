@@ -140,6 +140,17 @@ inline void fill_id16(const u8 type1, s32 id1, const u8 type2, s32 id2, u8* outp
     base32_encode(input, ARRAY_SIZE(input), output);
 }
 
+inline char* string_to_temporary_null_terminated_string(String string) {
+    void* talloc(u32);
+
+    char* folder_name = (char*) talloc(string.length + 1);
+
+    memcpy(folder_name, string.start, string.length);
+    folder_name[string.length] = 0;
+
+    return folder_name;
+}
+
 s32 hackenstein(const char* a, const char* b, u32 a_length, u32 b_length);
 s32 string_atoi(String* string);
 s8* string_in_substring(const s8* big, const s8* small, size_t slen);

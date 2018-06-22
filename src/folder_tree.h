@@ -18,7 +18,7 @@ struct Folder_Tree_Node {
 
 void folder_tree_init();
 void process_folder_tree_request(char* json, jsmntok_t* tokens, u32 num_tokens);
-void folder_tree_search(char* query);
+void folder_tree_search(const char* query, List<Folder_Tree_Node*>* result);
 
 Folder_Tree_Node* find_folder_tree_node_by_id(Folder_Id id, u32 id_hash = 0);
 
@@ -27,5 +27,3 @@ extern Folder_Tree_Node* all_nodes;
 extern Folder_Tree_Node** starred_nodes;
 extern u32 total_nodes;
 extern u32 total_starred;
-
-extern List<Folder_Tree_Node*> search_result;

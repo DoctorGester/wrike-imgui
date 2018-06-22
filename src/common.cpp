@@ -9,6 +9,7 @@
 #include "temporary_storage.h"
 #include "tracing.h"
 #include "platform.h"
+#include <string.h>
 
 u32 argb_to_agbr(u32 argb) {
     u32 a = argb & 0xFF000000;
@@ -68,10 +69,6 @@ char* read_file(const char* file_name) {
 
 static inline bool is_power_of_two(unsigned n) {
     return (n & (n - 1)) == 0;
-}
-template <typename T>
-void test_template2(T t) {
-    printf("%i", sizeof(t));
 }
 
 void load_image_into_gpu_memory(Memory_Image& image, void* pixels) {
@@ -217,7 +214,59 @@ s32 hackenstein(const char* a, const char* b, u32 a_length, u32 b_length) {
     return dd;
 };
 
-#include <string.h>
+int levenshtein(const char* a, const char* b, u32 a_length, u32 b_length) {
+    static int levenstein_cache[1024];
+
+    assert(a_length <= ARRAY_SIZE(levenstein_cache));
+
+    int index = 0;
+    int bIndex = 0;
+    int distance;
+    int bDistance;
+    int result;
+    char code;
+
+    /* Shortcut optimizations / degenerate cases. */
+    if (a == b) {
+        return 0;
+    }
+
+    if (a_length == 0) {
+        return b_length;
+    }
+
+    if (b_length == 0) {
+        return a_length;
+    }
+
+    /* initialize the vector. */
+    while (index < a_length) {
+        levenstein_cache[index] = index + 1;
+        index++;
+    }
+
+    /* Loop. */
+    while (bIndex < b_length) {
+        code = b[bIndex];
+        result = distance = bIndex++;
+        index = -1;
+
+        while (++index < a_length) {
+            bDistance = code == a[index] ? distance : distance + 1;
+            distance = levenstein_cache[index];
+
+            levenstein_cache[index] = result = distance > result
+                                               ? bDistance > result
+                                                 ? result + 1
+                                                 : bDistance
+                                               : bDistance > distance
+                                                 ? distance + 1
+                                                 : bDistance;
+        }
+    }
+
+    return result;
+}
 
 char* string_in_substring(const s8* big, const s8* small, size_t slen) {
     s8 c, sc;

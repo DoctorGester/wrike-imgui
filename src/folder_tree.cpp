@@ -32,8 +32,6 @@ Folder_Tree_Node** starred_nodes = NULL;
 u32 total_nodes;
 u32 total_starred = 0;
 
-List<Folder_Tree_Node*> search_result{};
-
 void folder_tree_init() {
     id_hash_map_init(&folder_id_to_node_map);
 }
@@ -134,10 +132,14 @@ static void process_folder_tree_data_object(char* json, jsmntok_t*& token) {
     }
 }
 
-void folder_tree_search(char* query) {
-    u32 query_length = strlen(query);
+void folder_tree_search(const char* query, List<Folder_Tree_Node*>* result) {
+    u32 query_length = (u32) strlen(query);
 
     if (!query_length) {
+        return;
+    }
+
+    if (!total_nodes) {
         return;
     }
 
@@ -149,11 +151,11 @@ void folder_tree_search(char* query) {
 
     query_lowercase[query_length] = 0;
 
-    if (!search_result.data) {
-        search_result.data = (Folder_Tree_Node**) MALLOC(sizeof(Folder_Tree_Node*) * total_nodes);
+    if (!result->data) {
+        result->data = (Folder_Tree_Node**) MALLOC(sizeof(Folder_Tree_Node*) * total_nodes);
     }
 
-    search_result.length = 0;
+    result->length = 0;
 
     char* it = search_index;
 
@@ -169,7 +171,7 @@ void folder_tree_search(char* query) {
         }
 
         if (string_in_substring(it, query_lowercase, length_or_zero)) {
-            search_result[search_result.length++] = &all_nodes[node_index];
+            result->data[result->length++] = &all_nodes[node_index];
         }
 
         it += length_or_zero;

@@ -38,10 +38,3 @@ inline void json_token_to_id8(char* json, jsmntok_t* token, s32& id) {
 
     id = uchars_to_s32((u8*) result + 1);
 }
-
-inline char* string_to_temporary_null_terminated_string(String& string) {
-    char* node_name_null_terminated = (char*) talloc(string.length + 1);
-    sprintf(node_name_null_terminated, "%.*s", string.length, string.start);
-
-    return node_name_null_terminated;
-}
