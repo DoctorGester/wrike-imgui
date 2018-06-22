@@ -148,13 +148,12 @@ static void request_workflow_for_account(Account_Id account_id) {
     started_loading_statuses_at = tick;
 }
 
-static void request_suggested_folders_for_account(Account_Id account_id) {
+static void request_suggestions_for_account(Account_Id account_id) {
     u8 output_account_id[8];
 
     fill_id8('A', account_id, output_account_id);
 
     api_request(Http_Get, suggested_folders_request, "accounts/%.*s/folders?suggestedParents", (u32) ARRAY_SIZE(output_account_id), output_account_id);
-
     api_request(Http_Get, suggested_contacts_request, "internal/accounts/%.*s/contacts?suggestType=Responsibles", (u32) ARRAY_SIZE(output_account_id), output_account_id);
 }
 
@@ -193,7 +192,7 @@ void api_request_success(Request_Id request_id, char* content, u32 content_lengt
         process_json_content(accounts_json_content, process_accounts_data, json_with_tokens);
 
         select_account();
-        request_suggested_folders_for_account(selected_account_id);
+        request_suggestions_for_account(selected_account_id);
         request_workflow_for_account(selected_account_id);
     } else if (request_id == workflows_request) {
         workflows_request = NO_REQUEST;
