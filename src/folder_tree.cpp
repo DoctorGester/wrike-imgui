@@ -82,8 +82,8 @@ static void process_folder_tree_data_object(char* json, jsmntok_t*& token) {
 
             total_names_length += new_node->name.length + 1;
 
-            if (new_node->name.length > 255) {
-                total_names_length++;
+            if (new_node->name.length >= 256) {
+                total_names_length++; // 0-terminator
             }
         } else if (json_string_equals(json, property_token, "id")) {
             json_token_to_right_part_of_id16(json, value_token, new_node->id);
@@ -166,7 +166,9 @@ void folder_tree_search(char* query) {
 
         it++;
 
-        if (!length_or_zero) {
+        bool has_to_calculate_length = !length_or_zero;
+
+        if (has_to_calculate_length) {
             length_or_zero = (u32) strlen(it);
         }
 
@@ -175,6 +177,10 @@ void folder_tree_search(char* query) {
         }
 
         it += length_or_zero;
+
+        if (has_to_calculate_length) {
+            it++;
+        }
     }
 }
 
