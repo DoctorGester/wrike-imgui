@@ -218,7 +218,7 @@ static void update_user_search(char* query) {
     printf("Took %f ms to filter %i elements out of %i\n", platform_get_delta_time_ms(start_time), filtered_users.length, users.length);
 }
 
-static void draw_status_selector(u32 status_color, String status_name, bool is_completed, float alpha) {
+static void draw_status_selector(u32 status_color, String status_name, bool is_completed) {
     float scale = platform_get_pixel_ratio();
 
     u32 color = change_color_luminance(status_color, 0.42f);
@@ -881,7 +881,7 @@ static bool draw_custom_fields(float wrap_pos) {
     return drew_at_least_one_custom_field;
 }
 
-static void draw_task_description(float wrap_width, float alpha) {
+static void draw_task_description(float wrap_width) {
     Rich_Text_String* text_start = current_task.description;
     Rich_Text_String* text_end = text_start + current_task.description_strings - 1;
 
@@ -928,7 +928,7 @@ static void draw_task_description(float wrap_width, float alpha) {
                     paragraph_start,
                     paragraph_end,
                     wrap_width,
-                    alpha
+                    1.0f
             );
 
             if (indent) {
@@ -946,20 +946,15 @@ void draw_task_contents() {
         load_png_from_disk("resources/checkmark_task_complete.png", checkmark);
     }
 
-    // TODO modifying alpha of everything is cumbersome, we could use a semi-transparent overlay
     float wrap_width = ImGui::GetColumnWidth(-1) - 50.0f * platform_get_pixel_ratio(); // Accommodate for scroll bar
 
     ImGuiID task_content_id = ImGui::GetID("task_content");
     ImGui::BeginChildFrame(task_content_id, ImVec2(-1, -1), ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
-    float alpha = lerp(MAX(finished_loading_task_at, finished_loading_users_at), tick, 1.0f, 8);
-
-    ImVec4 title_color = ImVec4(0, 0, 0, alpha);
-
     float wrap_pos = ImGui::GetCursorPosX() + wrap_width;
     ImGui::PushTextWrapPos(wrap_pos);
     ImGui::PushFont(font_header);
-    ImGui::TextColored(title_color, "%.*s", current_task.title.length, current_task.title.start);
+    ImGui::TextColored({ 0, 0, 0, 255 }, "%.*s", current_task.title.length, current_task.title.start);
     ImGui::PopFont();
     ImGui::PopTextWrapPos();
 
@@ -973,7 +968,7 @@ void draw_task_contents() {
         Custom_Status* status = find_custom_status_by_id(current_task.status_id);
 
         if (status) {
-            draw_status_selector(status->color, status->name, status->group == Status_Group_Completed, alpha);
+            draw_status_selector(status->color, status->name, status->group == Status_Group_Completed);
         } else {
             static const u32 active_status_color = argb_to_agbr(0xFF2196F3);
             static const char* active_status_name = "Active";
@@ -982,7 +977,7 @@ void draw_task_contents() {
             name.start = (char*) active_status_name;
             name.length = (u32) strlen(active_status_name);
 
-            draw_status_selector(active_status_color, name, false, alpha);
+            draw_status_selector(active_status_color, name, false);
         }
 
         float header_wrap_pos = wrap_pos;
@@ -1030,10 +1025,22 @@ void draw_task_contents() {
     }
 
     if (current_task.description_strings > 0) {
-        draw_task_description(wrap_width, alpha);
+        draw_task_description(wrap_width);
     }
 
     ImGui::EndChild();
+
+    {
+        float alpha = lerp(MAX(finished_loading_task_at, finished_loading_users_at), tick, 1.0f, 8);
+        float rounding = ImGui::GetStyle().FrameRounding;
+
+        ImVec2 top_left = ImGui::GetWindowPos();
+        ImVec2 size = ImGui::GetWindowSize();
+
+        u32 overlay_color = IM_COL32(255, 255, 255, 255 - (u32) (alpha * 255.0f));
+
+        ImGui::GetOverlayDrawList()->AddRectFilled(top_left, top_left + size, overlay_color, rounding);
+    }
 
     ImGui::EndChildFrame();
 }
