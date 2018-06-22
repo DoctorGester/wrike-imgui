@@ -46,10 +46,6 @@ Folder_Tree_Node* find_folder_tree_node_by_id(Folder_Id id, u32 id_hash) {
     return id_hash_map_get(&folder_id_to_node_map, id, id_hash);
 }
 
-static inline Folder_Tree_Node* unsafe_find_folder_tree_node_by_id(Folder_Id id, u32 hash) {
-    return id_hash_map_get(&folder_id_to_node_map, id, hash);
-}
-
 static void add_parent_child_pair(Folder_Tree_Node* parent, Folder_Id child_id) {
     Parent_Child_Pair* pair = lazy_array_reserve_n_values(parent_child_pairs, 1);
     pair->parent = parent;
@@ -193,7 +189,7 @@ static void match_tree_parent_child_pairs() {
         Parent_Child_Pair& pair = parent_child_pairs[i];
 
         Folder_Tree_Node* parent_node = pair.parent;
-        Folder_Tree_Node* child_node = unsafe_find_folder_tree_node_by_id(pair.child_id, pair.child_hash);
+        Folder_Tree_Node* child_node = id_hash_map_get(&folder_id_to_node_map, pair.child_id, pair.child_hash);
 
         if (child_node) {
             found_pairs++;
