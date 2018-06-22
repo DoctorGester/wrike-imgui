@@ -274,7 +274,7 @@ void platform_begin_frame() {
 
     static u64 last = 0;
 
-    io.DeltaTime = platform_get_delta_time_ms(last);
+    io.DeltaTime = platform_get_delta_time_ms(last) / 1000.0f;
     last = platform_get_app_time_precise();
 
     glClearColor(0.1f, 0.1f, 0.1f, 1);
@@ -346,5 +346,5 @@ float platform_get_delta_time_ms(u64 delta_to) {
 
     memcpy(&double_delta_to, &delta_to, sizeof(u64));
 
-    return (float) (double_delta_to - now);
+    return (float) (now - double_delta_to);
 }
