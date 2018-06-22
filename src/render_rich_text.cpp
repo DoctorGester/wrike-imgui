@@ -202,7 +202,7 @@ void render_rich_text(
                 while (s < text_end)
                 {
                     const char c = *s;
-                    if (ImCharIsSpace(c)) { s++; } else if (c == '\n') { s++; break; } else { break; }
+                    if (ImCharIsBlankA(c)) { s++; } else if (c == '\n') { s++; break; } else { break; }
                 }
                 continue;
             }
