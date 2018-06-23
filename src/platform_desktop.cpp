@@ -147,6 +147,16 @@ static bool poll_events_and_check_exit_event() {
         if (event.type == SDL_QUIT) {
             return true;
         }
+
+        // TODO temporary dirty code, english locale only
+        if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_c && SDL_GetModState() & KMOD_CTRL) {
+            SDL_SetClipboardText(handle_clipboard_copy());
+        }
+
+        if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_v && SDL_GetModState() & KMOD_CTRL) {
+            char* clipboard_text = SDL_GetClipboardText();
+            handle_clipboard_paste(clipboard_text, (u32) strlen(clipboard_text));
+        }
     }
 
     return false;
@@ -392,12 +402,12 @@ int curl_thread_request(void* data) {
         curl_easy_getinfo(curl, CURLINFO_PRETRANSFER_TIME, &pre);
         curl_easy_getinfo(curl, CURLINFO_STARTTRANSFER_TIME, &start);
 
-        printf("CURL TIME: total %f\n", total);
-        printf("CURL TIME: name %f\n", name);
-        printf("CURL TIME: conn %f\n", conn);
-        printf("CURL TIME: app %f\n", app);
-        printf("CURL TIME: pre %f\n", pre);
-        printf("CURL TIME: start %f\n", start);
+//        printf("CURL TIME: total %f\n", total);
+//        printf("CURL TIME: name %f\n", name);
+//        printf("CURL TIME: conn %f\n", conn);
+//        printf("CURL TIME: app %f\n", app);
+//        printf("CURL TIME: pre %f\n", pre);
+//        printf("CURL TIME: start %f\n", start);
 
         // TODO I have a feeling this could just be an atomic write and we could get rid of a mutex altogether
         request->status_code_or_zero = http_status_code;

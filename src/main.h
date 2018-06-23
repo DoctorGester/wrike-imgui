@@ -84,6 +84,10 @@ void remove_parent_folder(Task_Id task_id, Folder_Id folder_id);
 void set_task_status(Task_Id task_id, Custom_Status_Id status_id);
 void select_folder_node_and_request_contents_if_necessary(Folder_Tree_Node* folder_node);
 
+// TODO those probably leak both on desktop and web
+extern "C" char* handle_clipboard_copy();
+extern "C" void handle_clipboard_paste(char* data, u32 data_length);
+
 PRINTLIKE(2, 3) void image_request(Request_Id& request_id, const char* format, ...);
 
 // TODO move this into imgui extension file?

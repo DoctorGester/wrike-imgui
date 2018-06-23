@@ -3,6 +3,7 @@
 #include <imgui.h>
 #include "framemonitor.h"
 #include <cmath>
+#include <string.h>
 #define IMGUI_DEFINE_MATH_OPERATORS
 #include <imgui_internal.h>
 #include <jsmn.h>
@@ -644,6 +645,29 @@ char* handle_clipboard_copy() {
     sprintf(temp, "%.*s", current_task.permalink.length, current_task.permalink.start);
 
     return temp;
+}
+
+extern "C"
+EXPORT
+void handle_clipboard_paste(char* data, u32 data_length) {
+    const char* search_for = "open.htm?id=";
+
+    char* substring_start = string_in_substring(data, search_for, data_length);
+
+    if (substring_start) {
+        char* id_start = substring_start + strlen(search_for);
+        u32 id_length = data_length - (id_start - data);
+
+        Task_Id id_value = 0;
+
+        for (char* c = id_start; c != id_start + id_length && *c; c++) {
+            id_value = id_value * 10 + (*c - '0');
+        }
+
+        printf("Task Id %.*s found in buffer, loading\n", id_length, id_start);
+
+        request_task_by_task_id(id_value);
+    }
 }
 
 extern "C"
