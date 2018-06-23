@@ -100,10 +100,10 @@ static void process_custom_status(Workflow* workflow, char* json, jsmntok_t*& to
     Custom_Status* custom_status = &custom_statuses[custom_statuses.length++];
     custom_status->natural_index = natural_index;
     custom_status->workflow = workflow;
+    custom_status->is_hidden = false;
 
     // TODO unused
     bool is_standard = false;
-    bool is_hidden = false;
 
     custom_status->color = 0;
 
@@ -121,7 +121,7 @@ static void process_custom_status(Workflow* workflow, char* json, jsmntok_t*& to
         } else if (json_string_equals(json, property_token, "standard")) {
             is_standard = *(json + next_token->start) == 't';
         } else if (json_string_equals(json, property_token, "hidden")) {
-            is_hidden = *(json + next_token->start) == 't';
+            custom_status->is_hidden = *(json + next_token->start) == 't';
         } else if (json_string_equals(json, property_token, "color")) {
             String color_name;
             json_token_to_string(json, next_token, color_name);
@@ -138,19 +138,14 @@ static void process_custom_status(Workflow* workflow, char* json, jsmntok_t*& to
         }
     }
 
-    if (is_hidden) {
-        workflow->statuses.length--;
-        custom_statuses.length--;
-    } else {
-        if (!custom_status->color) {
-            custom_status->color = argb_to_agbr(status_group_to_color(custom_status->group));
-        }
-
-        custom_status->id_hash = hash_id(custom_status->id);
-
-        // TODO I'm not totally sure about this, what if a task has a hidden status somehow?
-        id_hash_map_put(&id_to_custom_status, custom_status, custom_status->id, custom_status->id_hash);
+    if (!custom_status->color) {
+        custom_status->color = argb_to_agbr(status_group_to_color(custom_status->group));
     }
+
+    custom_status->id_hash = hash_id(custom_status->id);
+
+    // TODO I'm not totally sure about this, what if a task has a hidden status somehow?
+    id_hash_map_put(&id_to_custom_status, custom_status, custom_status->id, custom_status->id_hash);
 }
 
 void process_workflows_data(char* json, u32 data_size, jsmntok_t*&token) {

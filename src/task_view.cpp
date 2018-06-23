@@ -286,10 +286,12 @@ static void draw_status_picker_dropdown_contents(Custom_Status* current_task_sta
     ImVec2 button_size{ ImGui::GetWindowContentRegionWidth(), 24.0f * scale };
 
     for (Custom_Status* status = workflow->statuses.data; status != workflow->statuses.data + workflow->statuses.length; status++) {
-        if (draw_status_picker_dropdown_status_selection_button(draw_list, status, status == current_task_status, button_size, scale)) {
-            set_task_status(current_task.id, status->id);
+        if (!status->is_hidden) {
+            if (draw_status_picker_dropdown_status_selection_button(draw_list, status, status == current_task_status, button_size, scale)) {
+                set_task_status(current_task.id, status->id);
 
-            ImGui::CloseCurrentPopup();
+                ImGui::CloseCurrentPopup();
+            }
         }
     }
 }

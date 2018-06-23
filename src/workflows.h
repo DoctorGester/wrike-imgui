@@ -19,6 +19,7 @@ struct Custom_Status {
     u32 id_hash;
     u32 color;
     u32 natural_index;
+    bool is_hidden;
 };
 
 struct Workflow {

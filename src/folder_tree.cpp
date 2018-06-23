@@ -472,7 +472,7 @@ Folder_Color* string_to_folder_color(String string) {
 
     char s = *string.start;
 
-#define char_at_to_index(at) *(string.start + (at)) - '0'
+#define char_at_to_index(at) *(string.start + (at)) - '1'
 
     switch (s) {
         case 'N'/*one*/: return &None;
