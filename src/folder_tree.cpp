@@ -472,9 +472,7 @@ Folder_Color* string_to_folder_color(String string) {
 
     char s = *string.start;
 
-    const u32 ascii_number_start = 49;
-
-#define char_at_to_index(at) *(string.start + (at)) - ascii_number_start
+#define char_at_to_index(at) *(string.start + (at)) - '0'
 
     switch (s) {
         case 'N'/*one*/: return &None;
