@@ -81,6 +81,7 @@ void add_assignee_to_task(Task_Id task_id, User_Id user_id);
 void remove_assignee_from_task(Task_Id task_id, User_Id user_id);
 void add_parent_folder(Task_Id task_id, Folder_Id folder_id);
 void remove_parent_folder(Task_Id task_id, Folder_Id folder_id);
+void select_folder_node_and_request_contents_if_necessary(Folder_Tree_Node* folder_node);
 
 PRINTLIKE(2, 3) void image_request(Request_Id& request_id, const char* format, ...);
 

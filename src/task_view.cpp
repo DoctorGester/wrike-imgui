@@ -307,7 +307,10 @@ static bool draw_parent_folder_ticker(Folder_Tree_Node* folder_tree_node, bool g
         const u32 clear_alpha = 0x00FFFFFF;
         const u32 half_alpha_mask = alpha << 24;
 
-        background_color = (background_color & clear_alpha) | half_alpha_mask;
+        if (background_color) {
+            background_color = (background_color & clear_alpha) | half_alpha_mask;
+        }
+
         text_color = (text_color & clear_alpha) | half_alpha_mask;
         border_color = (border_color & clear_alpha) | half_alpha_mask;
     }
@@ -425,6 +428,9 @@ static void draw_folder_picker_button(float wrap_pos) {
     bool should_set_focus = false;
 
     if (!is_folder_picker_open) {
+        // TODO account for wrapping
+        // TODO styling
+        // TODO button should have more text when there are no assignees yet
         if (ImGui::SmallButton(picker_button_text)) {
             ImGui::OpenPopupEx(folder_picker_id);
 
@@ -456,7 +462,9 @@ static void draw_parent_folders(float wrap_pos) {
         Folder_Tree_Node* folder_tree_node = find_folder_tree_node_by_id(folder_id);
 
         if (folder_tree_node) {
-            draw_parent_folder_ticker(folder_tree_node, true, parent_index > 0, wrap_pos);
+            if (draw_parent_folder_ticker(folder_tree_node, true, parent_index > 0, wrap_pos)) {
+                select_folder_node_and_request_contents_if_necessary(folder_tree_node);
+            }
 
             ImGui::SameLine();
         }
@@ -467,7 +475,9 @@ static void draw_parent_folders(float wrap_pos) {
         Folder_Tree_Node* folder_tree_node = find_folder_tree_node_by_id(folder_id);
 
         if (folder_tree_node) {
-            draw_parent_folder_ticker(folder_tree_node, false, parent_index > 0, wrap_pos);
+            if (draw_parent_folder_ticker(folder_tree_node, false, parent_index > 0, wrap_pos)) {
+                select_folder_node_and_request_contents_if_necessary(folder_tree_node);
+            }
 
             ImGui::SameLine();
         }
