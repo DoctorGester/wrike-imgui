@@ -1,9 +1,11 @@
+#include <jsmn.h>
 #include "json.h"
 #include "id_hash_map.h"
 #include "workflows.h"
 
-static Custom_Status* custom_statuses = NULL;
-static u32 custom_statuses_count = 0;
+List<Workflow> workflows{};
+
+static List<Custom_Status> custom_statuses{};
 static Id_Hash_Map<Custom_Status_Id, Custom_Status*> id_to_custom_status = {};
 
 static u32 color_name_to_color_argb(String &color_name) {
@@ -90,16 +92,18 @@ static u32 status_group_to_color(Status_Group group) {
     }
 }
 
-static void process_custom_status(char* json, jsmntok_t*& token, u32 natural_index) {
+static void process_custom_status(Workflow* workflow, char* json, jsmntok_t*& token, u32 natural_index) {
     jsmntok_t* object_token = token++;
 
     assert(object_token->type == JSMN_OBJECT);
 
-    Custom_Status* custom_status = &custom_statuses[custom_statuses_count++];
+    Custom_Status* custom_status = &custom_statuses[custom_statuses.length++];
     custom_status->natural_index = natural_index;
+    custom_status->workflow = workflow;
 
     // TODO unused
     bool is_standard = false;
+    bool is_hidden = false;
 
     custom_status->color = 0;
 
@@ -116,6 +120,8 @@ static void process_custom_status(char* json, jsmntok_t*& token, u32 natural_ind
             json_token_to_string(json, next_token, custom_status->name);
         } else if (json_string_equals(json, property_token, "standard")) {
             is_standard = *(json + next_token->start) == 't';
+        } else if (json_string_equals(json, property_token, "hidden")) {
+            is_hidden = *(json + next_token->start) == 't';
         } else if (json_string_equals(json, property_token, "color")) {
             String color_name;
             json_token_to_string(json, next_token, color_name);
@@ -132,15 +138,19 @@ static void process_custom_status(char* json, jsmntok_t*& token, u32 natural_ind
         }
     }
 
-    if (!custom_status->color) {
-        custom_status->color = argb_to_agbr(status_group_to_color(custom_status->group));
+    if (is_hidden) {
+        workflow->statuses.length--;
+        custom_statuses.length--;
+    } else {
+        if (!custom_status->color) {
+            custom_status->color = argb_to_agbr(status_group_to_color(custom_status->group));
+        }
+
+        custom_status->id_hash = hash_id(custom_status->id);
+
+        // TODO I'm not totally sure about this, what if a task has a hidden status somehow?
+        id_hash_map_put(&id_to_custom_status, custom_status, custom_status->id, custom_status->id_hash);
     }
-
-    custom_status->id_hash = hash_id(custom_status->id);
-
-//    printf("Got status %.*s with hash %lu\n", custom_status->name.length, custom_status->name.start, custom_status->id_hash);
-
-    id_hash_map_put(&id_to_custom_status, custom_status, custom_status->id, custom_status->id_hash);
 }
 
 void process_workflows_data(char* json, u32 data_size, jsmntok_t*&token) {
@@ -176,16 +186,23 @@ void process_workflows_data(char* json, u32 data_size, jsmntok_t*&token) {
         id_hash_map_init(&id_to_custom_status);
     }
 
-    if (custom_statuses_count < total_statuses) {
-        custom_statuses = (Custom_Status*) REALLOC(custom_statuses, sizeof(Custom_Status) * total_statuses);
+    if (workflows.length < data_size) {
+        workflows.data = (Workflow*) REALLOC(workflows.data, sizeof(Workflow) * data_size);
     }
 
-    custom_statuses_count = 0;
+    if (custom_statuses.length < total_statuses) {
+        custom_statuses.data = (Custom_Status*) REALLOC(custom_statuses.data, sizeof(Custom_Status) * total_statuses);
+    }
+
+    workflows.length = 0;
+    custom_statuses.length = 0;
 
     for (u32 array_index = 0; array_index < data_size; array_index++) {
         jsmntok_t* object_token = token++;
 
         assert(object_token->type == JSMN_OBJECT);
+
+        Workflow* workflow = &workflows[workflows.length++];
 
         for (u32 propety_index = 0; propety_index < object_token->size; propety_index++, token++) {
             jsmntok_t* property_token = token++;
@@ -194,13 +211,20 @@ void process_workflows_data(char* json, u32 data_size, jsmntok_t*&token) {
 
             jsmntok_t* next_token = token;
 
-            if (json_string_equals(json, property_token, "customStatuses")) {
+            if (json_string_equals(json, property_token, "id")) {
+                json_token_to_right_part_of_id16(json, next_token, workflow->id);
+            } else if (json_string_equals(json, property_token, "name")) {
+                json_token_to_string(json, next_token, workflow->name);
+            } else if (json_string_equals(json, property_token, "customStatuses")) {
                 assert(next_token->type == JSMN_ARRAY);
 
                 token++;
 
+                workflow->statuses.data = &custom_statuses[custom_statuses.length];
+                workflow->statuses.length = (u32) next_token->size;
+
                 for (u32 status_index = 0; status_index < next_token->size; status_index++) {
-                    process_custom_status(json, token, status_index);
+                    process_custom_status(workflow, json, token, status_index);
                 }
 
                 token--;

@@ -218,12 +218,109 @@ static void update_user_search(char* query) {
     printf("Took %f ms to filter %i elements out of %i\n", platform_get_delta_time_ms(start_time), filtered_users.length, users.length);
 }
 
-static void draw_status_selector(u32 status_color, String status_name, bool is_completed) {
+static bool draw_status_picker_dropdown_status_selection_button(ImDrawList* draw_list, Custom_Status* status, bool is_current, ImVec2 size, float scale) {
+    static const u32 hover_color = 0x11000000;
+    static const u32 active_color = hover_color * 2;
+    static const u32 current_color = argb_to_agbr(0xff4488ff);
+
+    ImVec2 top_left = ImGui::GetCursorScreenPos();
+    ImVec2 bottom_right = top_left + size;
+
+    ImGui::PushID(status);
+
+    bool clicked = ImGui::InvisibleButton("select_status", size);
+    bool hovered = ImGui::IsItemHovered();
+    bool active = ImGui::IsItemActive();
+
+    ImGui::PopID();
+
+    u32 background_color = 0;
+    u32 text_color = is_current ? IM_COL32_WHITE : IM_COL32_BLACK;
+
+    if (is_current) {
+        background_color = current_color;
+    } else if (active) {
+        background_color = active_color;
+    } else if (hovered) {
+        background_color = hover_color;
+    }
+
+    if (background_color) {
+        draw_list->AddRectFilled(top_left, bottom_right, background_color);
+    }
+
+    float spacing = 6.0f * scale;
+    String name = status->name;
+
+    float status_color_display_rounding = 2.0f * scale;
+    float status_color_display_side = size.y / 2.0f;
+
+    ImVec2 status_color_display_top_left = top_left + ImVec2(spacing, size.y / 2.0f - status_color_display_side / 2.0f);
+    ImVec2 status_color_display_bottom_right = status_color_display_top_left + ImVec2(status_color_display_side, status_color_display_side);
+
+    draw_list->AddRectFilled(status_color_display_top_left,
+                             status_color_display_bottom_right,
+                             status->color,
+                             status_color_display_rounding);
+
+    draw_list->AddRect(status_color_display_top_left,
+                       status_color_display_bottom_right,
+                       IM_COL32_WHITE,
+                       status_color_display_rounding);
+
+    ImVec2 text_size = ImGui::CalcTextSize(name.start, name.start + name.length);
+    ImVec2 text_top_left = top_left + ImVec2(spacing + status_color_display_side + spacing, size.y / 2.0f - text_size.y / 2.0f);
+
+    draw_list->AddText(text_top_left, text_color, name.start, name.start + name.length);
+
+    return clicked;
+}
+
+static void draw_status_picker_dropdown_contents(Custom_Status* current_task_status) {
+    Workflow* workflow = current_task_status->workflow;
+
+    ImGui::Text("%.*s", workflow->name.length, workflow->name.start);
+
+    float scale = platform_get_pixel_ratio();
+    ImDrawList* draw_list = ImGui::GetWindowDrawList();
+    ImVec2 button_size{ ImGui::GetWindowContentRegionWidth(), 24.0f * scale };
+
+    for (Custom_Status* status = workflow->statuses.data; status != workflow->statuses.data + workflow->statuses.length; status++) {
+        if (draw_status_picker_dropdown_status_selection_button(draw_list, status, status == current_task_status, button_size, scale)) {
+            set_task_status(current_task.id, status->id);
+
+            ImGui::CloseCurrentPopup();
+        }
+    }
+}
+
+static void draw_status_picker_dropdown_if_open(ImGuiID status_picker_dropdown_id, Custom_Status* status) {
+    bool is_status_picker_open = ImGui::IsPopupOpen(status_picker_dropdown_id);
+
+    ImVec2 status_picker_position = ImGui::GetCursorScreenPos();
+    ImVec2 status_picker_size = ImVec2(300, 300) * platform_get_pixel_ratio();
+
+    ImGui::SetNextWindowPos(status_picker_position);
+    ImGui::SetNextWindowSize(status_picker_size);
+
+    if (is_status_picker_open && ImGui::IsKeyDown(ImGui::GetKeyIndex(ImGuiKey_Escape))) {
+        ImGui::ClosePopup(status_picker_dropdown_id);
+    }
+
+    if (ImGui::BeginPopupEx(status_picker_dropdown_id, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoResize)) {
+        draw_status_picker_dropdown_contents(status);
+
+        ImGui::EndPopup();
+    }
+}
+
+static bool draw_status_picker(u32 status_color, String status_name, bool is_completed) {
     float scale = platform_get_pixel_ratio();
 
     u32 color = change_color_luminance(status_color, 0.42f);
     u32 bg_color = change_color_luminance(status_color, 0.94f);
     u32 border_color = change_color_luminance(status_color, 0.89f);
+    u32 arrow_color = change_color_luminance(status_color, 0.34f);
 
     ImGui::PushFont(font_bold);
 
@@ -242,9 +339,11 @@ static void draw_status_selector(u32 status_color, String status_name, bool is_c
     ImVec2 size = ImVec2(text_size.x + text_offset_x + padding * 2.0f - left_line_width, status_picker_row_height * scale);
     ImVec2 checkbox_start = start + ImVec2(checkbox_offset_x, size.y / 2 - checkbox_size.y / 2);
     ImVec2 text_start = start + ImVec2(text_offset_x, size.y / 2 - text_size.y / 2);
+    ImVec2 arrow_position = text_start + ImVec2(text_size.x + 4 * scale, 0) + ImVec2(0, text_size.y / 2.0f);
 
     ImDrawList* draw_list = ImGui::GetWindowDrawList();
-    ImGui::InvisibleButton("status_selector", size);
+
+    bool is_pressed = ImGui::InvisibleButton("status_selector", size);
 
     draw_list->AddRectFilled(start, start + size, bg_color);
     draw_list->AddRectFilled(start, start + ImVec2(left_line_width, size.y), color);
@@ -260,13 +359,14 @@ static void draw_status_selector(u32 status_color, String status_name, bool is_c
 
     draw_list->AddRect(checkbox_start, checkbox_start + checkbox_size, color, 0.0f, ImDrawCornerFlags_All, 2.0f);
     draw_list->AddText(text_start, IM_COL32_BLACK, text_begin, text_end);
-
-//    ImVec2 arrow_position = text_start + ImVec2(text_size.x + 4, 0);
-//    ImGui::PushStyleColor(ImGuiCol_Text, color);
-//    ImGui::RenderArrow(arrow_position * scale, ImGuiKey_DownArrow, 0.5f);
-//    ImGui::PopStyleColor();
+    draw_list->AddTriangleFilled(arrow_position,
+                                 arrow_position + ImVec2(5,    0) * scale,
+                                 arrow_position + ImVec2(2.5f, 4) * scale,
+                                 arrow_color);
 
     ImGui::PopFont();
+
+    return is_pressed;
 }
 
 static bool draw_parent_folder_ticker(Folder_Tree_Node* folder_tree_node, bool ghost_tag, bool can_wrap, float wrap_pos) {
@@ -1150,7 +1250,13 @@ void draw_task_contents() {
         Custom_Status* status = find_custom_status_by_id(current_task.status_id);
 
         if (status) {
-            draw_status_selector(status->color, status->name, status->group == Status_Group_Completed);
+            static const ImGuiID status_picker_dropdown_id = ImGui::GetID("status_picker");
+
+            if (draw_status_picker(status->color, status->name, status->group == Status_Group_Completed)) {
+                ImGui::OpenPopupEx(status_picker_dropdown_id);
+            }
+
+            draw_status_picker_dropdown_if_open(status_picker_dropdown_id, status);
         } else {
             static const u32 active_status_color = argb_to_agbr(0xFF2196F3);
             static const char* active_status_name = "Active";
@@ -1159,7 +1265,7 @@ void draw_task_contents() {
             name.start = (char*) active_status_name;
             name.length = (u32) strlen(active_status_name);
 
-            draw_status_selector(active_status_color, name, false);
+            draw_status_picker(active_status_color, name, false);
         }
 
         float header_wrap_pos = wrap_pos;

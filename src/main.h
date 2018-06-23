@@ -78,9 +78,10 @@ extern Task_Id selected_folder_task_id;
 
 void request_task_by_task_id(Task_Id task_id);
 void add_assignee_to_task(Task_Id task_id, User_Id user_id);
-void remove_assignee_from_task(Task_Id task_id, User_Id user_id);
 void add_parent_folder(Task_Id task_id, Folder_Id folder_id);
+void remove_assignee_from_task(Task_Id task_id, User_Id user_id);
 void remove_parent_folder(Task_Id task_id, Folder_Id folder_id);
+void set_task_status(Task_Id task_id, Custom_Status_Id status_id);
 void select_folder_node_and_request_contents_if_necessary(Folder_Tree_Node* folder_node);
 
 PRINTLIKE(2, 3) void image_request(Request_Id& request_id, const char* format, ...);

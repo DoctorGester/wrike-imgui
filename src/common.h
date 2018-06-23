@@ -25,6 +25,7 @@ typedef s32 Folder_Id;
 typedef s32 Task_Id;
 typedef s32 Custom_Field_Id;
 typedef s32 Custom_Status_Id;
+typedef s32 Workflow_Id;
 typedef s32 User_Id;
 
 static const u32 hash_seed = 3637;

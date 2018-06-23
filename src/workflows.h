@@ -9,14 +9,25 @@ enum Status_Group {
     Status_Group_Cancelled
 };
 
+struct Workflow;
+
 struct Custom_Status {
-    s32 id;
+    Workflow* workflow;
+    Custom_Status_Id id;
     String name;
     Status_Group group;
     u32 id_hash;
     u32 color;
     u32 natural_index;
 };
+
+struct Workflow {
+    Workflow_Id id;
+    String name;
+    List<Custom_Status> statuses;
+};
+
+extern List<Workflow> workflows;
 
 void process_workflows_data(char* json, u32 data_size, jsmntok_t*&token);
 Custom_Status* find_custom_status_by_id(Custom_Status_Id id, u32 id_hash = 0);

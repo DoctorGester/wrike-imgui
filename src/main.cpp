@@ -297,28 +297,32 @@ void request_task_by_task_id(Task_Id task_id) {
     request_task_by_full_id(id_as_string);
 }
 
-void modify_task_e16(Task_Id task_id, const u8 entity_prefix, s32 entity_id, const char* command) {
+void modify_task_e16(Task_Id task_id, const u8 entity_prefix, s32 entity_id, const char* command, bool array = true) {
     u8 output_account_and_task_id[16];
     u8 output_entity_id[16];
 
     fill_id16('A', selected_account_id, 'T', task_id, output_account_and_task_id);
     fill_id16('A', selected_account_id, entity_prefix, entity_id, output_entity_id);
 
-    api_request(Http_Put, modify_task_request, "tasks/%.*s?%s=[\"%.*s\"]",
+    const char* pattern = array ? "tasks/%.*s?%s=[\"%.*s\"]" : "tasks/%.*s?%s=%.*s";
+
+    api_request(Http_Put, modify_task_request, pattern,
                 (u32) ARRAY_SIZE(output_account_and_task_id), output_account_and_task_id,
                 command,
                 (u32) ARRAY_SIZE(output_entity_id), output_entity_id
     );
 }
 
-void modify_task_e8(Task_Id task_id, const u8 entity_prefix, s32 entity_id, const char* command) {
+void modify_task_e8(Task_Id task_id, const u8 entity_prefix, s32 entity_id, const char* command, bool array = true) {
     u8 output_account_and_task_id[16];
     u8 output_entity_id[8];
 
     fill_id16('A', selected_account_id, 'T', task_id, output_account_and_task_id);
     fill_id8(entity_prefix, entity_id, output_entity_id);
 
-    api_request(Http_Put, modify_task_request, "tasks/%.*s?%s=[\"%.*s\"]",
+    const char* pattern = array ? "tasks/%.*s?%s=[\"%.*s\"]" : "tasks/%.*s?%s=%.*s";
+
+    api_request(Http_Put, modify_task_request, pattern,
                 (u32) ARRAY_SIZE(output_account_and_task_id), output_account_and_task_id,
                 command,
                 (u32) ARRAY_SIZE(output_entity_id), output_entity_id
@@ -339,6 +343,10 @@ void add_assignee_to_task(Task_Id task_id, User_Id user_id) {
 
 void remove_assignee_from_task(Task_Id task_id, User_Id user_id) {
     modify_task_e8(task_id, 'U', user_id, "removeResponsibles");
+}
+
+void set_task_status(Task_Id task_id, Custom_Status_Id status_id) {
+    modify_task_e16(task_id, 'K', status_id, "customStatus", false);
 }
 
 void draw_folder_tree_node(Folder_Tree_Node* tree_node) {
