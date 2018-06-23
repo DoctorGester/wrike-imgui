@@ -152,6 +152,30 @@ inline char* string_to_temporary_null_terminated_string(String string) {
     return folder_name;
 }
 
+// This is NOT performant, do not use often
+template<typename T>
+void add_item_to_list(List<T>& list, T item) {
+    list.data = (T*) REALLOC(list.data, sizeof(T) * (list.length + 1));
+    list[list.length++] = item;
+}
+
+template<typename T>
+void remove_item_from_list_keep_order(List<T>& list, T item) {
+    for (u32 index = 0; index < list.length; index++) {
+        if (list[index] == item) {
+            u32 remaining =  list.length - index;
+
+            if (remaining) {
+                memmove(list.data + index, list.data + index + 1, sizeof(T) * remaining);
+            }
+
+            list.length--;
+
+            break;
+        }
+    }
+}
+
 s32 hackenstein(const char* a, const char* b, u32 a_length, u32 b_length);
 s32 string_atoi(String* string);
 s8* string_in_substring(const s8* big, const s8* small, size_t slen);

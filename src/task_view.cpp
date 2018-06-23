@@ -288,6 +288,8 @@ static void draw_status_picker_dropdown_contents(Custom_Status* current_task_sta
     for (Custom_Status* status = workflow->statuses.data; status != workflow->statuses.data + workflow->statuses.length; status++) {
         if (!status->is_hidden) {
             if (draw_status_picker_dropdown_status_selection_button(draw_list, status, status == current_task_status, button_size, scale)) {
+                current_task.status_id = status->id;
+
                 set_task_status(current_task.id, status->id);
 
                 ImGui::CloseCurrentPopup();
@@ -483,6 +485,7 @@ static void draw_folder_picker_contents(bool set_focus) {
                 ImGui::PushID(node);
 
                 if (draw_folder_picker_folder_selection_button(draw_list, node->name, node->color, selection_button_size, padding)) {
+                    add_item_to_list(current_task.parents, node->id);
                     add_parent_folder(current_task.id, node->id);
 
                     ImGui::CloseCurrentPopup();
@@ -496,7 +499,14 @@ static void draw_folder_picker_contents(bool set_focus) {
     } else {
         for (Suggested_Folder* it = suggested_folders.data; it != suggested_folders.data + suggested_folders.length; it++) {
             ImGui::PushID(it);
-            draw_folder_picker_folder_selection_button(draw_list, it->name, it->color, selection_button_size, padding);
+
+            if (draw_folder_picker_folder_selection_button(draw_list, it->name, it->color, selection_button_size, padding)) {
+                add_item_to_list(current_task.parents, it->id);
+                add_parent_folder(current_task.id, it->id);
+
+                ImGui::CloseCurrentPopup();
+            }
+
             ImGui::PopID();
         }
 
@@ -507,6 +517,9 @@ static void draw_folder_picker_contents(bool set_focus) {
                 ImGui::PushID(it);
 
                 if (draw_folder_picker_folder_selection_button(draw_list, it->name, it->color, selection_button_size, padding)) {
+                    add_item_to_list(current_task.parents, it->id);
+                    add_parent_folder(current_task.id, it->id);
+
                     ImGui::CloseCurrentPopup();
                 }
 
@@ -712,6 +725,7 @@ static void draw_add_assignee_button_and_contact_picker() {
         if (strlen(search_buffer) == 0) {
             for (User* it = suggested_users.data; it != suggested_users.data + suggested_users.length; it++) {
                 if (draw_contact_picker_assignee_selection_button(draw_list, it, {button_width, avatar_side_px}, spacing)) {
+                    add_item_to_list(current_task.assignees, it->id);
                     add_assignee_to_task(current_task.id, it->id);
 
                     ImGui::CloseCurrentPopup();
@@ -724,6 +738,7 @@ static void draw_add_assignee_button_and_contact_picker() {
         while (clipper.Step()) {
             for (User** it = filtered_users.data + clipper.DisplayStart; it != filtered_users.data + clipper.DisplayEnd; it++) {
                 if (draw_contact_picker_assignee_selection_button(draw_list, *it, { button_width, avatar_side_px }, spacing)) {
+                    add_item_to_list(current_task.assignees, (*it)->id);
                     add_assignee_to_task(current_task.id, (*it)->id);
 
                     ImGui::CloseCurrentPopup();
@@ -864,6 +879,8 @@ static bool draw_assignee_with_name(Assignee* assignee, float avatar_side_px, fl
 }
 
 static void draw_assignees(float wrap_pos) {
+    static User_Id assignee_to_remove_next_frame = 0;
+
     const float avatar_side_px = assignee_avatar_side * platform_get_pixel_ratio();
     const int assignees_to_consider_for_name_plus_avatar_display = 2;
 
@@ -872,6 +889,16 @@ static void draw_assignees(float wrap_pos) {
      * If 2 avatars with names do not fit, render how many avatars fit,
      * the rest are +X
      */
+
+    if (assignee_to_remove_next_frame) {
+        remove_item_from_list_keep_order(current_task.assignees, assignee_to_remove_next_frame);
+        assignee_to_remove_next_frame = 0;
+
+        // Bail out early so behavior matched the case when there were no assignees in the first place
+        if (!current_task.assignees.length) {
+            return;
+        }
+    }
 
     List<Assignee> assignees;
     assignees.data = (Assignee*) talloc(sizeof(Assignee) * current_task.assignees.length);
@@ -938,6 +965,7 @@ static void draw_assignees(float wrap_pos) {
 
             if (!is_last) {
                 if (draw_assignee(assignee, avatar_side_px)) {
+                    assignee_to_remove_next_frame = assignee->user->id;
                     remove_assignee_from_task(current_task.id, assignee->user->id);
                 }
 
@@ -947,6 +975,7 @@ static void draw_assignees(float wrap_pos) {
 
                 if (!remaining_after_avatars) {
                     if (draw_assignee(assignee, avatar_side_px)) {
+                        assignee_to_remove_next_frame = assignee->user->id;
                         remove_assignee_from_task(current_task.id, assignee->user->id);
                     }
                 } else {
@@ -963,6 +992,7 @@ static void draw_assignees(float wrap_pos) {
             Assignee* assignee = &assignees[assignee_index];
 
             if (draw_assignee_with_name(assignee, avatar_side_px, margin)) {
+                assignee_to_remove_next_frame = assignee->user->id;
                 remove_assignee_from_task(current_task.id, assignee->user->id);
             }
 
@@ -1272,27 +1302,14 @@ void draw_task_contents() {
 
         float header_wrap_pos = wrap_pos;
 
-        // TODO those y_offset things are hacky, we probably shouldn't use InvisibleButton but rather ButtonBehavior
         if (current_task.authors.length) {
-            float y_offset = (status_picker_row_height - ImGui::GetFontSize()) / 2.0f * platform_get_pixel_ratio();
-
-            ImGui::SetCursorPosY(ImGui::GetCursorPosY() + y_offset);
-
             header_wrap_pos = draw_authors_and_task_id_and_return_new_wrap_pos(wrap_pos);
-
-            ImGui::SetCursorPosY(ImGui::GetCursorPosY() - y_offset);
         }
 
         if (current_task.assignees.length) {
             ImGui::SameLine();
 
-            float y_offset = (status_picker_row_height - assignee_avatar_side) / 2.0f * platform_get_pixel_ratio();
-
-            ImGui::SetCursorPosY(ImGui::GetCursorPosY() + y_offset);
-
             draw_assignees(header_wrap_pos);
-
-            ImGui::SetCursorPosY(ImGui::GetCursorPosY() - y_offset);
         }
 
         ImGui::SameLine();
