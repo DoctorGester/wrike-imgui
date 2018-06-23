@@ -696,13 +696,15 @@ void load_persisted_settings() {
     }
 }
 
-static void setup_ui_style() {
+static void setup_ui() {
     ImGuiStyle* style = &ImGui::GetStyle();
     ImGui::StyleColorsLight(style);
 
     style->Colors[ImGuiCol_WindowBg] = ImGui::ColorConvertU32ToFloat4(color_background_dark);
     style->FrameRounding = 4.0f;
     style->ScaleAllSizes(platform_get_pixel_ratio());
+
+    ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
 }
 
 static void* imgui_malloc_wrapper(size_t size, void* user_data) {
@@ -728,7 +730,7 @@ bool init()
 
     bool result = platform_init();
 
-    setup_ui_style();
+    setup_ui();
 
     api_request(Http_Get, accounts_request, "accounts?fields=['customFields']");
     api_request(Http_Get, folder_tree_request, "folders?fields=['starred','color']");
