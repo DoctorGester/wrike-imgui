@@ -269,16 +269,21 @@ static void draw_status_selector(u32 status_color, String status_name, bool is_c
     ImGui::PopFont();
 }
 
-static bool draw_parent_folder_ticker(const char* text_begin, const char* text_end, bool can_wrap, float wrap_pos) {
-    static const u32 border_color = argb_to_agbr(0xffe0e0e0);
+static bool draw_parent_folder_ticker(Folder_Tree_Node* folder_tree_node, bool ghost_tag, bool can_wrap, float wrap_pos) {
+    static const u32 border_color_default = argb_to_agbr(0xffe0e0e0);
     static const u32 border_color_hover = argb_to_agbr(0xffb3b3b3);
-    static const u32 text_color = argb_to_agbr(0xff555555);
+
+    char* text_begin = folder_tree_node->name.start;
+    char* text_end = text_begin + folder_tree_node->name.length;
+
+    ImGui::PushID(folder_tree_node);
 
     ImVec2 offset = ImVec2(4.0f, 2.0f) * platform_get_pixel_ratio();
     ImVec2 text_size = ImGui::CalcTextSize(text_begin, text_end);
     ImVec2 size = text_size + offset * 2;
 
     float window_start_x = ImGui::GetCursorPosX();
+    float rounding = 1.0f * platform_get_pixel_ratio();
 
     if (window_start_x + size.x > wrap_pos && can_wrap) {
         ImGui::NewLine();
@@ -289,19 +294,34 @@ static bool draw_parent_folder_ticker(const char* text_begin, const char* text_e
     bool is_pressed = ImGui::InvisibleButton("folder_ticker", size);
     bool is_hovered = ImGui::IsItemHovered();
 
-    ImGui::GetWindowDrawList()->AddRect(
-            start,
-            start + size,
-            is_hovered ? border_color_hover : border_color,
-            2.0f
-    );
+    ImDrawList* draw_list = ImGui::GetWindowDrawList();
 
-    ImGui::GetWindowDrawList()->AddText(start + offset, text_color, text_begin, text_end);
+    Folder_Color* color = folder_tree_node->color;
+
+    u32 background_color = is_hovered ? color->background_hover : color->background;
+    u32 text_color = color->text;
+    u32 border_color = is_hovered ? border_color_hover : border_color_default;
+
+    if (ghost_tag) {
+        const u32 alpha = is_hovered ? 190 : 128;
+        const u32 clear_alpha = 0x00FFFFFF;
+        const u32 half_alpha_mask = alpha << 24;
+
+        background_color = (background_color & clear_alpha) | half_alpha_mask;
+        text_color = (text_color & clear_alpha) | half_alpha_mask;
+        border_color = (border_color & clear_alpha) | half_alpha_mask;
+    }
+
+    draw_list->AddRectFilled(start, start + size, background_color, rounding);
+    draw_list->AddRect(start, start + size, border_color, rounding);
+    draw_list->AddText(start + offset, text_color, text_begin, text_end);
+
+    ImGui::PopID();
 
     return is_pressed;
 }
 
-static bool draw_folder_picker_folder_selection_button(ImDrawList* draw_list, String name, ImVec2 size, float spacing) {
+static bool draw_folder_picker_folder_selection_button(ImDrawList* draw_list, String name, Folder_Color* color, ImVec2 size, float spacing) {
     static const u32 hover_color = 0x11000000;
     static const u32 active_color = hover_color * 2;
 
@@ -318,8 +338,10 @@ static bool draw_folder_picker_folder_selection_button(ImDrawList* draw_list, St
         draw_list->AddRectFilled(top_left, bottom_right, hover_color);
     }
 
+    draw_list->AddRectFilled(top_left, top_left + ImVec2(spacing, size.y), color->background);
+
     ImVec2 text_size = ImGui::CalcTextSize(name.start, name.start + name.length);
-    ImVec2 text_top_left = top_left + ImVec2(spacing, size.y / 2.0f - text_size.y / 2.0f);
+    ImVec2 text_top_left = top_left + ImVec2(spacing + spacing, size.y / 2.0f - text_size.y / 2.0f);
 
     draw_list->AddText(text_top_left, 0xff000000, name.start, name.start + name.length);
 
@@ -351,12 +373,12 @@ static void draw_folder_picker_contents(bool set_focus) {
 
         while (clipper.Step()) {
             for (Folder_Tree_Node** it = search_result.data + clipper.DisplayStart; it != search_result.data + clipper.DisplayEnd; it++) {
-                Folder_Tree_Node* folder_tree_node = *it;
+                Folder_Tree_Node* node = *it;
 
-                ImGui::PushID(folder_tree_node);
+                ImGui::PushID(node);
 
-                if (draw_folder_picker_folder_selection_button(draw_list, folder_tree_node->name, selection_button_size, padding)) {
-                    add_parent_folder(current_task.id, folder_tree_node->id);
+                if (draw_folder_picker_folder_selection_button(draw_list, node->name, node->color, selection_button_size, padding)) {
+                    add_parent_folder(current_task.id, node->id);
 
                     ImGui::CloseCurrentPopup();
                 }
@@ -369,7 +391,7 @@ static void draw_folder_picker_contents(bool set_focus) {
     } else {
         for (Suggested_Folder* it = suggested_folders.data; it != suggested_folders.data + suggested_folders.length; it++) {
             ImGui::PushID(it);
-            draw_folder_picker_folder_selection_button(draw_list, it->title, selection_button_size, padding);
+            draw_folder_picker_folder_selection_button(draw_list, it->name, it->color, selection_button_size, padding);
             ImGui::PopID();
         }
 
@@ -379,7 +401,7 @@ static void draw_folder_picker_contents(bool set_focus) {
             for (Folder_Tree_Node* it = all_nodes + clipper.DisplayStart; it != all_nodes + clipper.DisplayEnd; it++) {
                 ImGui::PushID(it);
 
-                if (draw_folder_picker_folder_selection_button(draw_list, it->name, selection_button_size, padding)) {
+                if (draw_folder_picker_folder_selection_button(draw_list, it->name, it->color, selection_button_size, padding)) {
                     ImGui::CloseCurrentPopup();
                 }
 
@@ -403,7 +425,7 @@ static void draw_folder_picker_button(float wrap_pos) {
     bool should_set_focus = false;
 
     if (!is_folder_picker_open) {
-        if (draw_parent_folder_ticker(picker_button_text, picker_button_text + 1, current_task.parents.length > 0, wrap_pos)) {
+        if (ImGui::SmallButton(picker_button_text)) {
             ImGui::OpenPopupEx(folder_picker_id);
 
             should_set_focus = true;
@@ -429,19 +451,23 @@ static void draw_folder_picker_button(float wrap_pos) {
 }
 
 static void draw_parent_folders(float wrap_pos) {
+    for (u32 parent_index = 0; parent_index < current_task.super_parents.length; parent_index++) {
+        Folder_Id folder_id = current_task.super_parents[parent_index];
+        Folder_Tree_Node* folder_tree_node = find_folder_tree_node_by_id(folder_id);
+
+        if (folder_tree_node) {
+            draw_parent_folder_ticker(folder_tree_node, true, parent_index > 0, wrap_pos);
+
+            ImGui::SameLine();
+        }
+    }
+
     for (u32 parent_index = 0; parent_index < current_task.parents.length; parent_index++) {
         Folder_Id folder_id = current_task.parents[parent_index];
         Folder_Tree_Node* folder_tree_node = find_folder_tree_node_by_id(folder_id);
 
         if (folder_tree_node) {
-            char* text_begin = folder_tree_node->name.start;
-            char* text_end = text_begin + folder_tree_node->name.length;
-
-            ImGui::PushID(folder_tree_node);
-
-            draw_parent_folder_ticker(text_begin, text_end, parent_index > 0, wrap_pos);
-
-            ImGui::PopID();
+            draw_parent_folder_ticker(folder_tree_node, false, parent_index > 0, wrap_pos);
 
             ImGui::SameLine();
         }
@@ -1273,6 +1299,8 @@ void process_task_data(char* json, u32 data_size, jsmntok_t*& token) {
             token_array_to_id_list(json, token, current_task.parents, json_token_to_right_part_of_id16);
         } else if (IS_PROPERTY("inheritedCustomColumnIds")) {
             token_array_to_id_list(json, token, current_task.inherited_custom_fields, json_token_to_right_part_of_id16);
+        } else if (IS_PROPERTY("superParentIds")) {
+            token_array_to_id_list(json, token, current_task.super_parents, json_token_to_right_part_of_id16);
         } else if (IS_PROPERTY("customFields")) {
             assert(next_token->type == JSMN_ARRAY);
 

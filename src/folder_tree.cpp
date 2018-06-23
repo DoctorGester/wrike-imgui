@@ -53,6 +53,8 @@ static void add_parent_child_pair(Folder_Tree_Node* parent, Folder_Id child_id) 
     pair->child_hash = hash_id(child_id);
 }
 
+Folder_Color* string_to_folder_color(String string);
+
 static void process_folder_tree_data_object(char* json, jsmntok_t*& token) {
     jsmntok_t* object_token = token++;
 
@@ -85,6 +87,12 @@ static void process_folder_tree_data_object(char* json, jsmntok_t*& token) {
             json_token_to_right_part_of_id16(json, value_token, new_node->id);
         } else if (json_string_equals(json, property_token, "scope")) {
             json_token_to_string(json, value_token, scope);
+        } else if (json_string_equals(json, property_token, "color")) {
+            String color;
+
+            json_token_to_string(json, value_token, color);
+
+            new_node->color = string_to_folder_color(color);
         } else if (json_string_equals(json, property_token, "starred")) {
             assert(value_token->type == JSMN_PRIMITIVE);
             is_starred = *(json + value_token->start) == 't';
@@ -261,9 +269,15 @@ static void process_folder_contents_data_object(char* json, jsmntok_t*& token) {
         jsmntok_t* next_token = token;
 
         if (json_string_equals(json, property_token, "title")) {
-            json_token_to_string(json, next_token, suggested_folder->title);
+            json_token_to_string(json, next_token, suggested_folder->name);
         } else if (json_string_equals(json, property_token, "id")) {
             json_token_to_right_part_of_id16(json, next_token, suggested_folder->id);
+        } else if (json_string_equals(json, property_token, "color")) {
+            String color;
+
+            json_token_to_string(json, next_token, color);
+
+            suggested_folder->color = string_to_folder_color(color);
         } else {
             eat_json(token);
             token--;
@@ -310,4 +324,203 @@ void process_suggested_folders_data(char* json, u32 data_size, jsmntok_t*& token
     for (u32 array_index = 0; array_index < data_size; array_index++) {
         process_folder_contents_data_object(json, token);
     }
+}
+
+Folder_Color* string_to_folder_color(String string) {
+    static Folder_Color None(0, 0xff555555, 0);
+    static Folder_Color Purple1(0xFFE1BEE7, 0xff8e24aa, 0xffeecbf4);
+    static Folder_Color Purple2(0xFFCE93D8, 0xff8e24aa, 0xffe4a8ee);
+    static Folder_Color Purple3(0xFFBA68C8, 0xfff3e5f5, 0xffcb75da);
+    static Folder_Color Purple4(0xFF8E24AA, 0xfff3e5f5, 0xffa637c5);
+    static Folder_Color Indigo1(0xFFD1C4E9, 0xff5e35b1, 0xffddd0f5);
+    static Folder_Color Indigo2(0xFFB39DDB, 0xff5e35b1, 0xffc7b0ef);
+    static Folder_Color Indigo3(0xFF9575CD, 0xffede7f6, 0xffa281dd);
+    static Folder_Color Indigo4(0xFF5E35B1, 0xffede7f6, 0xff7146ca);
+    static Folder_Color DarkBlue1(0xFFC5CAE9, 0xff3949ab, 0xffd0d6f5);
+    static Folder_Color DarkBlue2(0xFF9FA8DA, 0xff3949ab, 0xffb3bbed);
+    static Folder_Color DarkBlue3(0xFF7986CB, 0xffe8eaf6, 0xff8492db);
+    static Folder_Color DarkBlue4(0xFF3949AB, 0xffe8eaf6, 0xff4b5bc3);
+    static Folder_Color Blue1(0xFFBBDEFB, 0xff1976d2, 0xffcce8ff);
+    static Folder_Color Blue2(0xFF90CAF9, 0xff1976d2, 0xffaddaff);
+    static Folder_Color Blue3(0xFF64B5F6, 0xffe3f2fd, 0xff73c1ff);
+    static Folder_Color Blue4(0xFF1E88E5, 0xffe3f2fd, 0xff2b9bfd);
+    static Folder_Color Turquoise1(0xFFB2EBF2, 0xff0097a7, 0xffc0f8ff);
+    static Folder_Color Turquoise2(0xFF80DEEA, 0xff5e35b1, 0xff97f3ff);
+    static Folder_Color Turquoise3(0xFF4DD0E1, 0xffe0f7fa, 0xff59e2f4);
+    static Folder_Color Turquoise4(0xFF00ACC1, 0xffe0f7fa, 0xff12c7de);
+    static Folder_Color DarkCyan1(0xFFB2DFDB, 0xff00796b, 0xffc2efeb);
+    static Folder_Color DarkCyan2(0xFF80CBC4, 0xff00796b, 0xff9be5df);
+    static Folder_Color DarkCyan3(0xFF4DB6AC, 0xffe0f2f1, 0xff5dccc0);
+    static Folder_Color DarkCyan4(0xFF00897B, 0xffe0f2f1, 0xff18a99a);
+    static Folder_Color Green1(0xFFC8E6C9, 0xff388e3c, 0xffd3f1d4);
+    static Folder_Color Green2(0xFFA5D6A7, 0xff388e3c, 0xffb9e9ba);
+    static Folder_Color Green3(0xFF81C784, 0xffe8f5e9, 0xff8dd690);
+    static Folder_Color Green4(0xFF43A047, 0xffe8f5e9, 0xff55b759);
+    static Folder_Color YellowGreen1(0xFFE6EE9C, 0xff9e9d24, 0xfff6ffae);
+    static Folder_Color YellowGreen2(0xFFDCE775, 0xff9e9d24, 0xfff3ff8d);
+    static Folder_Color YellowGreen3(0xFFC0CA33, 0xfff9fbe7, 0xffd5e141);
+    static Folder_Color YellowGreen4(0xFFAFB42B, 0xfff9fbe7, 0xffc7cd3d);
+    static Folder_Color Yellow1(0xFFFFF59D, 0xfff57f17, 0xfffff8ba);
+    static Folder_Color Yellow2(0xFFFFEE58, 0xfff57f17, 0xfffff38a);
+    static Folder_Color Yellow3(0xFFFBC02D, 0xfffffde7, 0xffffca49);
+    static Folder_Color Yellow4(0xFFF9A825, 0xfffffde7, 0xffffb640);
+    static Folder_Color Orange1(0xFFFFCC80, 0xffe65100, 0xffffdba6);
+    static Folder_Color Orange2(0xFFFFB74D, 0xffe65100, 0xffffcc82);
+    static Folder_Color Orange3(0xFFFF9800, 0xfffff3e0, 0xffffa726);
+    static Folder_Color Orange4(0xFFF57C00, 0xfffff3e0, 0xffff901d);
+    static Folder_Color Red1(0xFFFFCDD2, 0xffd32f2f, 0xffffdcdf);
+    static Folder_Color Red2(0xFFEF9A9A, 0xffd32f2f, 0xffffadad);
+    static Folder_Color Red3(0xFFE57373, 0xffffebee, 0xfff47c7c);
+    static Folder_Color Red4(0xFFE53935, 0xffffebee, 0xfffb4641);
+    static Folder_Color Pink1(0xFFF8BBD0, 0xffc2185b, 0xffffcadc);
+    static Folder_Color Pink2(0xFFF48FB1, 0xffc2185b, 0xffffa8c5);
+    static Folder_Color Pink3(0xFFF06292, 0xfffce4ec, 0xffff6c9d);
+    static Folder_Color Pink4(0xFFD81B60, 0xfffce4ec, 0xfff12972);
+    static Folder_Color Gray1(0xFFB0BEC5, 0xff2d3e4f, 0xffc5d2d9);
+    static Folder_Color Gray2(0xFF546E7A, 0xffeceff1, 0xff698692);
+    static Folder_Color Gray3(0xFF2D3E4F, 0xffeceff1, 0xff485b6c);
+
+    static Folder_Color* blue[] = {
+            &Blue1,
+            &Blue2,
+            &Blue3,
+            &Blue4
+    };
+
+    static Folder_Color* dark_blue[] = {
+            &DarkBlue1,
+            &DarkBlue2,
+            &DarkBlue3,
+            &DarkBlue4
+    };
+
+    static Folder_Color* dark_cyan[] = {
+            &DarkCyan1,
+            &DarkCyan2,
+            &DarkCyan3,
+            &DarkCyan4
+    };
+
+    static Folder_Color* gray[] = {
+            &Gray1,
+            &Gray2,
+            &Gray3
+    };
+
+    static Folder_Color* green[] = {
+            &Green1,
+            &Green2,
+            &Green3,
+            &Green4
+    };
+
+    static Folder_Color* indigo[] = {
+            &Indigo1,
+            &Indigo2,
+            &Indigo3,
+            &Indigo4
+    };
+
+    static Folder_Color* orange[] = {
+            &Orange1,
+            &Orange2,
+            &Orange3,
+            &Orange4
+    };
+
+    static Folder_Color* pink[] = {
+            &Pink1,
+            &Pink2,
+            &Pink3,
+            &Pink4
+    };
+
+    static Folder_Color* purple[] = {
+            &Purple1,
+            &Purple2,
+            &Purple3,
+            &Purple4
+    };
+
+    static Folder_Color* red[] = {
+            &Red1,
+            &Red2,
+            &Red3,
+            &Red4,
+    };
+
+    static Folder_Color* turquoise[] = {
+            &Turquoise1,
+            &Turquoise2,
+            &Turquoise3,
+            &Turquoise4,
+    };
+
+    static Folder_Color* yellow[] = {
+            &Yellow1,
+            &Yellow2,
+            &Yellow3,
+            &Yellow4,
+    };
+
+    static Folder_Color* yellow_green[] = {
+            &YellowGreen1,
+            &YellowGreen2,
+            &YellowGreen3,
+            &YellowGreen4,
+    };
+
+    char s = *string.start;
+
+    const u32 ascii_number_start = 49;
+
+#define char_at_to_index(at) *(string.start + (at)) - ascii_number_start
+
+    switch (s) {
+        case 'N'/*one*/: return &None;
+
+        case 'B'/*lue*/: return blue[char_at_to_index(4)];
+        case 'D'/*ark*/: {
+            switch (*(string.start + 4)) {
+                case 'B'/*lue*/: return dark_blue[char_at_to_index(8)];
+                case 'C'/*yan*/: return dark_cyan[char_at_to_index(8)];
+            }
+
+            break;
+        }
+
+        case 'G'/*ray or Green*/: {
+            switch (string.length) {
+                case 5: return gray[char_at_to_index(4)];
+                case 6: return green[char_at_to_index(5)];
+            }
+        }
+
+        case 'I'/*ndigo*/: return indigo[char_at_to_index(6)];
+        case 'O'/*range*/: return orange[char_at_to_index(6)];
+
+        case 'P'/*ink or Purple or Person*/: {
+            switch (string.length) {
+                case 5: return pink[char_at_to_index(4)];
+                case 6: return &None;
+                case 7: return purple[char_at_to_index(6)];
+            }
+        }
+
+        case 'R'/*ed*/: return red[char_at_to_index(3)];
+        case 'T'/*urquoise*/: return turquoise[char_at_to_index(9)];
+
+        case 'Y'/*ellow or YellowGreen*/: {
+            switch (string.length) {
+                case 7: return yellow[char_at_to_index(6)];
+                case 12: return yellow_green[char_at_to_index(11)];
+            }
+        }
+    }
+
+    printf("Unrecognized color: %.*s\n", string.length, string.start);
+
+    return &None;
+
+#undef char_at_to_index
 }

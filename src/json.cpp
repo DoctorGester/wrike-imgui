@@ -44,9 +44,9 @@ static jsmntok_t* parse_json_iteratively(const char* json, u32 json_length, s32 
 
     jsmntok_t* tokens;
 
-    u32 token_watermark = 16;
+    u32 token_watermark = json_length / 16;
 
-    tokens = (jsmntok_t*) talloc(sizeof(jsmntok_t) * token_watermark);
+    tokens = (jsmntok_t*) MALLOC(sizeof(jsmntok_t) * token_watermark);
 
     if (tokens == NULL) {
         return NULL;
@@ -57,11 +57,9 @@ static jsmntok_t* parse_json_iteratively(const char* json, u32 json_length, s32 
 
         if (return_code < 0) {
             if (return_code == JSMN_ERROR_NOMEM) {
-                u32 prev_count = token_watermark;
                 token_watermark = token_watermark * 2;
-                tokens = (jsmntok_t*) trealloc(
+                tokens = (jsmntok_t*) REALLOC(
                         tokens,
-                        sizeof(jsmntok_t) * prev_count,
                         sizeof(jsmntok_t) * token_watermark
                 );
 

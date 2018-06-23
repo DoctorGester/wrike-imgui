@@ -5,10 +5,23 @@
 
 #pragma once
 
+struct Folder_Color {
+    u32 background;
+    u32 text;
+    u32 background_hover;
+
+    Folder_Color(u32 background, u32 text, u32 background_hover) {
+        this->background = argb_to_agbr(background);
+        this->text = argb_to_agbr(text);
+        this->background_hover = argb_to_agbr(background_hover);
+    }
+};
+
 struct Folder_Tree_Node {
     Folder_Id id;
     u32 id_hash;
 
+    Folder_Color* color;
     u16 num_children;
     Relative_Pointer<Folder_Tree_Node*> children;
     String name;
@@ -18,7 +31,8 @@ struct Folder_Tree_Node {
 
 struct Suggested_Folder {
     Folder_Id id;
-    String title;
+    String name;
+    Folder_Color* color;
 };
 
 void folder_tree_init();

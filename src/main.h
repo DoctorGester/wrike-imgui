@@ -38,6 +38,7 @@ struct Task {
     List<Custom_Field_Value> custom_field_values{};
     List<Custom_Field_Id> inherited_custom_fields{};
     List<Folder_Id> parents{};
+    List<Folder_Id> super_parents{};
     List<User_Id> authors{};
     List<User_Id> assignees{};
 };

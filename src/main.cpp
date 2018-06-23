@@ -153,7 +153,7 @@ static void request_suggestions_for_account(Account_Id account_id) {
 
     fill_id8('A', account_id, output_account_id);
 
-    api_request(Http_Get, suggested_folders_request, "accounts/%.*s/folders?suggestedParents", (u32) ARRAY_SIZE(output_account_id), output_account_id);
+    api_request(Http_Get, suggested_folders_request, "accounts/%.*s/folders?suggestedParents&fields=['color']", (u32) ARRAY_SIZE(output_account_id), output_account_id);
     api_request(Http_Get, suggested_contacts_request, "internal/accounts/%.*s/contacts?suggestType=Responsibles", (u32) ARRAY_SIZE(output_account_id), output_account_id);
 }
 
@@ -211,6 +211,8 @@ void api_request_success(Request_Id request_id, char* content, u32 content_lengt
 
         process_json_content(task_json_content, process_task_data, json_with_tokens);
     }
+
+    FREE(json_with_tokens.tokens);
 }
 
 extern "C"
@@ -729,7 +731,7 @@ bool init()
     setup_ui_style();
 
     api_request(Http_Get, accounts_request, "accounts?fields=['customFields']");
-    api_request(Http_Get, folder_tree_request, "folders?fields=['starred']");
+    api_request(Http_Get, folder_tree_request, "folders?fields=['starred','color']");
     api_request(Http_Get, contacts_request, "contacts");
 
     started_loading_users_at = tick;
