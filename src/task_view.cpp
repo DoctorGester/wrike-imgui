@@ -101,7 +101,7 @@ struct RGB hsl_to_rgb(struct HSL hsl) {
     RGB rgb;
 
     if (hsl.s == 0) {
-        rgb.r = rgb.g = rgb.b = (u8) (hsl.l * 255);
+        rgb.r = rgb.g = rgb.b = hsl.l;
     } else {
         float v1, v2;
         float hue = (float) hsl.h / 360;
