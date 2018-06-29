@@ -1,7 +1,6 @@
 #include <jsmn.h>
 #include <cstdio>
 #include <imgui.h>
-#include <imgui_internal.h>
 #include "id_hash_map.h"
 #include "json.h"
 #include "temporary_storage.h"
@@ -12,6 +11,10 @@
 #include "users.h"
 #include "workflows.h"
 #include "task_view.h"
+#include "funimgui.h"
+
+#define IMGUI_DEFINE_MATH_OPERATORS
+#include <imgui_internal.h>
 
 enum Task_List_Sort_Field {
     Task_List_Sort_Field_None,
@@ -38,6 +41,7 @@ struct Folder_Task {
 };
 
 struct Folder_Header {
+    String name;
     Custom_Field_Id* custom_columns;
     u32 num_custom_columns;
 };
@@ -54,14 +58,30 @@ struct Sorted_Folder_Task {
     bool is_expanded;
 };
 
+struct Flattened_Folder_Task {
+    Sorted_Folder_Task* sorted_task;
+    u32 nesting_level;
+
+    bool has_visible_subtasks;
+};
+
+struct Table_Paint_Context {
+    ImDrawList* draw_list;
+    Custom_Field** column_to_custom_field;
+    u32 total_columns;
+    float row_height;
+    float scale;
+    float text_padding_y;
+};
+
 static const u32 custom_columns_start_index = 3;
 
 static Folder_Header current_folder{};
 
-static Folder_Task* folder_tasks = NULL;
+static List<Folder_Task> folder_tasks{};
 static Sorted_Folder_Task* sorted_folder_tasks = NULL;
+static List<Flattened_Folder_Task> flattened_sorted_folder_task_tree{};
 static Lazy_Array<Sorted_Folder_Task*, 32> top_level_tasks{};
-static u32 folder_task_count = 0;
 
 static Id_Hash_Map<Task_Id, Sorted_Folder_Task*> id_to_sorted_folder_task{};
 
@@ -80,6 +100,10 @@ static Custom_Field* sort_custom_field;
 static Sort_Direction sort_direction = Sort_Direction_Normal;
 static bool has_been_sorted_after_loading = false;
 static bool show_only_active_tasks = true;
+static bool queue_flattened_tree_rebuild = false;
+
+static const u32 active_text_color = argb_to_agbr(0xff4488ff);
+static const u32 table_text_color = 0xff191919;
 
 static inline int compare_tasks_custom_fields(Folder_Task* a, Folder_Task* b, Custom_Field_Type custom_field_type) {
     String* a_value = NULL;
@@ -171,7 +195,13 @@ static inline int compare_folder_tasks_based_on_current_sort(Sorted_Folder_Task*
 
             // TODO do status comparison based on status type?
 
-            return (a_status->natural_index - b_status->natural_index) * sort_direction;
+            s32 natural_index_comparison_result = a_status->natural_index - b_status->natural_index;
+
+            if (!natural_index_comparison_result) {
+                return (a_status->id - b_status->id) * sort_direction;
+            }
+
+            return natural_index_comparison_result * sort_direction;
         }
 
         case Task_List_Sort_Field_Custom_Field: {
@@ -209,9 +239,36 @@ static void sort_tasks_hierarchically(Sorted_Folder_Task** tasks, u32 length) {
     }
 }
 
+static bool rebuild_flattened_folder_tree_hierarchically(Sorted_Folder_Task* task, bool is_parent_expanded, u32 level) {
+    if (show_only_active_tasks && task->cached_status->group != Status_Group_Active) {
+        return false;
+    }
+
+    if (is_parent_expanded) {
+        Flattened_Folder_Task* flattened_task = &flattened_sorted_folder_task_tree[flattened_sorted_folder_task_tree.length++];
+        flattened_task->sorted_task = task;
+        flattened_task->nesting_level = level;
+        flattened_task->has_visible_subtasks = false;
+
+        for (u32 sub_task_index = 0; sub_task_index < task->num_sub_tasks; sub_task_index++) {
+            flattened_task->has_visible_subtasks |= rebuild_flattened_folder_tree_hierarchically(task->sub_tasks[sub_task_index], task->is_expanded, level + 1);
+        }
+    }
+
+    return true;
+}
+
+static void rebuild_flattened_folder_tree() {
+    flattened_sorted_folder_task_tree.length = 0;
+
+    for (u32 task_index = 0; task_index < top_level_tasks.length; task_index++) {
+        rebuild_flattened_folder_tree_hierarchically(top_level_tasks[task_index], true, 0);
+    }
+}
+
 static void update_cached_data_for_sorted_tasks() {
     // TODO We actually only need to do that once when tasks/workflows combination changes, not for every sort
-    for (u32 index = 0; index < folder_task_count; index++) {
+    for (u32 index = 0; index < folder_tasks.length; index++) {
         Sorted_Folder_Task* sorted_folder_task = &sorted_folder_tasks[index];
         Folder_Task* source = sorted_folder_task->source_task;
 
@@ -234,6 +291,7 @@ static void sort_by_field(Task_List_Sort_Field sort_by) {
 
     u64 start = platform_get_app_time_precise();
     sort_tasks_hierarchically(top_level_tasks.data, top_level_tasks.length);
+    rebuild_flattened_folder_tree();
     printf("Sorting %i elements by %i took %fms\n", top_level_tasks.length, sort_by, platform_get_delta_time_ms(start));
 }
 
@@ -252,225 +310,13 @@ static void sort_by_custom_field(Custom_Field_Id field_id) {
 
     u64 start = platform_get_app_time_precise();
     sort_tasks_hierarchically(top_level_tasks.data, top_level_tasks.length);
+    rebuild_flattened_folder_tree();
     printf("Sorting %i elements by %i took %fms\n", top_level_tasks.length, field_id, platform_get_delta_time_ms(start));
 }
 
-void draw_task_list_header(float view_width, float custom_column_width, Custom_Field** column_to_custom_field, u32 total_columns) {
-    ImGui::BeginColumns("table_view_header_columns", total_columns);
+Custom_Field** map_columns_to_custom_fields() {
+    Custom_Field** column_to_custom_field = (Custom_Field**) talloc(sizeof(Custom_Field*) * current_folder.num_custom_columns);
 
-    ImGui::SetColumnWidth(0, view_width * 0.4f);
-    ImGui::SetColumnWidth(1, view_width * 0.2f);
-    ImGui::SetColumnWidth(2, view_width * 0.15f);
-
-    for (u32 column = 0; column < current_folder.num_custom_columns; column++) {
-        ImGui::SetColumnWidth(custom_columns_start_index + column, custom_column_width);
-    }
-
-    for (u32 column = 0; column < total_columns; column++) {
-        String column_title;
-
-        Custom_Field* custom_field = column >= custom_columns_start_index ?
-                                     column_to_custom_field[column - custom_columns_start_index] :
-                                     NULL;
-
-        switch (column) {
-            case 0: {
-                column_title.start = (char*) "Name";
-                column_title.length = strlen(column_title.start);
-                break;
-            }
-
-            case 1: {
-                column_title.start = (char*) "Status";
-                column_title.length = strlen(column_title.start);
-                break;
-            }
-
-            case 2: {
-                column_title.start = (char*) "Assignees";
-                column_title.length = strlen(column_title.start);
-                break;
-            }
-
-            default: {
-                column_title = custom_field->title;
-            }
-        }
-
-        char* column_title_null_terminated = string_to_temporary_null_terminated_string(column_title);
-
-        Custom_Field_Id custom_field_id = 0;
-
-        if (column >= custom_columns_start_index) {
-            custom_field_id = current_folder.custom_columns[column - custom_columns_start_index];
-        }
-
-        // TODO ugly/copypaste
-        if (ImGui::Button(column_title_null_terminated)) {
-            switch (column) {
-                case 0: {
-                    sort_by_field(Task_List_Sort_Field_Title);
-                    break;
-                }
-
-                case 1: {
-                    sort_by_field(Task_List_Sort_Field_Status);
-                    break;
-                }
-
-                case 2: {
-                    sort_by_field(Task_List_Sort_Field_Assignee);
-                    break;
-                }
-
-                default: {
-                    sort_by_custom_field(custom_field_id);
-                }
-            }
-        }
-
-        bool sorting_by_this_column = false;
-
-        switch (column) {
-            case 0: {
-                sorting_by_this_column = sort_field == Task_List_Sort_Field_Title;
-                break;
-            }
-
-            case 1: {
-                sorting_by_this_column = sort_field == Task_List_Sort_Field_Status;
-                break;
-            }
-
-            case 2: {
-                sorting_by_this_column = sort_field == Task_List_Sort_Field_Assignee;
-                break;
-            }
-
-            default: {
-                sorting_by_this_column = sort_field == Task_List_Sort_Field_Custom_Field && sort_custom_field_id == custom_field_id;
-            }
-        }
-
-        if (sorting_by_this_column) {
-            ImGui::SameLine();
-            ImGui::RenderArrow(ImGui::GetCursorScreenPos(), sort_direction == Sort_Direction_Reverse ? ImGuiDir_Up : ImGuiDir_Down);
-            ImGui::NewLine();
-        }
-
-        if (column + 1 < total_columns) {
-            ImGui::NextColumn();
-        }
-    }
-
-    ImGui::EndColumns();
-}
-
-void draw_task_column(Sorted_Folder_Task* sorted_task, u32 column, Custom_Field* custom_field_or_null, u16 level) {
-    Folder_Task* task = sorted_task->source_task;
-
-    if (column == 0) {
-        ImGui::PushID(task->id);
-
-        bool is_selected = task->id == selected_folder_task_id;
-        bool clicked = ImGui::Selectable("##dummy_task", is_selected, ImGuiSelectableFlags_SpanAllColumns);
-        bool expand_arrow_clicked = false;
-
-        ImGui::PopID();
-
-        ImGui::SameLine();
-
-        if (level) {
-            ImGui::Dummy(ImVec2(level * 20.0f, 0.0f));
-            ImGui::SameLine();
-        }
-
-        const float arrow_size = ImGui::GetFontSize();
-
-        if (sorted_task->num_sub_tasks) {
-            ImVec2 arrow_position = ImGui::GetCursorScreenPos();
-
-            ImGui::PushID(sorted_task);
-
-            ImGui::InvisibleButton("##expand_button", ImVec2(arrow_size, arrow_size));
-
-            // TODO kinda hacky, Selectable blocks hover
-            if (ImGui::IsMouseClicked(0) && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenBlockedByActiveItem)) {
-                expand_arrow_clicked = true;
-                sorted_task->is_expanded = !sorted_task->is_expanded;
-            }
-
-            ImGui::PopID();
-
-            ImGui::RenderArrow(arrow_position, sorted_task->is_expanded ? ImGuiDir_Down : ImGuiDir_Right);
-        } else {
-            ImGui::Dummy(ImVec2(arrow_size, 0.0f));
-        }
-
-        ImGui::SameLine();
-
-        ImGui::Text("%.*s", task->title.length, task->title.start);
-
-        if (clicked && !expand_arrow_clicked) {
-            request_task_by_task_id(task->id);
-        }
-    } else if (column == 1 && sorted_task->cached_status) {
-        ImVec4 color = ImGui::ColorConvertU32ToFloat4(sorted_task->cached_status->color);
-
-        ImGui::TextColored(color, "[%.*s]", sorted_task->cached_status->name.length,
-                           sorted_task->cached_status->name.start);
-    } else if (column == 2) {
-        bool drawn_at_least_one_user = false;
-
-        for (u32 assignee_index = 0; assignee_index < task->num_assignees; assignee_index++) {
-            User_Id user_id = task->assignees[assignee_index];
-            User* user = find_user_by_id(user_id);
-
-            if (!user) {
-                continue;
-            }
-
-            drawn_at_least_one_user = true;
-
-            bool is_not_last = assignee_index < task->num_assignees - 1;
-            const char* name_pattern = "%.*s %.1s.";
-
-            if (is_not_last) {
-                name_pattern = "%.*s %.1s.,";
-            }
-
-            ImGui::Text(name_pattern, user->first_name.length, user->first_name.start, user->last_name.start);
-
-            if (is_not_last) {
-                ImGui::SameLine();
-            }
-        }
-
-        if (!drawn_at_least_one_user) {
-            ImGui::Dummy(ImVec2(0.0f, ImGui::GetTextLineHeight()));
-        }
-    } else if (custom_field_or_null) {
-        // TODO seems slow, any better way?
-        // TODO I can think of one: we could literally cache already stringified values in Sorted_Task
-        bool found = false;
-
-        for (u32 j = 0; j < task->num_custom_field_values; j++) {
-            Custom_Field_Value* value = &task->custom_field_values[j];
-
-            if (value->field_id == custom_field_or_null->id) {
-                ImGui::Text("%.*s", value->value.length, value->value.start);
-                found = true;
-                break;
-            }
-        }
-
-        if (!found) {
-            ImGui::Dummy(ImVec2(0.0f, ImGui::GetTextLineHeight()));
-        }
-    }
-}
-
-void map_columns_to_custom_fields(Custom_Field** column_to_custom_field) {
     for (u32 column = 0; column < current_folder.num_custom_columns; column++) {
         Custom_Field_Id custom_field_id = current_folder.custom_columns[column];
 
@@ -479,55 +325,351 @@ void map_columns_to_custom_fields(Custom_Field** column_to_custom_field) {
 
         column_to_custom_field[column] = custom_field;
     }
+
+    return column_to_custom_field;
 }
 
-void draw_task_column_hierarchical(Sorted_Folder_Task* task, u32 column, Custom_Field* custom_field_or_null, u16 level) {
-    if (show_only_active_tasks && task->cached_status->group != Status_Group_Active) {
-        return;
-    }
+Custom_Field_Value* try_find_custom_field_value_in_task(Folder_Task* task, Custom_Field* field) {
+    if (!field) return NULL;
 
-    draw_task_column(task, column, custom_field_or_null, level);
+    for (u32 index = 0; index < task->num_custom_field_values; index++) {
+        Custom_Field_Value* value = &task->custom_field_values[index];
 
-    if (task->is_expanded) {
-        for (u32 sub_task_index = 0; sub_task_index < task->num_sub_tasks; sub_task_index++) {
-            draw_task_column_hierarchical(task->sub_tasks[sub_task_index], column, custom_field_or_null, level + 1);
+        if (value->field_id == field->id) {
+            return value;
         }
     }
+
+    return NULL;
 }
 
-void draw_all_task_columns(Custom_Field** column_to_custom_field, u32 total_columns) {
-    for (u32 column = 0; column < total_columns; column++) {
-        Custom_Field* custom_field = column >= custom_columns_start_index ?
-                                     column_to_custom_field[column - custom_columns_start_index] :
-                                     NULL;
+void draw_assignees_cell_contents(ImDrawList* draw_list, Folder_Task* task, ImVec2 text_position) {
+    for (u32 assignee_index = 0; assignee_index < task->num_assignees; assignee_index++) {
+        User_Id user_id = task->assignees[assignee_index];
+        User* user = find_user_by_id(user_id);
 
-        //ImGuiListClipper clipper(folder_task_count, ImGui::GetTextLineHeightWithSpacing());
+        if (!user) {
+            continue;
+        }
 
-        //while (clipper.Step()) {
-        for (int index = 0; index < top_level_tasks.length; index++) {
-            Sorted_Folder_Task* task = top_level_tasks[index];
+        bool is_not_last = assignee_index < task->num_assignees - 1;
+        const char* name_pattern = "%.*s %.*s";
 
-            if (show_only_active_tasks && task->cached_status->group != Status_Group_Active) {
-                continue;
+        if (is_not_last) {
+            name_pattern = "%.*s %.*s, ";
+        }
+
+        char* start, *end;
+
+        tprintf(name_pattern, &start, &end,
+                user->first_name.length, user->first_name.start,
+                user->last_name.length, user->last_name.start);
+
+        float text_width = ImGui::CalcTextSize(start, end).x;
+
+        draw_list->AddText(text_position, table_text_color, start, end);
+
+        text_position.x += text_width;
+    }
+}
+
+bool draw_open_task_button(Table_Paint_Context& context, ImVec2 cell_top_left, float column_width) {
+    ImVec2 button_size(30.0f * context.scale, context.row_height);
+    ImVec2 top_left = cell_top_left + ImVec2(column_width, 0) - ImVec2(button_size.x, 0);
+    ImVec2 bottom_right = top_left + button_size;
+
+    ImRect bounds(top_left, bottom_right);
+
+    ImGuiID id = ImGui::GetID("task_open_button");
+
+    bool is_clipped = !ImGui::ItemAdd(bounds, id);
+
+    bool hovered, held;
+    bool pressed = ImGui::ButtonBehavior(bounds, id, &hovered, &held);
+
+    if (is_clipped) {
+        return pressed;
+    }
+
+    ImVec2 icon_size{ button_size.x / 3.5f, context.row_height / 4.0f };
+    ImVec2 icon_top_left = top_left + button_size / 2.0f - icon_size / 2.0f;
+    ImVec2 icon_bottom_right = icon_top_left + icon_size;
+    ImVec2 icon_bottom_left = icon_top_left + ImVec2(0.0f, icon_size.y);
+    ImVec2 icon_secondary_offset = ImVec2(-2.0f, 1.5f) * context.scale;
+
+    u32 color = hovered ? active_text_color : table_text_color;
+
+    context.draw_list->AddRectFilled(top_left, bottom_right, IM_COL32_WHITE);
+    context.draw_list->AddLine(icon_top_left + icon_secondary_offset, icon_bottom_left + icon_secondary_offset, color, 1.5f);
+    context.draw_list->AddLine(icon_bottom_left + icon_secondary_offset, icon_bottom_right + icon_secondary_offset, color, 1.5f);
+    context.draw_list->AddRect(icon_top_left, icon_bottom_right, color, 0, ImDrawCornerFlags_All, 1.5f);
+
+    return pressed;
+}
+
+bool draw_expand_arrow_button(Table_Paint_Context& context, bool is_expanded, ImVec2 cell_top_left, float nesting_level_padding) {
+    const static u32 expand_arrow_color = 0xff848484;
+    const static u32 expand_arrow_hovered = argb_to_agbr(0xff73a6ff);
+
+    ImVec2 arrow_point = cell_top_left + ImVec2(context.scale * 20.0f + nesting_level_padding, context.row_height / 2.0f);
+    float arrow_half_height = ImGui::GetFontSize() / 4.0f;
+    float arrow_width = arrow_half_height;
+
+    ImGuiID id = ImGui::GetID("task_expand_arrow");
+
+    const ImRect bounds({ arrow_point.x - arrow_width * 3.5f, cell_top_left.y },
+                        { arrow_point.x + arrow_width * 2.5f, cell_top_left.y + context.row_height });
+
+    bool is_clipped = !ImGui::ItemAdd(bounds, id);
+
+    bool hovered, held;
+    bool pressed = ImGui::ButtonBehavior(bounds, id, &hovered, &held);
+
+    if (is_clipped) {
+        return pressed;
+    }
+
+    u32 color = hovered ? expand_arrow_hovered : expand_arrow_color;
+
+    if (!is_expanded) {
+        ImVec2 arrow_top_left = arrow_point - ImVec2(arrow_width,  arrow_half_height);
+        ImVec2 arrow_bottom_right = arrow_point - ImVec2(arrow_width, -arrow_half_height);
+
+        context.draw_list->AddLine(arrow_point, arrow_top_left, color);
+        context.draw_list->AddLine(arrow_point, arrow_bottom_right, color);
+    } else {
+        ImVec2 arrow_right = arrow_point + ImVec2(arrow_width / 2.0f, 0.0f);
+        ImVec2 arrow_bottom_point = arrow_right - ImVec2(arrow_width, -arrow_half_height);
+
+        context.draw_list->AddLine(arrow_right - ImVec2(arrow_width * 2.0f, 0.0f), arrow_bottom_point, color);
+        context.draw_list->AddLine(arrow_right, arrow_bottom_point, color);
+    }
+
+    return pressed;
+}
+
+void draw_table_cell_for_task(Table_Paint_Context& context, u32 column, float column_width, Flattened_Folder_Task* flattened_task, ImVec2 cell_top_left) {
+    ImVec2 padding(context.scale * 8.0f, context.text_padding_y);
+    Sorted_Folder_Task* sorted_task = flattened_task->sorted_task;
+    Folder_Task* task = sorted_task->source_task;
+
+    switch (column) {
+        case 0: {
+            float nesting_level_padding = flattened_task->nesting_level * 20.0f * context.scale;
+
+            if (flattened_task->has_visible_subtasks) {
+                if (draw_expand_arrow_button(context, sorted_task->is_expanded, cell_top_left, nesting_level_padding)) {
+                    sorted_task->is_expanded = !sorted_task->is_expanded;
+                    /* TODO We don't need to rebuild the whole tree there
+                     * TODO     this is just inserting/removing subtask tree after the current task and could be done
+                     * TODO     with a simple subtree traversal to determine subtree size, then a subsequent list insert
+                     * TODO     or a simple memcpy in case of a removal
+                     * TODO Also queuing there is not really necessary, since the only part of the flattened array
+                     * TODO     which changes lies after the current element but the current solution feels cleaner,
+                     * TODO     although it delays the update for one frame
+                     */
+                    queue_flattened_tree_rebuild = true;
+                }
             }
 
-            draw_task_column_hierarchical(task, column, custom_field, 0);
-        }
-        //}
+            ImVec2 title_padding(context.scale * 40.0f + nesting_level_padding, context.text_padding_y);
 
-        //clipper.End();
+            char* start = task->title.start, * end = task->title.start + task->title.length;
 
-        if (column + 1 < total_columns) {
-            ImGui::NextColumn();
+            context.draw_list->AddText(cell_top_left + title_padding, table_text_color, start, end);
+
+            if (ImGui::IsMouseHoveringRect(cell_top_left, cell_top_left + ImVec2(column_width, context.row_height))) {
+                if (draw_open_task_button(context, cell_top_left, column_width)) {
+                    request_task_by_task_id(task->id);
+                }
+            }
+
+            break;
         }
+
+        case 1: {
+            Custom_Status* status = sorted_task->cached_status;
+
+            if (status) {
+                char* start = status->name.start, * end = status->name.start + status->name.length;
+
+                context.draw_list->AddText(cell_top_left + padding, status->color, start, end);
+            }
+
+            break;
+        }
+
+        case 2: {
+            ImVec2 text_position = cell_top_left + padding;
+
+            draw_assignees_cell_contents(context.draw_list, task, text_position);
+
+            break;
+        }
+
+        default: {
+            if (column > custom_columns_start_index) {
+                Custom_Field* custom_field = context.column_to_custom_field[column - custom_columns_start_index];
+                Custom_Field_Value* field_value = try_find_custom_field_value_in_task(task, custom_field);
+
+                if (field_value) {
+                    char* start = field_value->value.start, * end = field_value->value.start + field_value->value.length;
+
+                    context.draw_list->AddText(cell_top_left + padding, table_text_color, start, end);
+                }
+            }
+        }
+    }
+}
+
+float get_column_width(Table_Paint_Context& context, u32 column) {
+    float column_width = 50.0f;
+
+    if (column == 0) {
+        column_width = 500.0f;
+    } else if (column == 1) {
+        column_width = 150.0f;
+    } else if (column == 2) {
+        column_width = 200.0f;
+    }
+
+    return column_width * context.scale;
+}
+
+String get_column_title(Table_Paint_Context& context, u32 column) {
+    String column_title{};
+
+    switch (column) {
+        case 0: column_title.start = (char*) "Title"; break;
+        case 1: column_title.start = (char*) "Status"; break;
+        case 2: column_title.start = (char*) "Assignees"; break;
+
+        default: {
+            Custom_Field* custom_field = context.column_to_custom_field[column - custom_columns_start_index];
+            column_title = custom_field->title;
+        }
+    }
+
+    if (!column_title.length) {
+        column_title.length = (u32) strlen(column_title.start);
+    }
+
+    return column_title;
+}
+
+Task_List_Sort_Field get_column_sort_field(u32 column) {
+    switch (column) {
+        case 0: return Task_List_Sort_Field_Title;
+        case 1: return Task_List_Sort_Field_Status;
+        case 2: return Task_List_Sort_Field_Assignee;
+
+        default: {
+            return Task_List_Sort_Field_Custom_Field;
+        }
+    }
+}
+
+void draw_folder_header(Table_Paint_Context& context, float content_width) {
+    ImVec2 top_left = ImGui::GetCursorScreenPos();
+
+    float toolbar_height = 32.0f * context.scale;
+    float folder_header_height = 56.0f * context.scale;
+
+    ImGui::Dummy({ 0, folder_header_height + toolbar_height});
+
+    ImGui::PushFont(font_header);
+
+    ImVec2 folder_header_padding = ImVec2(32.0f, folder_header_height / 2.0f - ImGui::GetFontSize() / 2.0f);
+
+    context.draw_list->AddText(top_left + folder_header_padding, table_text_color,
+                       current_folder.name.start, current_folder.name.start + current_folder.name.length);
+
+    ImGui::PopFont();
+
+    const u32 toolbar_background = 0xfff7f7f7;
+
+    ImVec2 toolbar_top_left = top_left + ImVec2(0, folder_header_height);
+    ImVec2 toolbar_bottom_right = toolbar_top_left + ImVec2(content_width, toolbar_height);
+
+    context.draw_list->AddRectFilled(toolbar_top_left, toolbar_bottom_right, toolbar_background);
+}
+
+void draw_table_header(Table_Paint_Context& context, ImVec2 window_top_left) {
+    float column_left_x = 0.0f;
+    ImDrawList* draw_list = context.draw_list;
+
+    for (u32 column = 0; column < context.total_columns; column++) {
+        float column_width = get_column_width(context, column);
+        String column_title = get_column_title(context, column);
+
+        char* start, * end;
+
+        start = column_title.start;
+        end = column_title.start + column_title.length;
+
+        ImVec2 column_top_left_absolute = window_top_left + ImVec2(column_left_x, 0) + ImVec2(0, ImGui::GetScrollY());
+
+        ImVec2 size { column_width, context.row_height };
+
+        ImGui::PushID(column);
+
+        ImGuiID id = ImGui::GetID("header_sort_button");
+
+        ImGui::PopID();
+
+        const ImRect bounds(column_top_left_absolute, column_top_left_absolute + size);
+        bool is_clipped = !ImGui::ItemAdd(bounds, id);
+
+        bool hovered, held;
+        bool pressed = ImGui::ButtonBehavior(bounds, id, &hovered, &held);
+
+        bool sorting_by_this_column;
+
+        {
+            Task_List_Sort_Field column_sort_field = get_column_sort_field(column);
+
+            if (sort_field == Task_List_Sort_Field_Custom_Field) {
+                Custom_Field* column_custom_field = context.column_to_custom_field[column - custom_columns_start_index];
+
+                if (pressed) {
+                    sort_by_custom_field(column_custom_field->id);
+                }
+
+                sorting_by_this_column = sort_custom_field_id == column_custom_field->id;
+            } else {
+                if (pressed) {
+                    sort_by_field(column_sort_field);
+                }
+
+                sorting_by_this_column = column_sort_field == sort_field;
+            }
+        }
+
+        if (is_clipped) {
+            column_left_x += column_width;
+
+            continue;
+        }
+
+        u32 text_color = hovered ? active_text_color : table_text_color;
+
+        const u32 grid_color = 0xffebebeb;
+
+        draw_list->AddRectFilled(column_top_left_absolute, column_top_left_absolute + size, IM_COL32_WHITE);
+        draw_list->AddText(column_top_left_absolute + ImVec2(8.0f * context.scale, context.text_padding_y), text_color, start, end);
+        draw_list->AddLine(column_top_left_absolute, column_top_left_absolute + ImVec2(0, context.row_height), grid_color, 1.25f);
+
+        if (sorting_by_this_column) {
+            // TODO draw sort direction arrow
+        }
+
+        column_left_x += column_width;
     }
 }
 
 void draw_task_list() {
     ImGuiID task_list = ImGui::GetID("task_list");
-    ImGui::BeginChildFrame(task_list, ImVec2(-1, -1), ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
-
-    //ImGui::ListBoxHeader("##tasks", ImVec2(-1, -1));
+    ImGui::BeginChildFrame(task_list, ImVec2(-1, -1));
 
     const bool is_folder_data_loading = folder_contents_request != NO_REQUEST || folder_header_request != NO_REQUEST;
     const bool are_users_loading = contacts_request != NO_REQUEST;
@@ -538,82 +680,91 @@ void draw_task_list() {
             has_been_sorted_after_loading = true;
         }
 
-        ImGui::Checkbox("Show only active tasks", &show_only_active_tasks);
-        ImGui::SameLine();
-
-        if (ImGui::Button("Expand all")) {
-            for (u32 index = 0; index < folder_task_count; index++) {
-                sorted_folder_tasks[index].is_expanded = true;
-            }
+        if (queue_flattened_tree_rebuild) {
+            queue_flattened_tree_rebuild = false;
+            rebuild_flattened_folder_tree();
         }
 
-        ImGui::Separator();
+        const u32 grid_color = 0xffebebeb;
+        const float scale = platform_get_pixel_ratio();
+        const float row_height = 28.0f * scale;
 
-        // TODO we could put those into a clipper as well
-#if 0
-        if (selected_node) {
-            for (u32 i = 0; i < selected_node->num_children; i++) {
-                Folder_Tree_Node* child_folder = selected_node->children[i];
+        Table_Paint_Context paint_context;
+        paint_context.scale = scale;
+        paint_context.draw_list = ImGui::GetWindowDrawList();
+        paint_context.row_height = row_height;
+        paint_context.text_padding_y = row_height / 2.0f - ImGui::GetFontSize() / 2.0f;
+        paint_context.column_to_custom_field = map_columns_to_custom_fields();
+        paint_context.total_columns = current_folder.num_custom_columns + custom_columns_start_index;
 
-                ImGui::PushID(child_folder);
+        draw_folder_header(paint_context, ImGui::GetWindowWidth());
 
-                bool clicked = ImGui::Selectable("##dummy_folder");
-                ImGui::SameLine();
-                ImGui::TextColored(ImVec4(0, 0, 0, alpha), string_to_temporary_null_terminated_string(child_folder->name));
+        ImGui::BeginChild("table_content", ImVec2(-1, -1), false, ImGuiWindowFlags_HorizontalScrollbar);
 
-                if (clicked) {
-                    select_folder_node_and_request_contents_if_necessary(child_folder);
-                }
+        ImDrawList* draw_list = ImGui::GetWindowDrawList();
+
+        paint_context.draw_list = draw_list;
+
+        const float content_width = ImGui::GetWindowWidth();
+        const float content_height = ImGui::GetWindowHeight();
+
+        const ImVec2 window_top_left = ImGui::GetCursorScreenPos();
+        const ImVec2 window_bottom_right_no_scroll = ImGui::GetWindowPos() + ImVec2(content_width, content_height);
+
+        float column_left_x = 0.0f;
+
+        for (u32 column = 0; column < paint_context.total_columns; column++) {
+            float column_width = get_column_width(paint_context, column);
+
+            for (u32 row = 0; row < flattened_sorted_folder_task_tree.length; row++) {
+                Flattened_Folder_Task* flattened_task = &flattened_sorted_folder_task_tree[row];
+
+                float row_top_y = row_height * (row + 1);
+
+                ImVec2 top_left(column_left_x, row_top_y);
+                top_left += window_top_left;
+
+                ImGui::PushID(flattened_task);
+
+                draw_table_cell_for_task(paint_context, column, column_width, flattened_task, top_left);
 
                 ImGui::PopID();
             }
-        }
-#endif
 
-        float view_width = ImGui::GetContentRegionAvailWidth();
-        u32 total_columns = current_folder.num_custom_columns + custom_columns_start_index;
-        float custom_column_width = (view_width * 0.25f);
+            ImVec2 column_top_left_absolute = window_top_left + ImVec2(column_left_x, 0) + ImVec2(0, ImGui::GetScrollY());
+            ImVec2 column_bottom_left_absolute = window_top_left + ImVec2(column_left_x, content_height) + ImVec2(0, ImGui::GetScrollY());
 
-        if (current_folder.num_custom_columns) {
-            custom_column_width /= current_folder.num_custom_columns;
-        }
+            draw_list->AddRectFilled(column_top_left_absolute + ImVec2(column_width, 0), window_bottom_right_no_scroll, IM_COL32_WHITE);
+            draw_list->AddLine(column_top_left_absolute, column_bottom_left_absolute, grid_color, 1.25f);
 
-        Custom_Field** column_to_custom_field = (Custom_Field**) talloc(sizeof(Custom_Field*) * current_folder.num_custom_columns);
-
-        map_columns_to_custom_fields(column_to_custom_field);
-
-        draw_task_list_header(view_width, custom_column_width, column_to_custom_field, total_columns);
-
-        ImGui::Separator();
-        ImGui::BeginChild("task_description_and_comments", ImVec2(-1, -1));
-        ImGui::BeginColumns("table_view_columns", total_columns);
-
-        ImGui::SetColumnWidth(0, view_width * 0.4f);
-        ImGui::SetColumnWidth(1, view_width * 0.2f);
-        ImGui::SetColumnWidth(2, view_width * 0.15f);
-
-        for (u32 column = 0; column < current_folder.num_custom_columns; column++) {
-            ImGui::SetColumnWidth(custom_columns_start_index + column, custom_column_width);
+            column_left_x += column_width;
         }
 
-        draw_all_task_columns(column_to_custom_field, total_columns);
+        for (u32 row = 0; row < flattened_sorted_folder_task_tree.length; row++) {
+            float row_line_y = row_height * (row + 1);
 
-        ImGui::EndColumns();
+            draw_list->AddLine(window_top_left + ImVec2(0, row_line_y), window_top_left + ImVec2(column_left_x, row_line_y), grid_color, 1.25f);
+        }
+
+        draw_table_header(paint_context, window_top_left);
+
+        // Scrollbar
+        ImGui::Dummy(ImVec2(column_left_x, flattened_sorted_folder_task_tree.length * row_height));
         ImGui::EndChild();
 
         u32
-            loading_end_time = MAX(finished_loading_folder_contents_at, finished_loading_statuses_at);
-            loading_end_time = MAX(finished_loading_users_at, loading_end_time);
-            loading_end_time = MAX(finished_loading_statuses_at, loading_end_time);
+                loading_end_time = MAX(finished_loading_folder_contents_at, finished_loading_statuses_at);
+                loading_end_time = MAX(finished_loading_users_at, loading_end_time);
+                loading_end_time = MAX(finished_loading_statuses_at, loading_end_time);
 
         float alpha = lerp(loading_end_time, tick, 1.0f, 8);
 
         ImGui::FadeInOverlay(alpha);
     } else {
         u32
-            loading_start_time = MIN(started_loading_folder_contents_at, started_loading_statuses_at);
-            loading_start_time = MIN(started_loading_users_at, loading_start_time);
-            loading_start_time = MIN(started_loading_statuses_at, loading_start_time);
+                loading_start_time = MIN(started_loading_folder_contents_at, started_loading_statuses_at);
+                loading_start_time = MIN(started_loading_users_at, loading_start_time);
+                loading_start_time = MIN(started_loading_statuses_at, loading_start_time);
 
         ImGui::LoadingIndicator(loading_start_time);
     }
@@ -626,17 +777,17 @@ static void process_folder_contents_data_object(char* json, jsmntok_t*& token) {
 
     assert(object_token->type == JSMN_OBJECT);
 
-    Folder_Task* folder_task = &folder_tasks[folder_task_count];
+    Folder_Task* folder_task = &folder_tasks[folder_tasks.length];
     folder_task->num_parent_task_ids = 0;
     folder_task->num_custom_field_values = 0;
     folder_task->num_assignees = 0;
 
-    Sorted_Folder_Task* sorted_folder_task = &sorted_folder_tasks[folder_task_count];
+    Sorted_Folder_Task* sorted_folder_task = &sorted_folder_tasks[folder_tasks.length];
     sorted_folder_task->num_sub_tasks = 0;
     sorted_folder_task->source_task = folder_task;
     sorted_folder_task->is_expanded = false;
 
-    folder_task_count++;
+    folder_tasks.length++;
 
     for (u32 propety_index = 0; propety_index < object_token->size; propety_index++, token++) {
         jsmntok_t* property_token = token++;
@@ -724,7 +875,9 @@ void process_folder_header_data(char* json, u32 data_size, jsmntok_t*& token) {
 
         jsmntok_t* next_token = token;
 
-        if (json_string_equals(json, property_token, "customColumnIds")) {
+        if (json_string_equals(json, property_token, "title")) {
+            json_token_to_string(json, next_token, current_folder.name);
+        } else if (json_string_equals(json, property_token, "customColumnIds")) {
             current_folder.custom_columns = (Custom_Field_Id*) REALLOC(current_folder.custom_columns, sizeof(Custom_Field_Id) * next_token->size);
             current_folder.num_custom_columns = 0;
 
@@ -744,7 +897,7 @@ void process_folder_header_data(char* json, u32 data_size, jsmntok_t*& token) {
 
 static void associate_parent_tasks_with_sub_tasks() {
     // Step 1: count sub tasks for each parent, while also deciding which parents should go into the root
-    for (u32 task_index = 0; task_index < folder_task_count; task_index++) {
+    for (u32 task_index = 0; task_index < folder_tasks.length; task_index++) {
         Sorted_Folder_Task* folder_task = &sorted_folder_tasks[task_index];
         Folder_Task* source_task = folder_task->source_task;
 
@@ -771,7 +924,7 @@ static void associate_parent_tasks_with_sub_tasks() {
     }
 
     // Step 2: allocate space for sub tasks
-    for (u32 task_index = 0; task_index < folder_task_count; task_index++) {
+    for (u32 task_index = 0; task_index < folder_tasks.length; task_index++) {
         Sorted_Folder_Task* folder_task = &sorted_folder_tasks[task_index];
 
         if (folder_task->num_sub_tasks) {
@@ -782,7 +935,7 @@ static void associate_parent_tasks_with_sub_tasks() {
     }
 
     // Step 3: fill sub tasks
-    for (u32 task_index = 0; task_index < folder_task_count; task_index++) {
+    for (u32 task_index = 0; task_index < folder_tasks.length; task_index++) {
         Sorted_Folder_Task* folder_task = &sorted_folder_tasks[task_index];
         Folder_Task* source_task = folder_task->source_task;
 
@@ -807,12 +960,13 @@ void process_folder_contents_data(char* json, u32 data_size, jsmntok_t*& token) 
 
     id_hash_map_init(&id_to_sorted_folder_task);
 
-    if (folder_task_count < data_size) {
-        folder_tasks = (Folder_Task*) REALLOC(folder_tasks, sizeof(Folder_Task) * data_size);
+    if (folder_tasks.length < data_size) {
+        folder_tasks.data = (Folder_Task*) REALLOC(folder_tasks.data, sizeof(Folder_Task) * data_size);
         sorted_folder_tasks = (Sorted_Folder_Task*) REALLOC(sorted_folder_tasks, sizeof(Sorted_Folder_Task) * data_size);
+        flattened_sorted_folder_task_tree.data = (Flattened_Folder_Task*) REALLOC(flattened_sorted_folder_task_tree.data, sizeof(Flattened_Folder_Task) * data_size);
     }
 
-    folder_task_count = 0;
+    folder_tasks.length = 0;
 
     lazy_array_soft_reset(custom_field_values);
     lazy_array_soft_reset(parent_task_ids);

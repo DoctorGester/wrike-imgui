@@ -1260,7 +1260,7 @@ void draw_task_contents() {
         load_png_from_disk("resources/checkmark_task_complete.png", checkmark);
     }
 
-    float wrap_width = ImGui::GetColumnWidth(-1) - 50.0f * platform_get_pixel_ratio(); // Accommodate for scroll bar
+    float wrap_width = ImGui::GetContentRegionAvailWidth() - 50.0f * platform_get_pixel_ratio(); // Accommodate for scroll bar
 
     ImGuiID task_content_id = ImGui::GetID("task_content");
     ImGui::BeginChildFrame(task_content_id, ImVec2(-1, -1), ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
@@ -1474,7 +1474,7 @@ void process_task_data(char* json, u32 data_size, jsmntok_t*& token) {
 
     // We copy to strip comments from description
     // In fact we could just do that in the original string, since stripping comments
-    //  never adds characters, but removes them, but this is 'cleaner'
+    //  never adds characters, only removes them, but this is 'cleaner'
     String temporary_description_string;
 
     {

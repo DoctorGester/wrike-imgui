@@ -45,6 +45,8 @@ bool custom_statuses_were_loaded = false;
 static bool draw_memory_debug = false;
 static bool draw_side_menu = false;
 
+static const ImGuiID task_view_id = 1337; // TODO not a good thing. We can't initialize it to ImGui::GetID there though
+
 static Memory_Image logo;
 
 static Account_Id selected_account_id;
@@ -296,6 +298,9 @@ void request_task_by_task_id(Task_Id task_id) {
     id_as_string.length = 16;
 
     request_task_by_full_id(id_as_string);
+
+    // TODO move this out somewhere, shouldn't happen on each request
+    ImGui::OpenPopupEx(task_view_id);
 }
 
 void modify_task_e16(Task_Id task_id, const u8 entity_prefix, s32 entity_id, const char* command, bool array = true) {
@@ -606,7 +611,7 @@ void draw_ui() {
 
     frame_monitor->drawAverage();
 
-    ImGui::Columns(draw_side_menu_this_frame ? 3 : 2);
+    ImGui::Columns(draw_side_menu_this_frame ? 2 : 1);
 
 //    if (ImGui::IsWindowAppearing()) {
 //        ImGui::SetColumnWidth(0, 300.0f);
@@ -619,20 +624,26 @@ void draw_ui() {
 
     draw_task_list();
 
-    ImGui::NextColumn();
+    ImVec2 display_size = ImGui::GetIO().DisplaySize;
+    ImGui::SetNextWindowPos(display_size / 2.0f, ImGuiCond_Appearing, { 0.5f, 0.5f });
+    ImGui::SetNextWindowSize({ display_size.x / 2.0f, display_size.y / 1.25f }, ImGuiCond_Appearing);
 
-    bool task_is_loading = task_request != NO_REQUEST || contacts_request != NO_REQUEST;
+    if (ImGui::BeginPopupEx(task_view_id, 0)) {
+        bool task_is_loading = task_request != NO_REQUEST || contacts_request != NO_REQUEST;
 
-    if (selected_folder_task_id && !task_is_loading) {
-        draw_task_contents();
-    } else {
-        ImGui::ListBoxHeader("##task_content", ImVec2(-1, -1));
+        if (selected_folder_task_id && !task_is_loading) {
+            draw_task_contents();
+        } else {
+            ImGui::ListBoxHeader("##task_content", ImVec2(-1, -1));
 
-        if (task_is_loading) {
-            ImGui::LoadingIndicator(MIN(started_loading_task_at, started_loading_users_at));
+            if (task_is_loading) {
+                ImGui::LoadingIndicator(MIN(started_loading_task_at, started_loading_users_at));
+            }
+
+            ImGui::ListBoxFooter();
         }
 
-        ImGui::ListBoxFooter();
+        ImGui::EndPopup();
     }
 
     ImGui::Columns(1);

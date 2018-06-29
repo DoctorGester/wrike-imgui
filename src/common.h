@@ -1,6 +1,7 @@
 #include <imgui.h>
 #include "xxhash.h"
 #include "base32.h"
+#include <stdio.h>
 
 #pragma once
 
@@ -8,6 +9,8 @@
 #define CALLOC(x, y) calloc_and_log(__FILE__, __FUNCTION__, __LINE__, x, y)
 #define REALLOC(x, y) realloc_and_log(__FILE__, __FUNCTION__, __LINE__, x, y)
 #define FREE(x) free_and_log(__FILE__, __FUNCTION__, __LINE__, x)
+
+#define PRINTLIKE(string_index, first_to_check) __attribute__((__format__ (__printf__, string_index, first_to_check)))
 
 typedef unsigned long long u64;
 typedef unsigned int u32;
@@ -140,6 +143,8 @@ inline void fill_id16(const u8 type1, s32 id1, const u8 type2, s32 id2, u8* outp
 
     base32_encode(input, ARRAY_SIZE(input), output);
 }
+
+PRINTLIKE(1, 4) void tprintf(const char* format, char** start, char** end, ...);
 
 inline char* string_to_temporary_null_terminated_string(String string) {
     void* talloc(u32);
