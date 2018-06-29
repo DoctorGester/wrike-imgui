@@ -77,7 +77,8 @@ static int emscripten_wheel_callback(int /*eventType*/, const EmscriptenWheelEve
     else if(wheelEvent->deltaY < 0)
         io.MouseWheel = 1.f/5.f;
 
-    io.MouseWheel = (float) -wheelEvent->deltaY / 50.0f;
+    io.MouseWheel = (float) -wheelEvent->deltaY / 40.0f;
+    io.MouseWheelH = (float) -wheelEvent->deltaX / 40.0f;
 
     return true;
 }
