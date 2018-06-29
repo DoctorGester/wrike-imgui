@@ -8,6 +8,7 @@
 static char* pointer_initial = nullptr;
 static char* pointer_current = nullptr;
 static char* pointer_previous = nullptr;
+static char* pointer_mark = nullptr;
 
 static const u32 available_memory_bytes = 1024 * 1024 * 16;
 
@@ -34,19 +35,17 @@ void clear_temporary_storage() {
     num_temporary_heap_pointers = 0;
 }
 
+void temporary_storage_mark() {
+    pointer_mark = pointer_current;
+}
+
+void temporary_storage_reset() {
+    pointer_current = pointer_mark;
+}
+
 void* talloc(u32 size) {
     if ((pointer_current - pointer_initial) + size > available_memory_bytes) {
-        u32 previous_size = num_temporary_heap_pointers++;
-
-        temporary_heap_pointers = (void**) trealloc(
-                temporary_heap_pointers,
-                previous_size * sizeof(void*),
-                num_temporary_heap_pointers * sizeof(void*)
-        );
-
         void* heap_pointer = MALLOC(size);
-
-        temporary_heap_pointers[previous_size] = heap_pointer;
 
         printf("Requested allocation of %i bytes which exceeded %i size of temporary storage, %p was allocated on heap\n",
                size, available_memory_bytes, heap_pointer);

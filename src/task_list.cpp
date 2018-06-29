@@ -183,10 +183,16 @@ static inline int compare_folder_tasks_based_on_current_sort(Sorted_Folder_Task*
                 return -1;
             }
 
+            temporary_storage_mark();
+
             String a_name = full_user_name_to_temporary_string(a_assignee);
             String b_name = full_user_name_to_temporary_string(b_assignee);
 
-            return strncmp(a_name.start, b_name.start, MIN(a_name.length, b_name.length)) * sort_direction;
+            s32 comparison_result = strncmp(a_name.start, b_name.start, MIN(a_name.length, b_name.length)) * sort_direction;
+
+            temporary_storage_reset();
+
+            return comparison_result;
         }
 
         case Task_List_Sort_Field_Status: {
@@ -292,7 +298,7 @@ static void sort_by_field(Task_List_Sort_Field sort_by) {
     u64 start = platform_get_app_time_precise();
     sort_tasks_hierarchically(top_level_tasks.data, top_level_tasks.length);
     rebuild_flattened_folder_tree();
-    printf("Sorting %i elements by %i took %fms\n", top_level_tasks.length, sort_by, platform_get_delta_time_ms(start));
+    printf("Sorting %i elements by %i took %fms\n", folder_tasks.length, sort_by, platform_get_delta_time_ms(start));
 }
 
 static void sort_by_custom_field(Custom_Field_Id field_id) {
@@ -311,7 +317,7 @@ static void sort_by_custom_field(Custom_Field_Id field_id) {
     u64 start = platform_get_app_time_precise();
     sort_tasks_hierarchically(top_level_tasks.data, top_level_tasks.length);
     rebuild_flattened_folder_tree();
-    printf("Sorting %i elements by %i took %fms\n", top_level_tasks.length, field_id, platform_get_delta_time_ms(start));
+    printf("Sorting %i elements by %i took %fms\n", folder_tasks.length, field_id, platform_get_delta_time_ms(start));
 }
 
 Custom_Field** map_columns_to_custom_fields() {
@@ -713,10 +719,13 @@ void draw_task_list() {
 
         float column_left_x = 0.0f;
 
+        u32 top_row = MAX(0, (u32) floorf(ImGui::GetScrollY() / row_height));
+        u32 bottom_row = MIN(flattened_sorted_folder_task_tree.length, (u32) ceilf((ImGui::GetScrollY() + content_height) / row_height));
+
         for (u32 column = 0; column < paint_context.total_columns; column++) {
             float column_width = get_column_width(paint_context, column);
 
-            for (u32 row = 0; row < flattened_sorted_folder_task_tree.length; row++) {
+            for (u32 row = top_row; row < bottom_row; row++) {
                 Flattened_Folder_Task* flattened_task = &flattened_sorted_folder_task_tree[row];
 
                 float row_top_y = row_height * (row + 1);
