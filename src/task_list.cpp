@@ -52,7 +52,7 @@ struct Sorted_Folder_Task {
 
     Folder_Task* source_task;
     Custom_Status* cached_status;
-    Relative_Pointer<Sorted_Folder_Task*> sub_tasks;
+    Sorted_Folder_Task** sub_tasks; // TODO List<Sorted_Folder_Task*>
     u32 num_sub_tasks;
 
     bool is_expanded;
@@ -61,8 +61,9 @@ struct Sorted_Folder_Task {
 struct Flattened_Folder_Task {
     Sorted_Folder_Task* sorted_task;
     u32 nesting_level;
+    u32 num_visible_sub_tasks;
 
-    bool has_visible_subtasks;
+    bool needs_sub_task_sort;
 };
 
 struct Table_Paint_Context {
@@ -88,7 +89,7 @@ static Id_Hash_Map<Task_Id, Sorted_Folder_Task*> id_to_sorted_folder_task{};
 static Lazy_Array<Custom_Field_Value, 16> custom_field_values{};
 static Lazy_Array<Task_Id, 16> parent_task_ids{};
 static Lazy_Array<User_Id, 16> assignee_ids{};
-static Lazy_Array<Sorted_Folder_Task*, 64> sub_tasks{};
+static Sorted_Folder_Task** sub_tasks = NULL;
 
 typedef char Sort_Direction;
 static const Sort_Direction Sort_Direction_Normal = 1;
@@ -239,37 +240,61 @@ static void sort_tasks_hierarchically(Sorted_Folder_Task** tasks, u32 length) {
     qsort(tasks, length, sizeof(Sorted_Folder_Task*), compare_folder_tasks_based_on_current_sort_and_their_ids);
 
     for (u32 task_index = 0; task_index < length; task_index++) {
-        for (u32 sub_task_index = 0; sub_task_index < tasks[task_index]->num_sub_tasks; sub_task_index++) {
-            sort_tasks_hierarchically(&tasks[task_index]->sub_tasks[0], tasks[task_index]->num_sub_tasks);
+        Sorted_Folder_Task* task = tasks[task_index];
+        u32 num_sub_tasks = task->num_sub_tasks;
+
+        if (num_sub_tasks > 1) {
+            for (u32 sub_task_index = 0; sub_task_index < num_sub_tasks; sub_task_index++) {
+                sort_tasks_hierarchically(task->sub_tasks, num_sub_tasks);
+            }
         }
     }
 }
 
-static bool rebuild_flattened_folder_tree_hierarchically(Sorted_Folder_Task* task, bool is_parent_expanded, u32 level) {
+static u32 rebuild_flattened_task_tree_hierarchically(Sorted_Folder_Task* task, bool is_parent_expanded, u32 level, Flattened_Folder_Task** current_task) {
     if (show_only_active_tasks && task->cached_status->group != Status_Group_Active) {
-        return false;
+        return 0;
     }
 
     if (is_parent_expanded) {
-        Flattened_Folder_Task* flattened_task = &flattened_sorted_folder_task_tree[flattened_sorted_folder_task_tree.length++];
+        Flattened_Folder_Task* flattened_task = *current_task;
         flattened_task->sorted_task = task;
         flattened_task->nesting_level = level;
-        flattened_task->has_visible_subtasks = false;
+        flattened_task->num_visible_sub_tasks = 0;
+        flattened_task->needs_sub_task_sort = true;
+
+        *current_task = flattened_task + 1;
 
         for (u32 sub_task_index = 0; sub_task_index < task->num_sub_tasks; sub_task_index++) {
-            flattened_task->has_visible_subtasks |= rebuild_flattened_folder_tree_hierarchically(task->sub_tasks[sub_task_index], task->is_expanded, level + 1);
+            flattened_task->num_visible_sub_tasks += rebuild_flattened_task_tree_hierarchically(task->sub_tasks[sub_task_index], task->is_expanded, level + 1, current_task);
         }
     }
 
-    return true;
+    return 1;
 }
 
-static void rebuild_flattened_folder_tree() {
-    flattened_sorted_folder_task_tree.length = 0;
+static void rebuild_flattened_task_tree() {
+    Flattened_Folder_Task* current_task = flattened_sorted_folder_task_tree.data;
 
     for (u32 task_index = 0; task_index < top_level_tasks.length; task_index++) {
-        rebuild_flattened_folder_tree_hierarchically(top_level_tasks[task_index], true, 0);
+        rebuild_flattened_task_tree_hierarchically(top_level_tasks[task_index], true, 0, &current_task);
     }
+
+    flattened_sorted_folder_task_tree.length = (u32) (current_task - flattened_sorted_folder_task_tree.data);
+}
+
+static void rebuild_flattened_task_subtree(Flattened_Folder_Task* starting_at) {
+    rebuild_flattened_task_tree_hierarchically(starting_at->sorted_task, true, starting_at->nesting_level, &starting_at);
+}
+
+static void sort_sub_tasks_of_task(Sorted_Folder_Task* task) {
+    qsort(task->sub_tasks, task->num_sub_tasks, sizeof(Sorted_Folder_Task*), compare_folder_tasks_based_on_current_sort_and_their_ids);
+}
+
+static void sort_top_level_tasks_and_rebuild_flattened_tree() {
+    qsort(top_level_tasks.data, top_level_tasks.length, sizeof(Sorted_Folder_Task*), compare_folder_tasks_based_on_current_sort_and_their_ids);
+
+    rebuild_flattened_task_tree();
 }
 
 static void update_cached_data_for_sorted_tasks() {
@@ -296,8 +321,7 @@ static void sort_by_field(Task_List_Sort_Field sort_by) {
     sort_field = sort_by;
 
     u64 start = platform_get_app_time_precise();
-    sort_tasks_hierarchically(top_level_tasks.data, top_level_tasks.length);
-    rebuild_flattened_folder_tree();
+    sort_top_level_tasks_and_rebuild_flattened_tree();
     printf("Sorting %i elements by %i took %fms\n", folder_tasks.length, sort_by, platform_get_delta_time_ms(start));
 }
 
@@ -315,8 +339,7 @@ static void sort_by_custom_field(Custom_Field_Id field_id) {
     sort_custom_field = find_custom_field_by_id(field_id, hash_id(field_id)); // TODO hash cache?
 
     u64 start = platform_get_app_time_precise();
-    sort_tasks_hierarchically(top_level_tasks.data, top_level_tasks.length);
-    rebuild_flattened_folder_tree();
+    sort_top_level_tasks_and_rebuild_flattened_tree();
     printf("Sorting %i elements by %i took %fms\n", folder_tasks.length, field_id, platform_get_delta_time_ms(start));
 }
 
@@ -463,7 +486,7 @@ void draw_table_cell_for_task(Table_Paint_Context& context, u32 column, float co
         case 0: {
             float nesting_level_padding = flattened_task->nesting_level * 20.0f * context.scale;
 
-            if (flattened_task->has_visible_subtasks) {
+            if (flattened_task->num_visible_sub_tasks) {
                 if (draw_expand_arrow_button(context, sorted_task->is_expanded, cell_top_left, nesting_level_padding)) {
                     sorted_task->is_expanded = !sorted_task->is_expanded;
                     /* TODO We don't need to rebuild the whole tree there
@@ -634,7 +657,7 @@ void draw_table_header(Table_Paint_Context& context, ImVec2 window_top_left) {
         {
             Task_List_Sort_Field column_sort_field = get_column_sort_field(column);
 
-            if (sort_field == Task_List_Sort_Field_Custom_Field) {
+            if (column_sort_field == Task_List_Sort_Field_Custom_Field) {
                 Custom_Field* column_custom_field = context.column_to_custom_field[column - custom_columns_start_index];
 
                 if (pressed) {
@@ -686,11 +709,6 @@ void draw_task_list() {
             has_been_sorted_after_loading = true;
         }
 
-        if (queue_flattened_tree_rebuild) {
-            queue_flattened_tree_rebuild = false;
-            rebuild_flattened_folder_tree();
-        }
-
         const u32 grid_color = 0xffebebeb;
         const float scale = platform_get_pixel_ratio();
         const float row_height = 28.0f * scale;
@@ -721,6 +739,23 @@ void draw_task_list() {
 
         u32 top_row = MAX(0, (u32) floorf(ImGui::GetScrollY() / row_height));
         u32 bottom_row = MIN(flattened_sorted_folder_task_tree.length, (u32) ceilf((ImGui::GetScrollY() + content_height) / row_height));
+
+        // TODO I feel like there is still an issue of being able to see a bunch of unsorted subtasks at the top of the screen
+        // TODO since parent task is not on screen, need to confirm it
+        for (u32 row = top_row; row < bottom_row; row++) {
+            Flattened_Folder_Task* flattened_task = &flattened_sorted_folder_task_tree[row];
+
+            bool is_expanded = flattened_task->sorted_task->is_expanded;
+            bool needs_to_be_sorted = flattened_task->needs_sub_task_sort;
+            bool has_more_than_one_visible_task = flattened_task->num_visible_sub_tasks > 1;
+
+            if (is_expanded && needs_to_be_sorted && has_more_than_one_visible_task) {
+                sort_sub_tasks_of_task(flattened_task->sorted_task);
+                rebuild_flattened_task_subtree(flattened_task);
+
+                flattened_task->needs_sub_task_sort = false;
+            }
+        }
 
         for (u32 column = 0; column < paint_context.total_columns; column++) {
             float column_width = get_column_width(paint_context, column);
@@ -760,6 +795,11 @@ void draw_task_list() {
         // Scrollbar
         ImGui::Dummy(ImVec2(column_left_x, flattened_sorted_folder_task_tree.length * row_height));
         ImGui::EndChild();
+
+        if (queue_flattened_tree_rebuild) {
+            queue_flattened_tree_rebuild = false;
+            rebuild_flattened_task_tree();
+        }
 
         u32
                 loading_end_time = MAX(finished_loading_folder_contents_at, finished_loading_statuses_at);
@@ -905,6 +945,8 @@ void process_folder_header_data(char* json, u32 data_size, jsmntok_t*& token) {
 }
 
 static void associate_parent_tasks_with_sub_tasks() {
+    u32 total_sub_tasks = 0;
+
     // Step 1: count sub tasks for each parent, while also deciding which parents should go into the root
     for (u32 task_index = 0; task_index < folder_tasks.length; task_index++) {
         Sorted_Folder_Task* folder_task = &sorted_folder_tasks[task_index];
@@ -922,6 +964,7 @@ static void associate_parent_tasks_with_sub_tasks() {
                     found_at_least_one_parent = true;
 
                     parent_or_null->num_sub_tasks++;
+                    total_sub_tasks++;
                 }
             }
         }
@@ -933,11 +976,16 @@ static void associate_parent_tasks_with_sub_tasks() {
     }
 
     // Step 2: allocate space for sub tasks
+    sub_tasks = (Sorted_Folder_Task**) REALLOC(sub_tasks, total_sub_tasks * sizeof(Sorted_Folder_Task*));
+    total_sub_tasks = 0;
+
     for (u32 task_index = 0; task_index < folder_tasks.length; task_index++) {
         Sorted_Folder_Task* folder_task = &sorted_folder_tasks[task_index];
 
         if (folder_task->num_sub_tasks) {
-            folder_task->sub_tasks = lazy_array_reserve_n_values_relative_pointer(sub_tasks, folder_task->num_sub_tasks);
+            folder_task->sub_tasks = sub_tasks + total_sub_tasks;
+
+            total_sub_tasks += folder_task->num_sub_tasks;
 
             folder_task->num_sub_tasks = 0;
         }
@@ -980,7 +1028,6 @@ void process_folder_contents_data(char* json, u32 data_size, jsmntok_t*& token) 
     lazy_array_soft_reset(custom_field_values);
     lazy_array_soft_reset(parent_task_ids);
     lazy_array_soft_reset(top_level_tasks);
-    lazy_array_soft_reset(sub_tasks);
 
     for (u32 array_index = 0; array_index < data_size; array_index++) {
         process_folder_contents_data_object(json, token);
