@@ -1,12 +1,12 @@
 #include "main.h"
 #include "renderer.h"
 #include <imgui.h>
-#include "framemonitor.h"
 #include <cmath>
 #include <string.h>
 #define IMGUI_DEFINE_MATH_OPERATORS
 #include <imgui_internal.h>
 #include <jsmn.h>
+#include <cstdint>
 
 #include "jsmn.h"
 #include "folder_tree.h"
@@ -23,8 +23,6 @@
 #include "tracing.h"
 #include "users.h"
 #include "workflows.h"
-
-static FrameMonitor* frame_monitor = nullptr;
 
 const Request_Id NO_REQUEST = -1;
 
@@ -80,6 +78,8 @@ u32 started_loading_users_at = 0;
 u32 finished_loading_users_at = 0;
 
 static Request_Id request_id_counter = 0;
+
+static double frame_times[60];
 
 PRINTLIKE(3, 4) void api_request(Http_Method method, Request_Id& request_id, const char* format, ...) {
     // TODO use temporary storage there
@@ -421,8 +421,19 @@ void draw_side_menu_toggle_button(const ImVec2& size) {
                              color, rounding);
 }
 
-static void draw_ui_header() {
+static void draw_average_frame_time() {
+    double sum = 0;
 
+    for (double* it = frame_times; it != frame_times + ARRAY_SIZE(frame_times); it++) {
+        sum += *it;
+    }
+
+    char* text_start;
+    char* text_end;
+
+    tprintf("Loop time: %fms", &text_start, &text_end, sum / ARRAY_SIZE(frame_times));
+
+    ImGui::GetOverlayDrawList()->AddText(ImGui::GetCursorScreenPos() + ImVec2(800.0f, -50.0f), 0x80FFFFFF, text_start, text_end);
 }
 
 void draw_ui() {
@@ -467,7 +478,7 @@ void draw_ui() {
 
     draw_side_menu_toggle_button(toggle_button_size);
 
-    frame_monitor->drawAverage();
+    draw_average_frame_time();
 
     ImGui::Columns(draw_side_menu_this_frame ? 2 : 1);
 
@@ -541,9 +552,8 @@ void handle_clipboard_paste(char* data, u32 data_length) {
 
 extern "C"
 EXPORT
-void loop()
-{
-    frame_monitor->startFrame();
+void loop() {
+    u64 frame_start_time = platform_get_app_time_precise();
 
     clear_temporary_storage();
 
@@ -570,7 +580,9 @@ void loop()
 
     ImGui::Render();
     renderer_draw_lists(ImGui::GetDrawData());
-    frame_monitor->endFrame(); // Before assumed swapBuffers
+
+    frame_times[tick % (ARRAY_SIZE(frame_times))] = platform_get_delta_time_ms(frame_start_time); // Before assumed swapBuffers
+
     platform_end_frame();
 }
 
@@ -622,8 +634,7 @@ static void imgui_free_wrapper(void* ptr, void* user_data) {
 }
 
 EXPORT
-bool init()
-{
+bool init() {
     init_temporary_storage();
     create_imgui_context();
 
@@ -644,8 +655,6 @@ bool init()
     load_persisted_settings();
 
     printf("Platform init: %s\n", result ? "true" : "false");
-
-    frame_monitor = new FrameMonitor;
 
     load_png_from_disk("resources/wrike_logo.png", logo);
 
