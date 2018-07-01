@@ -4,7 +4,7 @@
 #include <lodepng.h>
 #include "common.h"
 #include "platform.h"
-#include "funimgui.h"
+#include "renderer.h"
 #include "main.h"
 
 enum Request_Type {
@@ -277,7 +277,7 @@ bool platform_init() {
     requests_process_mutex = SDL_CreateMutex();
 
     // TODO bad API, we shouldn't be making external calls in platform impl, move those out
-    FunImGui::initGraphics(vertex_shader_source, fragment_shader_source);
+    renderer_init(vertex_shader_source, fragment_shader_source);
 
     private_token = file_to_string("private.key");
 

@@ -1,5 +1,5 @@
 #include "main.h"
-#include "funimgui.h"
+#include "renderer.h"
 #include <imgui.h>
 #include "framemonitor.h"
 #include <cmath>
@@ -569,7 +569,7 @@ void loop()
     ImGui::End();
 
     ImGui::Render();
-    FunImGui::RenderDrawLists(ImGui::GetDrawData());
+    renderer_draw_lists(ImGui::GetDrawData());
     frame_monitor->endFrame(); // Before assumed swapBuffers
     platform_end_frame();
 }

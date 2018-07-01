@@ -3,7 +3,7 @@
 #include <imgui_internal.h>
 #include "render_rich_text.h"
 #include "rich_text.h"
-#include "funimgui.h"
+#include "renderer.h"
 
 using namespace ImGui;
 

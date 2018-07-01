@@ -4,7 +4,7 @@
 #include <emscripten/emscripten.h>
 #include <emscripten/html5.h>
 #include <imgui_user.h>
-#include "funimgui.h"
+#include "renderer.h"
 #include "platform.h"
 #include "main.h"
 
@@ -249,7 +249,7 @@ bool platform_init() {
 
     frame_pixel_ratio = (float) emscripten_get_device_pixel_ratio();
 
-    FunImGui::initGraphics(vertex_shader_source, fragment_shader_source);
+    renderer_init(vertex_shader_source, fragment_shader_source);
 
     register_input_callbacks();
 
