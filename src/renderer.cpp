@@ -36,6 +36,7 @@ static s32 attribute_uv;
 
 ImFont* font_header;
 ImFont* font_regular;
+ImFont* font_ui_header_button;
 ImFont* font_bold;
 ImFont* font_italic;
 ImFont* font_bold_italic;
@@ -148,8 +149,11 @@ static void renderer_init_font() {
 
     const float default_font_size = 16.0f;
 
+    // font_regular should be loaded first, so it becomes a default font
     font_regular = LOAD_FONT("resources/OpenSans-Regular.ttf", default_font_size);
+
     font_header = LOAD_FONT("resources/OpenSans-Regular.ttf", 28.0f);
+    font_ui_header_button = LOAD_FONT("resources/OpenSans-Regular.ttf", 19.0f);
     font_bold = LOAD_FONT("resources/OpenSans-Bold.ttf", default_font_size);
     font_italic = LOAD_FONT("resources/OpenSans-Italic.ttf", default_font_size);
     font_bold_italic = LOAD_FONT("resources/OpenSans-BoldItalic.ttf", default_font_size);

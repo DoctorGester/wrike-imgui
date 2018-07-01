@@ -697,8 +697,8 @@ void draw_table_header(Table_Paint_Context& context, ImVec2 window_top_left) {
 }
 
 void draw_task_list() {
-    ImGuiID task_list = ImGui::GetID("task_list");
-    ImGui::BeginChildFrame(task_list, ImVec2(-1, -1));
+    ImGuiID task_list_id = ImGui::GetID("task_list");
+    ImGui::BeginChildFrame(task_list_id, ImVec2(-1, -1));
 
     const bool is_folder_data_loading = folder_contents_request != NO_REQUEST || folder_header_request != NO_REQUEST;
     const bool are_users_loading = contacts_request != NO_REQUEST;

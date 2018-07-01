@@ -23,6 +23,7 @@
 #include "tracing.h"
 #include "users.h"
 #include "workflows.h"
+#include "header.h"
 
 const Request_Id NO_REQUEST = -1;
 
@@ -45,7 +46,7 @@ static bool draw_side_menu = false;
 
 static const ImGuiID task_view_id = 1337; // TODO not a good thing. We can't initialize it to ImGui::GetID there though
 
-static Memory_Image logo;
+static float folder_tree_column_width = 300.0f;
 
 static Account_Id selected_account_id;
 
@@ -349,7 +350,7 @@ void set_task_status(Task_Id task_id, Custom_Status_Id status_id) {
 
 void ImGui::LoadingIndicator(u32 started_showing_at) {
     float scale = platform_get_pixel_ratio();
-    ImVec2 cursor = ImGui::GetCursorScreenPos() + (ImVec2(12, 12) * scale);
+    ImVec2 cursor = ImGui::GetCursorScreenPos() + (ImVec2(24, 24) * scale);
     const float speed_scale = 10.0f;
     float cos = cosf(tick / speed_scale);
     float sin = sinf(tick / speed_scale);
@@ -366,16 +367,6 @@ void ImGui::LoadingIndicator(u32 started_showing_at) {
     );
 }
 
-ImVec2 get_scaled_image_size(Memory_Image& image) {
-    // Assume original image is retina-sized
-    ImVec2 size{ (float) image.width, (float) image.height };
-    return size / 2.0f * platform_get_pixel_ratio();
-}
-
-void ImGui::Image(Memory_Image& image) {
-    ImGui::Image((void*)(intptr_t) image.texture_id, get_scaled_image_size(image));
-}
-
 void ImGui::FadeInOverlay(float alpha) {
     float rounding = ImGui::GetStyle().FrameRounding;
 
@@ -385,40 +376,6 @@ void ImGui::FadeInOverlay(float alpha) {
     u32 overlay_color = IM_COL32(255, 255, 255, 255 - (u32) (alpha * 255.0f));
 
     ImGui::GetOverlayDrawList()->AddRectFilled(top_left, top_left + size, overlay_color, rounding);
-}
-
-void draw_side_menu_toggle_button(const ImVec2& size) {
-    float scale = platform_get_pixel_ratio();
-
-    ImDrawList* draw_list = ImGui::GetWindowDrawList();
-
-    ImVec2 left_side = ImGui::GetCursorScreenPos();
-    const ImVec2 button_size = size * scale;
-    const float bar_height = button_size.y / 5.0f;
-    const u32 bar_color = argb_to_agbr(0xffa9b3bd);
-    const u32 bar_color_hover = argb_to_agbr(0xffd4d9de);
-    const float middle_height = button_size.y / 2.0f;
-    const float rounding = 2.0f * scale; // TODO this doesn't properly round on 1920x1080
-
-    ImVec2 right_side = left_side + ImVec2(button_size.x, bar_height);
-
-    if (ImGui::InvisibleButton("side_menu_toggle", button_size)) {
-        draw_side_menu = !draw_side_menu;
-    }
-
-    const u32 color = ImGui::IsItemHovered() ? bar_color_hover : bar_color;
-
-    draw_list->AddRectFilled(left_side,
-                             right_side,
-                             color, rounding);
-
-    draw_list->AddRectFilled(left_side + ImVec2(0.0f, middle_height - bar_height / 2.0f),
-                             right_side + ImVec2(0.0f, middle_height - bar_height / 2.0f),
-                             color, rounding);
-
-    draw_list->AddRectFilled(left_side + ImVec2(0.0f, button_size.y - bar_height),
-                             right_side + ImVec2(0.0f, button_size.y - bar_height),
-                             color, rounding);
 }
 
 static void draw_average_frame_time() {
@@ -431,68 +388,25 @@ static void draw_average_frame_time() {
     char* text_start;
     char* text_end;
 
-    tprintf("Loop time: %fms", &text_start, &text_end, sum / ARRAY_SIZE(frame_times));
+    tprintf("Loop time: %.2fms", &text_start, &text_end, sum / ARRAY_SIZE(frame_times));
 
-    ImGui::GetOverlayDrawList()->AddText(ImGui::GetCursorScreenPos() + ImVec2(800.0f, -50.0f), 0x80FFFFFF, text_start, text_end);
+    ImGui::GetOverlayDrawList()->AddText(ImVec2(1200.0f, 25.0f) * platform_get_pixel_ratio(), 0x80FFFFFF, text_start, text_end);
 }
 
-void draw_ui() {
-    // TODO temporary code, desktop only
-    static const u32 d_key_in_sdl = 7;
+static void draw_memory_debug_contents() {
+    ImGuiIO& io = ImGui::GetIO();
 
-    if (ImGui::IsKeyPressed(d_key_in_sdl) && ImGui::GetIO().KeyCtrl) {
-        draw_memory_debug = !draw_memory_debug;
+    ImGui::Text("%f %f", io.DisplaySize.x, io.DisplaySize.y);
+    ImGui::Text("%f %f", io.DisplayFramebufferScale.x, io.DisplayFramebufferScale.y);
+
+    if (ImGui::ListBoxHeader("Memory allocations", ImVec2(-1, -1))) {
+        draw_memory_records();
+
+        ImGui::ListBoxFooter();
     }
+}
 
-    if (draw_memory_debug) {
-        ImGuiIO& io = ImGui::GetIO();
-
-        ImGui::Text("%f %f", io.DisplaySize.x, io.DisplaySize.y);
-        ImGui::Text("%f %f", io.DisplayFramebufferScale.x, io.DisplayFramebufferScale.y);
-
-        if (ImGui::ListBoxHeader("Memory allocations", ImVec2(-1, -1))) {
-            draw_memory_records();
-
-            ImGui::ListBoxFooter();
-        }
-
-        return;
-    }
-
-    bool draw_side_menu_this_frame = draw_side_menu;
-
-    ImVec2 logo_size = get_scaled_image_size(logo);
-
-    if (draw_side_menu_this_frame) {
-        ImGui::Image(logo);
-    } else {
-        ImGui::Dummy(ImVec2(0, logo_size.y));
-    }
-
-    ImGui::SameLine();
-
-    const ImVec2 toggle_button_size = ImVec2(20.0f, 18.0f);
-
-    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + 40.0f);
-    ImGui::SetCursorPosY(ImGui::GetCursorPosY() + logo_size.y / 2.0f - toggle_button_size.y / 2.0f);
-
-    draw_side_menu_toggle_button(toggle_button_size);
-
-    draw_average_frame_time();
-
-    ImGui::Columns(draw_side_menu_this_frame ? 2 : 1);
-
-//    if (ImGui::IsWindowAppearing()) {
-//        ImGui::SetColumnWidth(0, 300.0f);
-//    }
-
-    if (draw_side_menu_this_frame) {
-        draw_folder_tree();
-        ImGui::NextColumn();
-    }
-
-    draw_task_list();
-
+static void draw_task_view_popup_if_necessary() {
     ImVec2 display_size = ImGui::GetIO().DisplaySize;
     ImGui::SetNextWindowPos(display_size / 2.0f, ImGuiCond_Appearing, { 0.5f, 0.5f });
     ImGui::SetNextWindowSize({ display_size.x / 2.0f, display_size.y / 1.25f }, ImGuiCond_Appearing);
@@ -514,8 +428,34 @@ void draw_ui() {
 
         ImGui::EndPopup();
     }
+}
 
-    ImGui::Columns(1);
+static void draw_ui() {
+    // TODO temporary code, desktop only
+    static const u32 d_key_in_sdl = 7;
+
+    if (ImGui::IsKeyPressed(d_key_in_sdl) && ImGui::GetIO().KeyCtrl) {
+        draw_memory_debug = !draw_memory_debug;
+    }
+
+    if (draw_memory_debug) {
+        draw_memory_debug_contents();
+
+        return;
+    }
+
+    bool draw_side_menu_this_frame = draw_side_menu;
+
+    draw_header(draw_side_menu_this_frame, draw_side_menu, folder_tree_column_width);
+    draw_average_frame_time();
+
+    if (draw_side_menu_this_frame) {
+        draw_folder_tree(folder_tree_column_width * platform_get_pixel_ratio());
+        ImGui::SameLine();
+    }
+
+    draw_task_list();
+    draw_task_view_popup_if_necessary();
 }
 
 extern "C"
@@ -615,6 +555,8 @@ static void setup_ui() {
 
     style->Colors[ImGuiCol_WindowBg] = ImGui::ColorConvertU32ToFloat4(color_background_dark);
     style->FrameRounding = 4.0f;
+    style->WindowPadding = { 0, 0 };
+    style->FramePadding = { 0, 0 };
     style->ScaleAllSizes(platform_get_pixel_ratio());
 
     ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
@@ -627,10 +569,7 @@ static void* imgui_malloc_wrapper(size_t size, void* user_data) {
 
 static void imgui_free_wrapper(void* ptr, void* user_data) {
     (void) user_data;
-    // Imgui does that
-    if (ptr) {
-        free(ptr);
-    }
+    free(ptr);
 }
 
 EXPORT
@@ -656,7 +595,9 @@ bool init() {
 
     printf("Platform init: %s\n", result ? "true" : "false");
 
+    Memory_Image logo{};
     load_png_from_disk("resources/wrike_logo.png", logo);
+    set_header_logo(logo);
 
     return result;
 }

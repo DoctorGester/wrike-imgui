@@ -91,6 +91,5 @@ PRINTLIKE(2, 3) void image_request(Request_Id& request_id, const char* format, .
 // TODO move this into imgui extension file?
 namespace ImGui {
     void LoadingIndicator(u32 started_showing_at);
-    void Image(Memory_Image& image);
     void FadeInOverlay(float alpha);
 }

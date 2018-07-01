@@ -129,13 +129,17 @@ static void draw_folder_tree_search_input() {
     ImGui::SetCursorPos(post_input);
 }
 
-void draw_folder_tree() {
-    draw_folder_tree_search_input();
+void draw_folder_tree(float column_width) {
+    ImGuiID folder_tree_id = ImGui::GetID("folder_tree");
 
     ImGui::PushStyleColor(ImGuiCol_FrameBg, color_background_dark);
+
+    ImGui::BeginChildFrame(folder_tree_id, ImVec2(column_width, -1));
+    draw_folder_tree_search_input();
+
     ImGui::PushStyleColor(ImGuiCol_Text, 0xFFFFFFFF);
     ImGui::PushStyleColor(ImGuiCol_ScrollbarBg, color_background_dark);
-    ImGui::ListBoxHeader("##folder_tree", ImVec2(-1, -1));
+    ImGui::ListBoxHeader("##folder_tree_content", ImVec2(-1, -1));
 
     if (folder_tree_request != NO_REQUEST) {
         ImGui::LoadingIndicator(0);
@@ -176,6 +180,8 @@ void draw_folder_tree() {
     ImGui::ListBoxFooter();
     ImGui::PopStyleColor();
     ImGui::PopStyleColor();
+
+    ImGui::EndChildFrame();
     ImGui::PopStyleColor();
 }
 
