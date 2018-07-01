@@ -737,12 +737,16 @@ void draw_task_list() {
 
         float column_left_x = 0.0f;
 
-        u32 top_row = MAX(0, (u32) floorf(ImGui::GetScrollY() / row_height));
-        u32 bottom_row = MIN(flattened_sorted_folder_task_tree.length, (u32) ceilf((ImGui::GetScrollY() + content_height) / row_height));
+        u32 first_visible_row = MAX(0, (u32) floorf(ImGui::GetScrollY() / row_height));
+        u32 last_visible_row = MIN(flattened_sorted_folder_task_tree.length, (u32) ceilf((ImGui::GetScrollY() + content_height) / row_height));
 
-        // TODO I feel like there is still an issue of being able to see a bunch of unsorted subtasks at the top of the screen
-        // TODO since parent task is not on screen, need to confirm it
-        for (u32 row = top_row; row < bottom_row; row++) {
+        u32 first_top_level_task_row = first_visible_row;
+
+        while (first_top_level_task_row > 0 && flattened_sorted_folder_task_tree[first_top_level_task_row].nesting_level) {
+            first_top_level_task_row--;
+        }
+
+        for (u32 row = first_top_level_task_row; row < last_visible_row; row++) {
             Flattened_Folder_Task* flattened_task = &flattened_sorted_folder_task_tree[row];
 
             bool is_expanded = flattened_task->sorted_task->is_expanded;
@@ -760,7 +764,7 @@ void draw_task_list() {
         for (u32 column = 0; column < paint_context.total_columns; column++) {
             float column_width = get_column_width(paint_context, column);
 
-            for (u32 row = top_row; row < bottom_row; row++) {
+            for (u32 row = first_visible_row; row < last_visible_row; row++) {
                 Flattened_Folder_Task* flattened_task = &flattened_sorted_folder_task_tree[row];
 
                 float row_top_y = row_height * (row + 1);
