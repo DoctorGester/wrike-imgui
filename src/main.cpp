@@ -53,8 +53,6 @@ static Account_Id selected_account_id;
 
 Task_Id selected_folder_task_id = 0;
 
-static Folder_Tree_Node* selected_node = NULL; // TODO should be a Task_Id
-
 Task current_task{};
 
 static char* task_json_content = NULL;
@@ -82,10 +80,6 @@ u32 started_loading_users_at = 0;
 u32 finished_loading_users_at = 0;
 
 static Request_Id request_id_counter = 0;
-
-List<Folder_Tree_Node*> folder_tree_search_result{};
-
-char search_buffer[128];
 
 PRINTLIKE(3, 4) void api_request(Http_Method method, Request_Id& request_id, const char* format, ...) {
     // TODO use temporary storage there
@@ -257,8 +251,6 @@ void request_folder_contents(String &folder_id) {
 }
 
 void select_folder_node_and_request_contents_if_necessary(Folder_Tree_Node* folder_node) {
-    selected_node = folder_node;
-
     u8* account_and_folder_id = (u8*) talloc(sizeof(u8) * 16);
 
     fill_id16('A', selected_account_id, 'G', folder_node->id, account_and_folder_id);
@@ -355,37 +347,6 @@ void set_task_status(Task_Id task_id, Custom_Status_Id status_id) {
     modify_task_e16(task_id, 'K', status_id, "customStatus", false);
 }
 
-void draw_folder_tree_node(Folder_Tree_Node* tree_node) {
-    for (int i = 0; i < tree_node->num_children; i++) {
-        Folder_Tree_Node* child_node = tree_node->children[i];
-        ImGuiTreeNodeFlags node_flags = ImGuiTreeNodeFlags_OpenOnArrow;
-
-        bool leaf_node = child_node->num_children == 0;
-
-        if (leaf_node) {
-            node_flags |= ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
-        }
-
-        if (!child_node->name.start) {
-            continue;
-        }
-
-        ImGui::PushID(child_node->id);
-        bool node_open = ImGui::TreeNodeEx(child_node, node_flags, "%.*s", child_node->name.length, child_node->name.start);
-        ImGui::PopID();
-
-        if (ImGui::IsItemClicked()) {
-            select_folder_node_and_request_contents_if_necessary(child_node);
-        }
-
-        if (node_open && !leaf_node) {
-            draw_folder_tree_node(child_node);
-
-            ImGui::TreePop();
-        }
-    }
-}
-
 void ImGui::LoadingIndicator(u32 started_showing_at) {
     float scale = platform_get_pixel_ratio();
     ImVec2 cursor = ImGui::GetCursorScreenPos() + (ImVec2(12, 12) * scale);
@@ -426,113 +387,6 @@ void ImGui::FadeInOverlay(float alpha) {
     ImGui::GetOverlayDrawList()->AddRectFilled(top_left, top_left + size, overlay_color, rounding);
 }
 
-void draw_folder_tree_search_input() {
-    static const u32 bottom_border_active_color = argb_to_agbr(0xFF4488ff);
-    static const u32 bottom_border_hover_color = argb_to_agbr(0x99ffffff);
-    static const u32 non_active_color = 0x80ffffff;
-
-    ImGui::PushStyleColor(ImGuiCol_FrameBg, color_background_dark);
-    ImGui::PushStyleColor(ImGuiCol_Text, 0xFFFFFFFF);
-
-    ImVec2 placeholder_text_position = ImGui::GetCursorPos() + ImGui::GetStyle().FramePadding;
-
-    ImGui::PushItemWidth(-1);
-
-    if (ImGui::InputText("##tree_search", search_buffer, ARRAY_SIZE(search_buffer))) {
-        u64 search_start = platform_get_app_time_precise();
-
-        folder_tree_search(search_buffer, &folder_tree_search_result);
-
-        printf("Took %f to search %i elements by %s\n", platform_get_delta_time_ms(search_start), total_nodes, search_buffer);
-    }
-
-    ImGui::PopItemWidth();
-
-    ImVec2 input_rect_min = ImGui::GetItemRectMin();
-    ImVec2 input_rect_max = ImGui::GetItemRectMax();
-
-    ImVec2 post_input = ImGui::GetCursorPos();
-
-    bool is_active = ImGui::IsItemActive();
-    bool is_hovered = ImGui::IsItemHovered();
-
-    if (strlen(search_buffer) == 0) {
-        ImGui::SetCursorPos(placeholder_text_position);
-        ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(non_active_color), "Filter");
-    }
-
-    ImVec2& frame_padding = ImGui::GetStyle().FramePadding;
-
-    u32 bottom_border_color = non_active_color;
-
-    if (is_active) {
-        bottom_border_color = bottom_border_active_color;
-    } else if (is_hovered) {
-        bottom_border_color = bottom_border_hover_color;
-    }
-
-    ImGui::GetWindowDrawList()->AddLine(
-            ImVec2(input_rect_min.x, input_rect_max.y) + frame_padding,
-            input_rect_max + frame_padding,
-            bottom_border_color,
-            1.0f
-    );
-
-    ImGui::PopStyleColor();
-    ImGui::PopStyleColor();
-    ImGui::SetCursorPos(post_input);
-}
-
-void draw_folder_tree() {
-    draw_folder_tree_search_input();
-
-    ImGui::PushStyleColor(ImGuiCol_FrameBg, color_background_dark);
-    ImGui::PushStyleColor(ImGuiCol_Text, 0xFFFFFFFF);
-    ImGui::PushStyleColor(ImGuiCol_ScrollbarBg, color_background_dark);
-    ImGui::ListBoxHeader("##folder_tree", ImVec2(-1, -1));
-
-    if (folder_tree_request != NO_REQUEST) {
-        ImGui::LoadingIndicator(0);
-    }
-
-    u32 buffer_length = strlen(search_buffer);
-    if (buffer_length > 0 && folder_tree_search_result.data) {
-        for (Folder_Tree_Node** node_pointer = folder_tree_search_result.data; node_pointer != folder_tree_search_result.data + folder_tree_search_result.length; node_pointer++) {
-            Folder_Tree_Node* node = *node_pointer;
-            char* name = string_to_temporary_null_terminated_string(node->name);
-
-            ImGui::PushID(node->id);
-            if (ImGui::Selectable(name)) {
-                select_folder_node_and_request_contents_if_necessary(node);
-            }
-            ImGui::PopID();
-        }
-    } else {
-        if (total_starred > 0) {
-            for (u32 node_index = 0; node_index < total_starred; node_index++) {
-                Folder_Tree_Node* starred_node = starred_nodes[node_index];
-
-                char* name = string_to_temporary_null_terminated_string(starred_node->name);
-
-                if (ImGui::Selectable(name)) {
-                    select_folder_node_and_request_contents_if_necessary(starred_node);
-                }
-            }
-
-            ImGui::Separator();
-        }
-
-        if (root_node) {
-            draw_folder_tree_node(root_node);
-        }
-    }
-
-    ImGui::ListBoxFooter();
-    ImGui::PopStyleColor();
-    ImGui::PopStyleColor();
-    ImGui::PopStyleColor();
-}
-
 void draw_side_menu_toggle_button(const ImVec2& size) {
     float scale = platform_get_pixel_ratio();
 
@@ -565,6 +419,10 @@ void draw_side_menu_toggle_button(const ImVec2& size) {
     draw_list->AddRectFilled(left_side + ImVec2(0.0f, button_size.y - bar_height),
                              right_side + ImVec2(0.0f, button_size.y - bar_height),
                              color, rounding);
+}
+
+static void draw_ui_header() {
+
 }
 
 void draw_ui() {

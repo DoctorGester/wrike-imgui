@@ -3,11 +3,15 @@
 #include "jsmn.h"
 #include "id_hash_map.h"
 #include "lazy_array.h"
+#include "main.h"
+#include "platform.h"
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <assert.h>
 #include <cctype>
+#define IMGUI_DEFINE_MATH_OPERATORS
+#include <imgui_internal.h>
 
 struct Parent_Child_Pair {
     Folder_Tree_Node* parent;
@@ -26,6 +30,8 @@ static char* search_index = NULL;
 
 static char* json_content = NULL;
 
+static char search_buffer[128];
+
 Folder_Tree_Node* root_node = NULL;
 Folder_Tree_Node* all_nodes;
 Folder_Tree_Node** starred_nodes = NULL;
@@ -33,6 +39,145 @@ u32 total_nodes;
 u32 total_starred = 0;
 
 List<Suggested_Folder> suggested_folders{};
+List<Folder_Tree_Node*> folder_tree_search_result{};
+
+static void draw_folder_tree_node(Folder_Tree_Node* tree_node) {
+    for (int i = 0; i < tree_node->num_children; i++) {
+        Folder_Tree_Node* child_node = tree_node->children[i];
+        ImGuiTreeNodeFlags node_flags = ImGuiTreeNodeFlags_OpenOnArrow;
+
+        bool leaf_node = child_node->num_children == 0;
+
+        if (leaf_node) {
+            node_flags |= ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
+        }
+
+        if (!child_node->name.start) {
+            continue;
+        }
+
+        ImGui::PushID(child_node->id);
+        bool node_open = ImGui::TreeNodeEx(child_node, node_flags, "%.*s", child_node->name.length, child_node->name.start);
+        ImGui::PopID();
+
+        if (ImGui::IsItemClicked()) {
+            select_folder_node_and_request_contents_if_necessary(child_node);
+        }
+
+        if (node_open && !leaf_node) {
+            draw_folder_tree_node(child_node);
+
+            ImGui::TreePop();
+        }
+    }
+}
+
+static void draw_folder_tree_search_input() {
+    static const u32 bottom_border_active_color = argb_to_agbr(0xFF4488ff);
+    static const u32 bottom_border_hover_color = argb_to_agbr(0x99ffffff);
+    static const u32 non_active_color = 0x80ffffff;
+
+    ImGui::PushStyleColor(ImGuiCol_FrameBg, color_background_dark);
+    ImGui::PushStyleColor(ImGuiCol_Text, 0xFFFFFFFF);
+
+    ImVec2 placeholder_text_position = ImGui::GetCursorPos() + ImGui::GetStyle().FramePadding;
+
+    ImGui::PushItemWidth(-1);
+
+    if (ImGui::InputText("##tree_search", search_buffer, ARRAY_SIZE(search_buffer))) {
+        u64 search_start = platform_get_app_time_precise();
+
+        folder_tree_search(search_buffer, &folder_tree_search_result);
+
+        printf("Took %f to search %i elements by %s\n", platform_get_delta_time_ms(search_start), total_nodes, search_buffer);
+    }
+
+    ImGui::PopItemWidth();
+
+    ImVec2 input_rect_min = ImGui::GetItemRectMin();
+    ImVec2 input_rect_max = ImGui::GetItemRectMax();
+
+    ImVec2 post_input = ImGui::GetCursorPos();
+
+    bool is_active = ImGui::IsItemActive();
+    bool is_hovered = ImGui::IsItemHovered();
+
+    if (strlen(search_buffer) == 0) {
+        ImGui::SetCursorPos(placeholder_text_position);
+        ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(non_active_color), "Filter");
+    }
+
+    ImVec2& frame_padding = ImGui::GetStyle().FramePadding;
+
+    u32 bottom_border_color = non_active_color;
+
+    if (is_active) {
+        bottom_border_color = bottom_border_active_color;
+    } else if (is_hovered) {
+        bottom_border_color = bottom_border_hover_color;
+    }
+
+    ImGui::GetWindowDrawList()->AddLine(
+            ImVec2(input_rect_min.x, input_rect_max.y) + frame_padding,
+            input_rect_max + frame_padding,
+            bottom_border_color,
+            1.0f
+    );
+
+    ImGui::PopStyleColor();
+    ImGui::PopStyleColor();
+    ImGui::SetCursorPos(post_input);
+}
+
+void draw_folder_tree() {
+    draw_folder_tree_search_input();
+
+    ImGui::PushStyleColor(ImGuiCol_FrameBg, color_background_dark);
+    ImGui::PushStyleColor(ImGuiCol_Text, 0xFFFFFFFF);
+    ImGui::PushStyleColor(ImGuiCol_ScrollbarBg, color_background_dark);
+    ImGui::ListBoxHeader("##folder_tree", ImVec2(-1, -1));
+
+    if (folder_tree_request != NO_REQUEST) {
+        ImGui::LoadingIndicator(0);
+    }
+
+    u32 buffer_length = strlen(search_buffer);
+    if (buffer_length > 0 && folder_tree_search_result.data) {
+        for (Folder_Tree_Node** node_pointer = folder_tree_search_result.data; node_pointer != folder_tree_search_result.data + folder_tree_search_result.length; node_pointer++) {
+            Folder_Tree_Node* node = *node_pointer;
+            char* name = string_to_temporary_null_terminated_string(node->name);
+
+            ImGui::PushID(node->id);
+            if (ImGui::Selectable(name)) {
+                select_folder_node_and_request_contents_if_necessary(node);
+            }
+            ImGui::PopID();
+        }
+    } else {
+        if (total_starred > 0) {
+            for (u32 node_index = 0; node_index < total_starred; node_index++) {
+                Folder_Tree_Node* starred_node = starred_nodes[node_index];
+
+                char* name = string_to_temporary_null_terminated_string(starred_node->name);
+
+                if (ImGui::Selectable(name)) {
+                    select_folder_node_and_request_contents_if_necessary(starred_node);
+                }
+            }
+
+            ImGui::Separator();
+        }
+
+        if (root_node) {
+            draw_folder_tree_node(root_node);
+        }
+    }
+
+    ImGui::ListBoxFooter();
+    ImGui::PopStyleColor();
+    ImGui::PopStyleColor();
+    ImGui::PopStyleColor();
+}
 
 void folder_tree_init() {
     id_hash_map_init(&folder_id_to_node_map);

@@ -474,7 +474,8 @@ static void draw_folder_picker_contents(bool set_focus) {
     ImVec2 selection_button_size{ ImGui::GetContentRegionAvailWidth(), 24.0f * platform_get_pixel_ratio() };
     float padding = ImGui::GetStyle().FramePadding.x;
 
-    // TODO code duplication. Same occurs in folder search in main.cpp. Maybe we could just fill search result with all data in case of an empty query?
+    // TODO code duplication. Same occurs in folder search in folder_tree.cpp.
+    // TODO Maybe we could just fill search result with all data in case of an empty query?
     if (search_result.data && strlen(search_buffer)) {
         ImGuiListClipper clipper(search_result.length);
 
