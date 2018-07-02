@@ -12,6 +12,7 @@
 #include "workflows.h"
 #include "task_view.h"
 #include "renderer.h"
+#include "ui.h"
 
 #define IMGUI_DEFINE_MATH_OPERATORS
 #include <imgui_internal.h>
@@ -557,7 +558,7 @@ float get_column_width(Table_Paint_Context& context, u32 column) {
     if (column == 0) {
         column_width = 500.0f;
     } else if (column == 1) {
-        column_width = 150.0f;
+        column_width = 200.0f;
     } else if (column == 2) {
         column_width = 200.0f;
     }
@@ -711,7 +712,7 @@ void draw_task_list() {
 
         const u32 grid_color = 0xffebebeb;
         const float scale = platform_get_pixel_ratio();
-        const float row_height = 28.0f * scale;
+        const float row_height = 32.0f * scale;
 
         Table_Paint_Context paint_context;
         paint_context.scale = scale;
@@ -724,6 +725,7 @@ void draw_task_list() {
         draw_folder_header(paint_context, ImGui::GetWindowWidth());
 
         ImGui::BeginChild("table_content", ImVec2(-1, -1), false, ImGuiWindowFlags_HorizontalScrollbar);
+        ImGui::PushFont(font_large);
 
         ImDrawList* draw_list = ImGui::GetWindowDrawList();
 
@@ -794,6 +796,8 @@ void draw_task_list() {
             draw_list->AddLine(window_top_left + ImVec2(0, row_line_y), window_top_left + ImVec2(column_left_x, row_line_y), grid_color, 1.25f);
         }
 
+        ImGui::PopFont();
+
         draw_table_header(paint_context, window_top_left);
 
         // Scrollbar
@@ -819,7 +823,7 @@ void draw_task_list() {
                 loading_start_time = MIN(started_loading_users_at, loading_start_time);
                 loading_start_time = MIN(started_loading_statuses_at, loading_start_time);
 
-        ImGui::LoadingIndicator(loading_start_time);
+        draw_loading_indicator(ImGui::GetCursorScreenPos(), loading_start_time, { 24, 24 });
     }
 
     ImGui::EndChildFrame();

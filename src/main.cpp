@@ -24,6 +24,7 @@
 #include "users.h"
 #include "workflows.h"
 #include "header.h"
+#include "ui.h"
 
 const Request_Id NO_REQUEST = -1;
 
@@ -348,25 +349,6 @@ void set_task_status(Task_Id task_id, Custom_Status_Id status_id) {
     modify_task_e16(task_id, 'K', status_id, "customStatus", false);
 }
 
-void ImGui::LoadingIndicator(u32 started_showing_at) {
-    float scale = platform_get_pixel_ratio();
-    ImVec2 cursor = ImGui::GetCursorScreenPos() + (ImVec2(24, 24) * scale);
-    const float speed_scale = 10.0f;
-    float cos = cosf(tick / speed_scale);
-    float sin = sinf(tick / speed_scale);
-    float size = scale * 10.0f;
-
-    u32 alpha = (u32) roundf(lerp(started_showing_at, tick, 255, 14));
-
-    ImGui::GetWindowDrawList()->AddQuadFilled(
-            cursor + ImRotate(ImVec2(-size, -size), cos, sin),
-            cursor + ImRotate(ImVec2(+size, -size), cos, sin),
-            cursor + ImRotate(ImVec2(+size, +size), cos, sin),
-            cursor + ImRotate(ImVec2(-size, +size), cos, sin),
-            IM_COL32(0, 255, 200, alpha)
-    );
-}
-
 void ImGui::FadeInOverlay(float alpha) {
     float rounding = ImGui::GetStyle().FrameRounding;
 
@@ -390,7 +372,9 @@ static void draw_average_frame_time() {
 
     tprintf("Loop time: %.2fms", &text_start, &text_end, sum / ARRAY_SIZE(frame_times));
 
-    ImGui::GetOverlayDrawList()->AddText(ImVec2(1200.0f, 25.0f) * platform_get_pixel_ratio(), 0x80FFFFFF, text_start, text_end);
+    ImVec2 top_left = ImGui::GetIO().DisplaySize - ImVec2(150.0f, 20.0f) * platform_get_pixel_ratio();
+
+    ImGui::GetOverlayDrawList()->AddText(top_left, IM_COL32_BLACK, text_start, text_end);
 }
 
 static void draw_memory_debug_contents() {
@@ -420,7 +404,7 @@ static void draw_task_view_popup_if_necessary() {
             ImGui::ListBoxHeader("##task_content", ImVec2(-1, -1));
 
             if (task_is_loading) {
-                ImGui::LoadingIndicator(MIN(started_loading_task_at, started_loading_users_at));
+                draw_loading_indicator(ImGui::GetCursorScreenPos(), MIN(started_loading_task_at, started_loading_users_at), { 24, 24 });
             }
 
             ImGui::ListBoxFooter();
@@ -440,6 +424,20 @@ static void draw_ui() {
 
     if (draw_memory_debug) {
         draw_memory_debug_contents();
+
+        return;
+    }
+
+    // TODO we don't need to load ALL contacts to show the main view, only the "me" contact, make a separate request for that!
+    bool loading_contacts = contacts_request != NO_REQUEST;
+    // TODO loading workflows takes minimal time, but it depends on loading accounts which also drag custom fields with them
+    // TODO this means loading accounts can take up to 2 seconds, we could split that into just loading accounts
+    // TODO or we could use a contacts?me=true call to load accounts from there or even cache the selected account id
+    bool loading_workflows = workflows_request != NO_REQUEST;
+    bool loading_accounts = accounts_request != NO_REQUEST;
+
+    if (loading_contacts || loading_workflows || loading_accounts) {
+        draw_loading_indicator(ImGui::GetIO().DisplaySize / 2.0f, 0);
 
         return;
     }

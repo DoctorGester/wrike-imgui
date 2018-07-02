@@ -5,6 +5,7 @@
 #include "lazy_array.h"
 #include "main.h"
 #include "platform.h"
+#include "ui.h"
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -142,7 +143,7 @@ void draw_folder_tree(float column_width) {
     ImGui::ListBoxHeader("##folder_tree_content", ImVec2(-1, -1));
 
     if (folder_tree_request != NO_REQUEST) {
-        ImGui::LoadingIndicator(0);
+        draw_loading_indicator(ImGui::GetCursorScreenPos(), 0, { 24, 24 });
     }
 
     u32 buffer_length = strlen(search_buffer);

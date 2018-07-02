@@ -8,6 +8,7 @@
 #include "users.h"
 #include "workflows.h"
 #include "accounts.h"
+#include "ui.h"
 
 #include <imgui.h>
 #include <cstdlib>
@@ -124,42 +125,6 @@ static u32 change_color_luminance(u32 in_color, float luminance) {
     RGB rgb_out = hsl_to_rgb(hsl);
 
     return ImGui::ColorConvertFloat4ToU32({ rgb_out.r, rgb_out.g, rgb_out.b, 1.0f });
-}
-
-// TODO could this be constexpr if we got rid of the whole platform_get_scale() thing?
-// TODO add actual antialiasing from imgui_draw
-static void fill_antialiased_textured_circle(ImDrawList* draw_list, ImVec2 centre, float radius, u32 num_segments) {
-    draw_list->PrimReserve(num_segments * 3, num_segments + 1);
-
-    draw_list->_VtxWritePtr[0].pos = centre;
-    draw_list->_VtxWritePtr[0].uv = { 0.5f, 0.5f };
-    draw_list->_VtxWritePtr[0].col = IM_COL32_WHITE;
-
-    draw_list->_VtxWritePtr++;
-
-    for (int i = 0; i < num_segments; i++) {
-        float angle = ((float) i / (float) num_segments) * (2.0f * IM_PI);
-
-        ImVec2 xy = ImVec2(centre.x + cosf(angle) * radius, centre.y + sinf(angle) * radius);
-        ImVec2 uv = ImVec2(cosf(angle), sinf(angle)) / 2.0f + ImVec2(0.5f, 0.5f);
-
-        draw_list->_VtxWritePtr[0].pos = xy;
-        draw_list->_VtxWritePtr[0].uv = uv;
-        draw_list->_VtxWritePtr[0].col = IM_COL32_WHITE;
-        draw_list->_VtxWritePtr++;
-    }
-
-    u32 current_idx = draw_list->_VtxCurrentIdx;
-
-    for (int i0 = num_segments - 1, i1 = 0; i1 < num_segments; i0 = i1++) {
-        draw_list->_IdxWritePtr[0] = (ImDrawIdx) (current_idx);
-        draw_list->_IdxWritePtr[1] = (ImDrawIdx) (current_idx + 1 + i0);
-        draw_list->_IdxWritePtr[2] = (ImDrawIdx) (current_idx + 1 + i1);
-
-        draw_list->_IdxWritePtr += 3;
-    }
-
-    draw_list->_VtxCurrentIdx += num_segments + 1;
 }
 
 static char* string_contains_substring_ignore_case(String string, char* query_lowercase) {
@@ -604,18 +569,6 @@ static void draw_parent_folders(float wrap_pos) {
     }
 }
 
-static bool check_and_request_avatar_if_necessary(User* user) {
-    if (!user->avatar.texture_id) {
-        if (user->avatar_request_id == NO_REQUEST) {
-            image_request(user->avatar_request_id, "%.*s", user->avatar_url.length, user->avatar_url.start);
-        }
-
-        return false;
-    }
-
-    return true;
-}
-
 static bool draw_contact_picker_assignee_selection_button(ImDrawList* draw_list, User* user, ImVec2 size, float spacing) {
     static const u32 hover_color = 0x11000000;
     static const u32 active_color = hover_color * 2;
@@ -635,7 +588,7 @@ static bool draw_contact_picker_assignee_selection_button(ImDrawList* draw_list,
         draw_list->AddRectFilled(top_left, bottom_right, hover_color);
     }
 
-    if (check_and_request_avatar_if_necessary(user)) {
+    if (check_and_request_user_avatar_if_necessary(user)) {
         draw_list->AddImage((void*)(intptr_t) user->avatar.texture_id, top_left, top_left + ImVec2(size.y, size.y));
     } else {
         // TODO dummy image?
@@ -786,20 +739,6 @@ static bool draw_unassign_button(ImVec2 top_left, float button_side) {
                        0xffffffff);
 
     return pressed;
-}
-
-static void draw_circular_user_avatar(ImDrawList* draw_list, User* user, ImVec2 top_left, float avatar_side_px) {
-    ImTextureID avatar_texture_id = (ImTextureID)(intptr_t) user->avatar.texture_id;
-
-    if (check_and_request_avatar_if_necessary(user)) {
-        float half_avatar_side = avatar_side_px / 2.0f;
-
-        draw_list->PushTextureID(avatar_texture_id);
-        fill_antialiased_textured_circle(draw_list, top_left + ImVec2(half_avatar_side, half_avatar_side), half_avatar_side, 32);
-        draw_list->PopTextureID();
-    } else {
-        // TODO dummy image?
-    }
 }
 
 static bool draw_assignee(Assignee* assignee, float avatar_side_px) {

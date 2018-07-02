@@ -8,7 +8,7 @@ void renderer_init(const char* vertex_shader_source, const char* fragment_shader
 
 extern ImFont* font_header;
 extern ImFont* font_regular;
-extern ImFont* font_ui_header_button;
+extern ImFont* font_large;
 extern ImFont* font_bold;
 extern ImFont* font_italic;
 extern ImFont* font_bold_italic;

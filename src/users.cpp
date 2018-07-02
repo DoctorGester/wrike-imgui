@@ -5,6 +5,8 @@
 List<User> users{};
 List<User> suggested_users{};
 
+User* this_user = NULL;
+
 static Id_Hash_Map<User_Id, User*> id_to_user_map{};
 
 static User* process_users_data_object(List<User>& target_users, char* json, jsmntok_t*&token) {
@@ -32,6 +34,14 @@ static User* process_users_data_object(List<User>& target_users, char* json, jsm
             json_token_to_string(json, next_token, user->last_name);
         } else if (json_string_equals(json, property_token, "avatarUrl")) {
             json_token_to_string(json, next_token, user->avatar_url);
+        } else if (json_string_equals(json, property_token, "me")) {
+            // TODO This can and will happen twice because this user can occur
+            // TODO     both in the suggested list and in the contacts list
+            // TODO     a good solution is using a centralized 'truth' source
+            // TODO     for all users
+            if (!this_user && *(json + next_token->start) == 't') {
+                this_user = user;
+            }
         } else {
             eat_json(token);
             token--;
@@ -71,6 +81,18 @@ void process_suggested_users_data(char* json, u32 data_size, jsmntok_t*&token) {
     for (u32 array_index = 0; array_index < data_size; array_index++) {
         process_users_data_object(suggested_users, json, token);
     }
+}
+
+bool check_and_request_user_avatar_if_necessary(User* user) {
+    if (!user->avatar.texture_id) {
+        if (user->avatar_request_id == NO_REQUEST) {
+            image_request(user->avatar_request_id, "%.*s", user->avatar_url.length, user->avatar_url.start);
+        }
+
+        return false;
+    }
+
+    return true;
 }
 
 // Naive and slow, don't use too often

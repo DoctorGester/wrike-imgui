@@ -1,9 +1,11 @@
 #include <imgui.h>
 #define IMGUI_DEFINE_MATH_OPERATORS
 #include <imgui_internal.h>
+#include <cstdint>
 #include "platform.h"
 #include "renderer.h"
 #include "users.h"
+#include "ui.h"
 
 static Memory_Image logo{};
 
@@ -132,6 +134,33 @@ static bool draw_side_menu_toggle_button(const ImVec2 top_left, const ImVec2& bu
     return pressed;
 }
 
+static void draw_profile_widget(User* user, float header_height) {
+    float scale = platform_get_pixel_ratio();
+    float total_width = ImGui::GetContentRegionAvailWidth();
+    float avatar_side_px = 32.0f * scale;
+    float padding_right = 8.0f * scale;
+
+    ImVec2 top_right(total_width, 0);
+
+    ImDrawList* draw_list = ImGui::GetWindowDrawList();
+
+    ImGui::PushFont(font_large);
+
+    String name = user->first_name;
+    ImVec2 name_size = ImGui::CalcTextSize(name.start, name.start + name.length);
+    ImVec2 name_top_left = top_right - ImVec2(padding_right + name_size.x, 0) + ImVec2(0, header_height / 2.0f - name_size.y / 2.0f);
+    draw_list->AddText(name_top_left, 0xccffffff, name.start, name.start + name.length);
+
+    ImGui::PopFont();
+
+    ImVec2 avatar_top_left = ImVec2(name_top_left.x, 0) -
+                             ImVec2(avatar_side_px, 0) -
+                             ImVec2(padding_right, 0) +
+                             ImVec2(0, header_height / 2.0f - avatar_side_px / 2.0f);
+
+    draw_circular_user_avatar(draw_list, this_user, avatar_top_left, avatar_side_px);
+}
+
 void draw_header(bool draw_side_menu_this_frame, bool& draw_side_menu, float folder_tree_column_width) {
     float scale = platform_get_pixel_ratio();
     float header_height = 56.0f * scale;
@@ -174,7 +203,7 @@ void draw_header(bool draw_side_menu_this_frame, bool& draw_side_menu, float fol
     ImVec2 header_menu_cursor = ImVec2(new_entity_button_top_left.x + new_entity_button_size.x + 8.0f * scale, 0);
     ImVec2 out_size{};
 
-    ImGui::PushFont(font_ui_header_button);
+    ImGui::PushFont(font_large);
 
     draw_header_button("Inbox", header_menu_cursor, header_height, out_size); header_menu_cursor.x += out_size.x;
     draw_header_button("My Work", header_menu_cursor, header_height, out_size); header_menu_cursor.x += out_size.x;
@@ -186,7 +215,7 @@ void draw_header(bool draw_side_menu_this_frame, bool& draw_side_menu, float fol
     ImGui::PopFont();
 
     if (this_user) {
-
+        draw_profile_widget(this_user, header_height);
     }
 
     ImGui::Dummy(ImVec2(0, header_height));
