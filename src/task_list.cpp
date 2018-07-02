@@ -703,8 +703,9 @@ void draw_task_list() {
 
     const bool is_folder_data_loading = folder_contents_request != NO_REQUEST || folder_header_request != NO_REQUEST;
     const bool are_users_loading = contacts_request != NO_REQUEST;
+    const bool are_custom_fields_loading = accounts_request != NO_REQUEST;
 
-    if (!is_folder_data_loading && custom_statuses_were_loaded && !are_users_loading) {
+    if (!is_folder_data_loading && custom_statuses_were_loaded && !are_users_loading && !are_custom_fields_loading) {
         if (!has_been_sorted_after_loading) {
             sort_by_field(Task_List_Sort_Field_Title);
             has_been_sorted_after_loading = true;

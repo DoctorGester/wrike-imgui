@@ -39,6 +39,8 @@ Request_Id modify_task_request = NO_REQUEST;
 Request_Id suggested_folders_request = NO_REQUEST;
 Request_Id suggested_contacts_request = NO_REQUEST;
 
+const Account_Id NO_ACCOUNT = -1;
+
 bool had_last_selected_folder_so_doesnt_need_to_load_the_root_folder = false;
 bool custom_statuses_were_loaded = false;
 
@@ -49,7 +51,7 @@ static const ImGuiID task_view_id = 1337; // TODO not a good thing. We can't ini
 
 static float folder_tree_column_width = 300.0f;
 
-static Account_Id selected_account_id;
+static Account_Id selected_account_id = NO_ACCOUNT;
 
 Task_Id selected_folder_task_id = 0;
 
@@ -135,6 +137,19 @@ static void select_account() {
     assert(accounts_count);
 
     selected_account_id = accounts[0].id;
+
+    {
+        char* text_start;
+        char* text_end;
+
+        tprintf("%i", &text_start, &text_end, selected_account_id);
+
+        String account_id_string;
+        account_id_string.start = text_start;
+        account_id_string.length = (u32) (text_end - text_start);
+
+        platform_local_storage_set("selected_account", account_id_string);
+    }
 }
 
 static void request_workflow_for_account(Account_Id account_id) {
@@ -190,9 +205,11 @@ void api_request_success(Request_Id request_id, char* content, u32 content_lengt
         accounts_request = NO_REQUEST;
         process_json_content(accounts_json_content, process_accounts_data, json_with_tokens);
 
-        select_account();
-        request_suggestions_for_account(selected_account_id);
-        request_workflow_for_account(selected_account_id);
+        if (selected_account_id == NO_ACCOUNT) {
+            select_account();
+            request_suggestions_for_account(selected_account_id);
+            request_workflow_for_account(selected_account_id);
+        }
     } else if (request_id == workflows_request) {
         workflows_request = NO_REQUEST;
         process_json_content(workflows_json_content, process_workflows_data, json_with_tokens);
@@ -430,13 +447,9 @@ static void draw_ui() {
 
     // TODO we don't need to load ALL contacts to show the main view, only the "me" contact, make a separate request for that!
     bool loading_contacts = contacts_request != NO_REQUEST;
-    // TODO loading workflows takes minimal time, but it depends on loading accounts which also drag custom fields with them
-    // TODO this means loading accounts can take up to 2 seconds, we could split that into just loading accounts
-    // TODO or we could use a contacts?me=true call to load accounts from there or even cache the selected account id
-    bool loading_workflows = workflows_request != NO_REQUEST;
-    bool loading_accounts = accounts_request != NO_REQUEST;
+    bool loading_workflows = !custom_statuses_were_loaded;
 
-    if (loading_contacts || loading_workflows || loading_accounts) {
+    if (loading_contacts || loading_workflows) {
         draw_loading_indicator(ImGui::GetIO().DisplaySize / 2.0f, 0);
 
         return;
@@ -525,8 +538,20 @@ void loop() {
 }
 
 void load_persisted_settings() {
+    char* selected_account = platform_local_storage_get("selected_account");
     char* last_selected_folder = platform_local_storage_get("last_selected_folder");
     char* last_selected_task = platform_local_storage_get("last_selected_task");
+
+    if (selected_account) {
+        char* number_end = NULL;
+
+        selected_account_id = (s32) strtol(selected_account, &number_end, 10);
+
+        if (selected_account_id != NO_ACCOUNT) {
+            request_workflow_for_account(selected_account_id);
+            request_suggestions_for_account(selected_account_id);
+        }
+    }
 
     if (last_selected_folder) {
         String folder_id;
