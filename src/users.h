@@ -13,6 +13,7 @@ struct User {
 
     Request_Id avatar_request_id;
     Memory_Image avatar{};
+    u32 avatar_loaded_at;
 };
 
 extern List<User> users;

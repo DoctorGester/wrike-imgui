@@ -243,6 +243,8 @@ void image_load_success(Request_Id request_id, u8* pixel_data, u32 width, u32 he
 
         load_image_into_gpu_memory(avatar, pixel_data);
 
+        user_or_null->avatar_loaded_at = tick;
+
         free(pixel_data);
     }
 }
