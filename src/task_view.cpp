@@ -691,7 +691,7 @@ static bool draw_contact_picker_assignee_selection_button(ImDrawList* draw_list,
     return clicked;
 }
 
-static bool draw_add_assignee_button(ImVec2 top_left, float button_side_px, float scale) {
+static bool draw_add_assignee_button(ImVec2 top_left, float button_side_px) {
     ImVec2 button_size{ button_side_px, button_side_px };
     ImVec2 text_size;
 
@@ -743,7 +743,7 @@ static void draw_add_assignee_button_and_contact_picker(Horizontal_Layout& layou
     ImVec2 top_left = layout_center_vertically(layout, button_side_px);
 
     if (!is_contact_picker_open) {
-        should_open_contact_picker = draw_add_assignee_button(top_left, button_side_px, layout.scale);
+        should_open_contact_picker = draw_add_assignee_button(top_left, button_side_px);
     }
 
     if (should_open_contact_picker) {
