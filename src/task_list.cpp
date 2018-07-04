@@ -408,17 +408,10 @@ bool draw_open_task_button(Table_Paint_Context& context, ImVec2 cell_top_left, f
     ImVec2 top_left = cell_top_left + ImVec2(column_width, 0) - ImVec2(button_size.x, 0);
     ImVec2 bottom_right = top_left + button_size;
 
-    ImRect bounds(top_left, bottom_right);
+    Button_State button_state = button("task_open_button", top_left, button_size);
 
-    ImGuiID id = ImGui::GetID("task_open_button");
-
-    bool is_clipped = !ImGui::ItemAdd(bounds, id);
-
-    bool hovered, held;
-    bool pressed = ImGui::ButtonBehavior(bounds, id, &hovered, &held);
-
-    if (is_clipped) {
-        return pressed;
+    if (button_state.clipped) {
+        return button_state.pressed;
     }
 
     ImVec2 icon_size{ button_size.x / 3.5f, context.row_height / 4.0f };
@@ -427,14 +420,14 @@ bool draw_open_task_button(Table_Paint_Context& context, ImVec2 cell_top_left, f
     ImVec2 icon_bottom_left = icon_top_left + ImVec2(0.0f, icon_size.y);
     ImVec2 icon_secondary_offset = ImVec2(-2.0f, 1.5f) * context.scale;
 
-    u32 color = hovered ? active_text_color : table_text_color;
+    u32 color = button_state.hovered ? active_text_color : table_text_color;
 
     context.draw_list->AddRectFilled(top_left, bottom_right, IM_COL32_WHITE);
     context.draw_list->AddLine(icon_top_left + icon_secondary_offset, icon_bottom_left + icon_secondary_offset, color, 1.5f);
     context.draw_list->AddLine(icon_bottom_left + icon_secondary_offset, icon_bottom_right + icon_secondary_offset, color, 1.5f);
     context.draw_list->AddRect(icon_top_left, icon_bottom_right, color, 0, ImDrawCornerFlags_All, 1.5f);
 
-    return pressed;
+    return button_state.pressed;
 }
 
 bool draw_expand_arrow_button(Table_Paint_Context& context, bool is_expanded, ImVec2 cell_top_left, float nesting_level_padding) {
@@ -445,21 +438,16 @@ bool draw_expand_arrow_button(Table_Paint_Context& context, bool is_expanded, Im
     float arrow_half_height = ImGui::GetFontSize() / 4.0f;
     float arrow_width = arrow_half_height;
 
-    ImGuiID id = ImGui::GetID("task_expand_arrow");
+    ImVec2 top_left{ arrow_point.x - arrow_width * 3.5f, cell_top_left.y };
+    ImVec2 button_size{ arrow_width * 7f, context.row_height };
 
-    const ImRect bounds({ arrow_point.x - arrow_width * 3.5f, cell_top_left.y },
-                        { arrow_point.x + arrow_width * 2.5f, cell_top_left.y + context.row_height });
+    Button_State button_state = button("task_expand_arrow", top_left, button_size);
 
-    bool is_clipped = !ImGui::ItemAdd(bounds, id);
-
-    bool hovered, held;
-    bool pressed = ImGui::ButtonBehavior(bounds, id, &hovered, &held);
-
-    if (is_clipped) {
-        return pressed;
+    if (button_state.clipped) {
+        return button_state.pressed;
     }
 
-    u32 color = hovered ? expand_arrow_hovered : expand_arrow_color;
+    u32 color = button_state.hovered ? expand_arrow_hovered : expand_arrow_color;
 
     if (!is_expanded) {
         ImVec2 arrow_top_left = arrow_point - ImVec2(arrow_width,  arrow_half_height);
@@ -475,7 +463,7 @@ bool draw_expand_arrow_button(Table_Paint_Context& context, bool is_expanded, Im
         context.draw_list->AddLine(arrow_right, arrow_bottom_point, color);
     }
 
-    return pressed;
+    return button_state.pressed;
 }
 
 void draw_table_cell_for_task(Table_Paint_Context& context, u32 column, float column_width, Flattened_Folder_Task* flattened_task, ImVec2 cell_top_left) {
@@ -647,11 +635,7 @@ void draw_table_header(Table_Paint_Context& context, ImVec2 window_top_left) {
 
         ImGui::PopID();
 
-        const ImRect bounds(column_top_left_absolute, column_top_left_absolute + size);
-        bool is_clipped = !ImGui::ItemAdd(bounds, id);
-
-        bool hovered, held;
-        bool pressed = ImGui::ButtonBehavior(bounds, id, &hovered, &held);
+        Button_State button_state = button("header_sort_button", column_top_left_absolute, size);
 
         bool sorting_by_this_column;
 
@@ -661,13 +645,13 @@ void draw_table_header(Table_Paint_Context& context, ImVec2 window_top_left) {
             if (column_sort_field == Task_List_Sort_Field_Custom_Field) {
                 Custom_Field* column_custom_field = context.column_to_custom_field[column - custom_columns_start_index];
 
-                if (pressed) {
+                if (button_state.pressed) {
                     sort_by_custom_field(column_custom_field->id);
                 }
 
                 sorting_by_this_column = sort_custom_field_id == column_custom_field->id;
             } else {
-                if (pressed) {
+                if (button_state.pressed) {
                     sort_by_field(column_sort_field);
                 }
 
@@ -675,13 +659,13 @@ void draw_table_header(Table_Paint_Context& context, ImVec2 window_top_left) {
             }
         }
 
-        if (is_clipped) {
+        if (button_state.clipped) {
             column_left_x += column_width;
 
             continue;
         }
 
-        u32 text_color = hovered ? active_text_color : table_text_color;
+        u32 text_color = button_state.hovered ? active_text_color : table_text_color;
 
         const u32 grid_color = 0xffebebeb;
 

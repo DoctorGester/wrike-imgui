@@ -5,6 +5,7 @@
 #include "common.h"
 #include "users.h"
 #include "platform.h"
+#include "ui.h"
 
 // TODO could this be constexpr if we got rid of the whole platform_get_scale() thing?
 static void fill_antialiased_textured_circle(ImDrawList* draw_list, ImVec2 centre, float radius, u32 color, u32 num_segments) {
@@ -125,4 +126,29 @@ void draw_loading_indicator(ImVec2 center, u32 started_showing_at, ImVec2 offset
             center + ImRotate(ImVec2(-size, +size), cos, sin),
             IM_COL32(0, 255, 200, alpha)
     );
+}
+
+static void button(ImGuiID id, ImVec2 top_left, ImVec2 size, Button_State& state) {
+    ImRect bounds(top_left, top_left + size);
+
+    state.clipped = !ImGui::ItemAdd(bounds, id);
+    state.pressed = ImGui::ButtonBehavior(bounds, id, &state.hovered, &state.held);
+}
+
+Button_State button(const void* pointer_id, ImVec2 top_left, ImVec2 size) {
+    ImGuiID id = ImGui::GetID(pointer_id);
+
+    Button_State state;
+    button(id, top_left, size, state);
+
+    return state;
+}
+
+Button_State button(const char* string_id, ImVec2 top_left, ImVec2 size) {
+    ImGuiID id = ImGui::GetID(string_id);
+
+    Button_State state;
+    button(id, top_left, size, state);
+
+    return state;
 }

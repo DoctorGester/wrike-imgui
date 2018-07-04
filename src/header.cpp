@@ -23,30 +23,23 @@ static bool draw_header_button(const char* text, ImVec2 top_left, float header_h
 
     out_size = button_size;
 
-    ImRect bounds(top_left, top_left + button_size);
+    Button_State button_state = button((void*) text, top_left, button_size);
 
-    ImGuiID id = ImGui::GetID((void*) text);
-
-    bool is_clipped = !ImGui::ItemAdd(bounds, id);
-
-    bool hovered, held;
-    bool pressed = ImGui::ButtonBehavior(bounds, id, &hovered, &held);
-
-    if (is_clipped) {
-        return pressed;
+    if (button_state.clipped) {
+        return button_state.pressed;
     }
 
     ImDrawList* draw_list = ImGui::GetWindowDrawList();
 
     draw_list->AddText(text_top_left, 0xccffffff, text, text + strlen(text));
 
-    if (hovered || held) {
-        u32 top_line_color = held ? IM_COL32_WHITE : 0x99ffffff;
+    if (button_state.hovered || button_state.held) {
+        u32 top_line_color = button_state.held ? IM_COL32_WHITE : 0x99ffffff;
 
         draw_list->AddRectFilled(top_left, top_left + ImVec2(button_size.x, 4.0f * scale), top_line_color);
     }
 
-    return pressed;
+    return button_state.pressed;
 }
 
 static bool draw_add_new_entity_button(const ImVec2 top_left, const ImVec2& button_size) {
@@ -54,17 +47,10 @@ static bool draw_add_new_entity_button(const ImVec2 top_left, const ImVec2& butt
 
     float scale = platform_get_pixel_ratio();
 
-    ImRect bounds(top_left, top_left + button_size);
+    Button_State button_state = button("add_new_entity_button", top_left, button_size);
 
-    ImGuiID id = ImGui::GetID("add_new_entity_button");
-
-    bool is_clipped = !ImGui::ItemAdd(bounds, id);
-
-    bool hovered, held;
-    bool pressed = ImGui::ButtonBehavior(bounds, id, &hovered, &held);
-
-    if (is_clipped) {
-        return pressed;
+    if (button_state.clipped) {
+        return button_state.pressed;
     }
 
     ImDrawList* draw_list = ImGui::GetWindowDrawList();
@@ -88,7 +74,7 @@ static bool draw_add_new_entity_button(const ImVec2 top_left, const ImVec2& butt
             4.0f
     );
 
-    return pressed;
+    return button_state.pressed;
 }
 
 static bool draw_side_menu_toggle_button(const ImVec2 top_left, const ImVec2& button_size) {
@@ -102,20 +88,13 @@ static bool draw_side_menu_toggle_button(const ImVec2 top_left, const ImVec2& bu
 
     ImVec2 right_side = top_left + ImVec2(button_size.x, bar_height);
 
-    ImRect bounds(top_left, top_left + button_size);
+    Button_State button_state = button("side_menu_toggle_button", top_left, button_size);
 
-    ImGuiID id = ImGui::GetID("side_menu_toggle_button");
-
-    bool is_clipped = !ImGui::ItemAdd(bounds, id);
-
-    bool hovered, held;
-    bool pressed = ImGui::ButtonBehavior(bounds, id, &hovered, &held);
-
-    if (is_clipped) {
-        return pressed;
+    if (button_state.clipped) {
+        return button_state.pressed;
     }
 
-    const u32 color = hovered ? bar_color_hover : bar_color;
+    const u32 color = button_state.hovered ? bar_color_hover : bar_color;
 
     ImDrawList* draw_list = ImGui::GetWindowDrawList();
 
@@ -131,7 +110,7 @@ static bool draw_side_menu_toggle_button(const ImVec2 top_left, const ImVec2& bu
                              right_side + ImVec2(0.0f, button_size.y - bar_height),
                              color, rounding);
 
-    return pressed;
+    return button_state.pressed;
 }
 
 static void draw_profile_widget(User* user, float header_height) {
