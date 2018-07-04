@@ -439,7 +439,7 @@ bool draw_expand_arrow_button(Table_Paint_Context& context, bool is_expanded, Im
     float arrow_width = arrow_half_height;
 
     ImVec2 top_left{ arrow_point.x - arrow_width * 3.5f, cell_top_left.y };
-    ImVec2 button_size{ arrow_width * 7f, context.row_height };
+    ImVec2 button_size{ arrow_width * 7.0f, context.row_height };
 
     Button_State button_state = button("task_expand_arrow", top_left, button_size);
 
@@ -626,16 +626,13 @@ void draw_table_header(Table_Paint_Context& context, ImVec2 window_top_left) {
         end = column_title.start + column_title.length;
 
         ImVec2 column_top_left_absolute = window_top_left + ImVec2(column_left_x, 0) + ImVec2(0, ImGui::GetScrollY());
-
         ImVec2 size { column_width, context.row_height };
 
         ImGui::PushID(column);
 
-        ImGuiID id = ImGui::GetID("header_sort_button");
+        Button_State button_state = button("header_sort_button", column_top_left_absolute, size);
 
         ImGui::PopID();
-
-        Button_State button_state = button("header_sort_button", column_top_left_absolute, size);
 
         bool sorting_by_this_column;
 
