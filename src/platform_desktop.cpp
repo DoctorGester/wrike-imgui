@@ -513,7 +513,7 @@ char* platform_local_storage_get(const char* key) {
     return file_to_string(key);
 }
 
-void platform_open_in_wrike(String &permalink) {
+void platform_open_url(String &permalink) {
     // TODO
 }
 

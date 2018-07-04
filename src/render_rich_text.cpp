@@ -4,6 +4,8 @@
 #include "render_rich_text.h"
 #include "rich_text.h"
 #include "renderer.h"
+#include "ui.h"
+#include "platform.h"
 
 using namespace ImGui;
 
@@ -45,10 +47,11 @@ void render_rich_text(
     u32 fg_color = default_color;
 
     bool has_bg_color = bg_color != 0;
+    bool is_a_link = current_string->style.link.length > 0;
 
     if (has_bg_color) {
         fg_color = 0xFFFFFFFF;
-    } if (current_string->style.link.length) {
+    } if (is_a_link) {
         fg_color = color_link;
     }
 
@@ -103,15 +106,13 @@ void render_rich_text(
 
     ImVec2 uv_white(draw_list->_Data->TexUvWhitePixel);
 
-    ImVec2 bg_color_start_position;
+    ImVec2 string_top_left{ x, y };
     ImDrawVert* bg_color_vtx_write;
     ImDrawIdx* bg_color_idx_write;
     unsigned int bg_color_vtx_current_idx;
 
     if (has_bg_color) {
         // TODO copypaste from below
-        bg_color_start_position.x = x;
-        bg_color_start_position.y = y;
         bg_color_vtx_write = vtx_write;
         bg_color_idx_write = idx_write;
         bg_color_vtx_current_idx = vtx_current_idx;
@@ -121,7 +122,7 @@ void render_rich_text(
     }
 
     auto fill_bg_rect = [&] {
-        ImVec2& a = bg_color_start_position;
+        ImVec2& a = string_top_left;
         ImVec2 c = ImVec2(x, y + line_height);
         ImVec2 b(c.x, a.y), d(a.x, c.y);
 
@@ -134,23 +135,42 @@ void render_rich_text(
         bg_color_vtx_write[3].pos = d; bg_color_vtx_write[3].uv = uv_white; bg_color_vtx_write[3].col = bg_color;
     };
 
+    auto link_button = [&] (Rich_Text_String* link_string) {
+        ImVec2 bottom_right = { x, y + line_height };
+        ImVec2 link_size = bottom_right - string_top_left;
+
+        Button_State state = button((void*) (link_string->text.start), string_top_left, link_size);
+
+        if (state.pressed) {
+            platform_open_url(link_string->style.link.length ? link_string->style.link : link_string->text);
+        }
+    };
+
     while (s < text_end) {
         if (s >= current_string->text.start + current_string->text.length) {
+            Rich_Text_String* previous_string = current_string;
+
             current_string++;
             ImFont* new_font = get_font_from_style(current_string->style);
 
             bool had_bg_color = has_bg_color;
+            bool was_a_link = is_a_link;
 
             if (had_bg_color) {
                 fill_bg_rect();
             }
 
+            if (was_a_link) {
+                link_button(previous_string);
+            }
+
             bg_color = current_string->style.background_color;
+            is_a_link = current_string->style.link.length > 0;
             has_bg_color = bg_color != 0;
 
             if (has_bg_color) {
                 fg_color = 0xFFFFFFFF;
-            } else if (current_string->style.link.length) {
+            } else if (is_a_link) {
                 fg_color = color_link;
             } else {
                 fg_color = default_color;
@@ -162,10 +182,10 @@ void render_rich_text(
                 bg_color = (bg_color & ~IM_COL32_A_MASK) | alpha_col; // Set alpha
             }
 
+            string_top_left = { x, y };
+
             if (has_bg_color) {
                 // Reserve some space for background
-                bg_color_start_position.x = x;
-                bg_color_start_position.y = y;
                 bg_color_vtx_write = vtx_write;
                 bg_color_idx_write = idx_write;
                 bg_color_vtx_current_idx = vtx_current_idx;
@@ -302,6 +322,10 @@ void render_rich_text(
         fill_bg_rect();
     }
 
+    if (is_a_link) {
+        link_button(current_string);
+    }
+
     // Give back unused vertices
     draw_list->VtxBuffer.resize((int)(vtx_write - draw_list->VtxBuffer.Data));
     draw_list->IdxBuffer.resize((int)(idx_write - draw_list->IdxBuffer.Data));
@@ -313,14 +337,13 @@ void render_rich_text(
     PopFont();
 }
 
-void add_rich_text(
+float add_rich_text(
         ImDrawList* draw_list,
         const ImVec2& pos,
         Rich_Text_String* rich_text_begin,
         Rich_Text_String* rich_text_end,
         float wrap_width,
-        float alpha,
-        const ImVec4* cpu_fine_clip_rect
+        float alpha
 ) {
     char* text_begin = rich_text_begin->text.start;
     char* text_end = rich_text_end->text.start + rich_text_end->text.length;
@@ -329,24 +352,21 @@ void add_rich_text(
 
     // Account of baseline offset
     ImRect bb(pos, pos + text_size);
-    ItemSize(text_size);
-    if (!ItemAdd(bb, 0))
-        return;
 
-    if (text_begin == text_end)
-        return;
+    if (!ItemAdd(bb, 0)) {
+        return text_size.y;
+    }
+
+    if (text_begin == text_end) {
+        return 0;
+    }
 
     // Pull default font/size from the shared ImDrawListSharedData instance
     float font_size = draw_list->_Data->FontSize;
 
     ImVec4 clip_rect = draw_list->_ClipRectStack.back();
-    if (cpu_fine_clip_rect)
-    {
-        clip_rect.x = ImMax(clip_rect.x, cpu_fine_clip_rect->x);
-        clip_rect.y = ImMax(clip_rect.y, cpu_fine_clip_rect->y);
-        clip_rect.z = ImMin(clip_rect.z, cpu_fine_clip_rect->z);
-        clip_rect.w = ImMin(clip_rect.w, cpu_fine_clip_rect->w);
-    }
 
-    render_rich_text(draw_list, font_size, pos, clip_rect, rich_text_begin, rich_text_end, wrap_width, alpha, cpu_fine_clip_rect != NULL);
+    render_rich_text(draw_list, font_size, pos, clip_rect, rich_text_begin, rich_text_end, wrap_width, alpha, false);
+
+    return text_size.y;
 }

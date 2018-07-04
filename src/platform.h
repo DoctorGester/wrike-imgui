@@ -20,7 +20,7 @@ float platform_get_pixel_ratio();
 u64 platform_get_app_time_precise();
 float platform_get_delta_time_ms(u64 delta_to);
 
-void platform_open_in_wrike(String& permalink);
+void platform_open_url(String& permalink);
 
 void platform_api_request(Request_Id& request_id, char* url, Http_Method method);
 void platform_load_remote_image(Request_Id& request_id, char* full_url);

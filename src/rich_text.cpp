@@ -142,7 +142,7 @@ static void parse_text_into_tokens(String& text, Array<Rich_Text_Token>& tokens)
                                     if (current == '"') {
                                         in_attribute_value = false;
                                         post_attribute_equals = false;
-                                        value->end = current_pointer + 1;
+                                        value->end = current_pointer;
                                         in_quoted_string = false;
                                     }
                                 } else {
@@ -151,6 +151,7 @@ static void parse_text_into_tokens(String& text, Array<Rich_Text_Token>& tokens)
                                         post_attribute_equals = false;
                                         value->end = current_pointer;
                                     } else if (current == '"') {
+                                        value->start = current_pointer + 1;
                                         in_quoted_string = true;
                                     }
                                 }

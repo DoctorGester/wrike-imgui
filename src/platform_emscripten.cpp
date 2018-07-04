@@ -323,7 +323,7 @@ char* platform_local_storage_get(const char* key) {
     return (char*) EM_ASM_INT({ return local_storage_get_string(Pointer_stringify($0)) }, key);
 }
 
-void platform_open_in_wrike(String &permalink) {
+void platform_open_url(String &permalink) {
     EM_ASM({ window.open(Pointer_stringify($0, $1), '_blank'); },
            permalink.start, permalink.length);
 }
