@@ -41,7 +41,8 @@ void* realloc_and_log(const char* file, const char* function, u32 line, void* re
 void free_and_log(const char* file, const char* function, u32 line, void* free_what);
 
 const u32 color_background_dark = argb_to_agbr(0xFF1d364c);
-const u32 color_link = argb_to_agbr(0x004488ff);
+const u32 color_link = argb_to_agbr(0xff4488ff);
+const u32 color_black_text_on_white = 0xff191919;
 
 struct Memory_Image {
     unsigned int texture_id = 0;

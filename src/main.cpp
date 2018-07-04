@@ -47,7 +47,7 @@ bool custom_statuses_were_loaded = false;
 static bool draw_memory_debug = false;
 static bool draw_side_menu = false;
 
-static const ImGuiID task_view_id = 1337; // TODO not a good thing. We can't initialize it to ImGui::GetID there though
+static bool task_view_open_requested = false;
 
 static float folder_tree_column_width = 300.0f;
 
@@ -81,9 +81,12 @@ u32 finished_loading_statuses_at = 0;
 u32 started_loading_users_at = 0;
 u32 finished_loading_users_at = 0;
 
+u32 task_view_opened_at = 0;
+
 static Request_Id request_id_counter = 0;
 
 static double frame_times[60];
+static u32 last_frame_vtx_count = 0;
 
 PRINTLIKE(3, 4) void api_request(Http_Method method, Request_Id& request_id, const char* format, ...) {
     // TODO use temporary storage there
@@ -312,8 +315,7 @@ void request_task_by_task_id(Task_Id task_id) {
 
     request_task_by_full_id(id_as_string);
 
-    // TODO move this out somewhere, shouldn't happen on each request
-    ImGui::OpenPopupEx(task_view_id);
+    task_view_open_requested = true;
 }
 
 void modify_task_e16(Task_Id task_id, const u8 entity_prefix, s32 entity_id, const char* command, bool array = true) {
@@ -389,9 +391,9 @@ static void draw_average_frame_time() {
     char* text_start;
     char* text_end;
 
-    tprintf("Loop time: %.2fms", &text_start, &text_end, sum / ARRAY_SIZE(frame_times));
+    tprintf("Loop time: %.2fms, %i vtx", &text_start, &text_end, sum / (float) ARRAY_SIZE(frame_times), last_frame_vtx_count);
 
-    ImVec2 top_left = ImGui::GetIO().DisplaySize - ImVec2(150.0f, 20.0f) * platform_get_pixel_ratio();
+    ImVec2 top_left = ImGui::GetIO().DisplaySize - ImVec2(200.0f, 20.0f) * platform_get_pixel_ratio();
 
     ImGui::GetOverlayDrawList()->AddText(top_left, IM_COL32_BLACK, text_start, text_end);
 }
@@ -411,10 +413,31 @@ static void draw_memory_debug_contents() {
 
 static void draw_task_view_popup_if_necessary() {
     ImVec2 display_size = ImGui::GetIO().DisplaySize;
+
     ImGui::SetNextWindowPos(display_size / 2.0f, ImGuiCond_Appearing, { 0.5f, 0.5f });
     ImGui::SetNextWindowSize({ display_size.x / 2.0f, display_size.y / 1.25f }, ImGuiCond_Appearing);
 
-    if (ImGui::BeginPopupEx(task_view_id, 0)) {
+    ImGuiID task_view_id = ImGui::GetID("##task_view");
+
+    if (task_view_open_requested) {
+        ImGui::OpenPopupEx(task_view_id);
+
+        task_view_open_requested = false;
+        task_view_opened_at = tick;
+    }
+
+    ImGui::PushStyleVar(ImGuiStyleVar_PopupRounding, 4.0f * platform_get_pixel_ratio());
+
+    if (ImGui::BeginPopupEx(task_view_id, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoSavedSettings)) {
+        const u32 backdrop_color_no_alpha = argb_to_agbr(0x0027415a);
+
+        u32 alpha = (u32) lroundf(lerp(task_view_opened_at, tick, 0xd8, 12));
+        u32 backdrop_color = backdrop_color_no_alpha | (alpha << 24);
+
+        ImGui::PushClipRect({}, display_size, false);
+        ImGui::GetWindowDrawList()->AddRectFilled({}, display_size, backdrop_color);
+        ImGui::PopClipRect();
+
         bool task_is_loading = task_request != NO_REQUEST || contacts_request != NO_REQUEST;
 
         if (selected_folder_task_id && !task_is_loading) {
@@ -431,6 +454,8 @@ static void draw_task_view_popup_if_necessary() {
 
         ImGui::EndPopup();
     }
+
+    ImGui::PopStyleVar();
 }
 
 static void draw_ui() {
@@ -534,6 +559,7 @@ void loop() {
     ImGui::Render();
     renderer_draw_lists(ImGui::GetDrawData());
 
+    last_frame_vtx_count = (u32) ImGui::GetDrawData()->TotalVtxCount;
     frame_times[tick % (ARRAY_SIZE(frame_times))] = platform_get_delta_time_ms(frame_start_time); // Before assumed swapBuffers
 
     platform_end_frame();
@@ -582,6 +608,8 @@ static void setup_ui() {
     style->FrameRounding = 4.0f;
     style->WindowPadding = { 0, 0 };
     style->FramePadding = { 0, 0 };
+    style->ItemSpacing = ImVec2(style->ItemSpacing.x, 0);
+    style->PopupBorderSize = 0;
     style->ScaleAllSizes(platform_get_pixel_ratio());
 
     ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;

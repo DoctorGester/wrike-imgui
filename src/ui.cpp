@@ -102,7 +102,7 @@ void draw_circular_user_avatar(ImDrawList* draw_list, User* user, ImVec2 top_lef
         fill_antialiased_textured_circle(draw_list, top_left + ImVec2(half_avatar_side, half_avatar_side), half_avatar_side, avatar_color_with_alpha, 32);
         draw_list->PopTextureID();
     } else {
-        static const u32 spinner_color = argb_to_agbr(0xff4488ff);
+        static const u32 spinner_color = color_link;
 
         draw_loading_spinner(draw_list, top_left, avatar_side_px / 2.0f, 6, spinner_color);
     }

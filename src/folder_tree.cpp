@@ -74,7 +74,7 @@ static void draw_folder_tree_node(Folder_Tree_Node* tree_node) {
 }
 
 static void draw_folder_tree_search_input() {
-    static const u32 bottom_border_active_color = argb_to_agbr(0xFF4488ff);
+    static const u32 bottom_border_active_color = color_link;
     static const u32 bottom_border_hover_color = argb_to_agbr(0x99ffffff);
     static const u32 non_active_color = 0x80ffffff;
 

@@ -104,9 +104,6 @@ static bool has_been_sorted_after_loading = false;
 static bool show_only_active_tasks = true;
 static bool queue_flattened_tree_rebuild = false;
 
-static const u32 active_text_color = argb_to_agbr(0xff4488ff);
-static const u32 table_text_color = 0xff191919;
-
 static inline int compare_tasks_custom_fields(Folder_Task* a, Folder_Task* b, Custom_Field_Type custom_field_type) {
     String* a_value = NULL;
     String* b_value = NULL;
@@ -397,7 +394,7 @@ void draw_assignees_cell_contents(ImDrawList* draw_list, Folder_Task* task, ImVe
 
         float text_width = ImGui::CalcTextSize(start, end).x;
 
-        draw_list->AddText(text_position, table_text_color, start, end);
+        draw_list->AddText(text_position, color_black_text_on_white, start, end);
 
         text_position.x += text_width;
     }
@@ -420,7 +417,7 @@ bool draw_open_task_button(Table_Paint_Context& context, ImVec2 cell_top_left, f
     ImVec2 icon_bottom_left = icon_top_left + ImVec2(0.0f, icon_size.y);
     ImVec2 icon_secondary_offset = ImVec2(-2.0f, 1.5f) * context.scale;
 
-    u32 color = button_state.hovered ? active_text_color : table_text_color;
+    u32 color = button_state.hovered ? color_link : color_black_text_on_white;
 
     context.draw_list->AddRectFilled(top_left, bottom_right, IM_COL32_WHITE);
     context.draw_list->AddLine(icon_top_left + icon_secondary_offset, icon_bottom_left + icon_secondary_offset, color, 1.5f);
@@ -494,7 +491,7 @@ void draw_table_cell_for_task(Table_Paint_Context& context, u32 column, float co
 
             char* start = task->title.start, * end = task->title.start + task->title.length;
 
-            context.draw_list->AddText(cell_top_left + title_padding, table_text_color, start, end);
+            context.draw_list->AddText(cell_top_left + title_padding, color_black_text_on_white, start, end);
 
             if (ImGui::IsMouseHoveringRect(cell_top_left, cell_top_left + ImVec2(column_width, context.row_height))) {
                 if (draw_open_task_button(context, cell_top_left, column_width)) {
@@ -533,7 +530,7 @@ void draw_table_cell_for_task(Table_Paint_Context& context, u32 column, float co
                 if (field_value) {
                     char* start = field_value->value.start, * end = field_value->value.start + field_value->value.length;
 
-                    context.draw_list->AddText(cell_top_left + padding, table_text_color, start, end);
+                    context.draw_list->AddText(cell_top_left + padding, color_black_text_on_white, start, end);
                 }
             }
         }
@@ -599,7 +596,7 @@ void draw_folder_header(Table_Paint_Context& context, float content_width) {
 
     ImVec2 folder_header_padding = ImVec2(32.0f, folder_header_height / 2.0f - ImGui::GetFontSize() / 2.0f);
 
-    context.draw_list->AddText(top_left + folder_header_padding, table_text_color,
+    context.draw_list->AddText(top_left + folder_header_padding, color_black_text_on_white,
                        current_folder.name.start, current_folder.name.start + current_folder.name.length);
 
     ImGui::PopFont();
@@ -662,7 +659,7 @@ void draw_table_header(Table_Paint_Context& context, ImVec2 window_top_left) {
             continue;
         }
 
-        u32 text_color = button_state.hovered ? active_text_color : table_text_color;
+        u32 text_color = button_state.hovered ? color_link : color_black_text_on_white;
 
         const u32 grid_color = 0xffebebeb;
 

@@ -32,8 +32,19 @@ struct HSL {
     float l;
 };
 
+struct Horizontal_Layout {
+    ImVec2 top_left;
+    ImVec2 cursor;
+    float row_height;
+    float scale;
+};
+
+struct Wrapping_Horizontal_Layout : Horizontal_Layout {
+    float wrap_width;
+    bool has_drawn_at_least_one_element;
+};
+
 static Memory_Image checkmark{};
-static const char* add_assignee_text = "+ Add assignee";
 static List<User*> filtered_users{};
 
 static const float status_picker_row_height = 50.0f;
@@ -142,6 +153,57 @@ static char* string_contains_substring_ignore_case(String string, char* query_lo
     return string_in_substring(string_buffer, query_lowercase, string.length);
 }
 
+static Horizontal_Layout horizontal_layout(ImVec2 top_left, float row_height) {
+    Horizontal_Layout layout;
+    layout.scale = platform_get_pixel_ratio();
+    layout.cursor = top_left;
+    layout.top_left = top_left;
+    layout.row_height = row_height;
+
+    return layout;
+}
+
+static Wrapping_Horizontal_Layout wrapping_horizontal_layout(ImVec2 top_left, float row_height, float wrap_width) {
+    Wrapping_Horizontal_Layout layout;
+    layout.scale = platform_get_pixel_ratio();
+    layout.cursor = top_left;
+    layout.top_left = top_left;
+    layout.row_height = row_height;
+    layout.wrap_width = wrap_width;
+    layout.has_drawn_at_least_one_element = false;
+
+    return layout;
+}
+
+static bool layout_check_wrap(Wrapping_Horizontal_Layout& layout, ImVec2 item_size) {
+    bool would_like_to_wrap = layout.cursor.x + item_size.x > layout.top_left.x + layout.wrap_width;
+
+    return layout.has_drawn_at_least_one_element && would_like_to_wrap;
+}
+
+static void layout_wrap(Wrapping_Horizontal_Layout& layout) {
+    layout.cursor.x = layout.top_left.x;
+    layout.cursor.y += layout.row_height;
+}
+
+static bool layout_check_and_wrap(Wrapping_Horizontal_Layout& layout, ImVec2 item_size) {
+    if (layout_check_wrap(layout, item_size)) {
+        layout_wrap(layout);
+
+        return true;
+    }
+
+    return false;
+}
+
+static void layout_advance(Horizontal_Layout& layout, float value) {
+    layout.cursor.x += value;
+}
+
+static ImVec2 layout_center_vertically(Horizontal_Layout& layout, float known_height) {
+    return { layout.cursor.x, layout.cursor.y + layout.row_height / 2.0f - known_height / 2.0f };
+}
+
 static void update_user_search(char* query) {
     u64 start_time = platform_get_app_time_precise();
 
@@ -186,7 +248,7 @@ static void update_user_search(char* query) {
 static bool draw_status_picker_dropdown_status_selection_button(ImDrawList* draw_list, Custom_Status* status, bool is_current, ImVec2 size, float scale) {
     static const u32 hover_color = 0x11000000;
     static const u32 active_color = hover_color * 2;
-    static const u32 current_color = argb_to_agbr(0xff4488ff);
+    static const u32 current_color = color_link;
 
     ImVec2 top_left = ImGui::GetCursorScreenPos();
     ImVec2 bottom_right = top_left + size;
@@ -263,10 +325,9 @@ static void draw_status_picker_dropdown_contents(Custom_Status* current_task_sta
     }
 }
 
-static void draw_status_picker_dropdown_if_open(ImGuiID status_picker_dropdown_id, Custom_Status* status) {
+static void draw_status_picker_dropdown_if_open(ImVec2 status_picker_position, ImGuiID status_picker_dropdown_id, Custom_Status* status) {
     bool is_status_picker_open = ImGui::IsPopupOpen(status_picker_dropdown_id);
 
-    ImVec2 status_picker_position = ImGui::GetCursorScreenPos();
     ImVec2 status_picker_size = ImVec2(300, 300) * platform_get_pixel_ratio();
 
     ImGui::SetNextWindowPos(status_picker_position);
@@ -283,10 +344,10 @@ static void draw_status_picker_dropdown_if_open(ImGuiID status_picker_dropdown_i
     }
 }
 
-static bool draw_status_picker(u32 status_color, String status_name, bool is_completed) {
+static bool draw_status_picker(ImVec2 top_left, u32 status_color, String status_name, bool is_completed, float& out_width) {
     float scale = platform_get_pixel_ratio();
 
-    u32 color = change_color_luminance(status_color, 0.42f);
+    u32 line_and_checkbox_color = change_color_luminance(status_color, 0.42f);
     u32 bg_color = change_color_luminance(status_color, 0.94f);
     u32 border_color = change_color_luminance(status_color, 0.89f);
     u32 arrow_color = change_color_luminance(status_color, 0.34f);
@@ -304,18 +365,26 @@ static bool draw_status_picker(u32 status_color, String status_name, bool is_com
     float checkbox_offset_x = left_line_width + padding;
     float text_offset_x = checkbox_offset_x + checkbox_size.x + 8.0f * scale;
 
-    ImVec2 start = ImGui::GetCursorScreenPos();
+    ImVec2 start = top_left;
     ImVec2 size = ImVec2(text_size.x + text_offset_x + padding * 2.0f - left_line_width, status_picker_row_height * scale);
     ImVec2 checkbox_start = start + ImVec2(checkbox_offset_x, size.y / 2 - checkbox_size.y / 2);
     ImVec2 text_start = start + ImVec2(text_offset_x, size.y / 2 - text_size.y / 2);
     ImVec2 arrow_position = text_start + ImVec2(text_size.x + 4 * scale, 0) + ImVec2(0, text_size.y / 2.0f);
 
+    out_width = size.x;
+
     ImDrawList* draw_list = ImGui::GetWindowDrawList();
 
-    bool is_pressed = ImGui::InvisibleButton("status_selector", size);
+    Button_State button_state = button("status_selector", top_left, size);
+
+    if (button_state.clipped) {
+        ImGui::PopFont();
+
+        return button_state.pressed;
+    }
 
     draw_list->AddRectFilled(start, start + size, bg_color);
-    draw_list->AddRectFilled(start, start + ImVec2(left_line_width, size.y), color);
+    draw_list->AddRectFilled(start, start + ImVec2(left_line_width, size.y), line_and_checkbox_color);
     draw_list->AddLine(start + ImVec2(left_line_width, 0), start + ImVec2(size.x, 0), border_color);
     draw_list->AddLine(start + ImVec2(left_line_width, size.y), start + size, border_color);
     draw_list->AddLine(start + ImVec2(size.x, 0), start + size, border_color);
@@ -326,8 +395,8 @@ static bool draw_status_picker(u32 status_color, String status_name, bool is_com
         draw_list->AddRectFilled(checkbox_start, checkbox_start + checkbox_size, IM_COL32_WHITE);
     }
 
-    draw_list->AddRect(checkbox_start, checkbox_start + checkbox_size, color, 0.0f, ImDrawCornerFlags_All, 2.0f);
-    draw_list->AddText(text_start, IM_COL32_BLACK, text_begin, text_end);
+    draw_list->AddRect(checkbox_start, checkbox_start + checkbox_size, line_and_checkbox_color, 0.0f, ImDrawCornerFlags_All, 2.0f);
+    draw_list->AddText(text_start, 0xff111111, text_begin, text_end);
     draw_list->AddTriangleFilled(arrow_position,
                                  arrow_position + ImVec2(5,    0) * scale,
                                  arrow_position + ImVec2(2.5f, 4) * scale,
@@ -335,44 +404,48 @@ static bool draw_status_picker(u32 status_color, String status_name, bool is_com
 
     ImGui::PopFont();
 
-    return is_pressed;
+    return button_state.pressed;
 }
 
-static bool draw_parent_folder_ticker(Folder_Tree_Node* folder_tree_node, bool ghost_tag, bool can_wrap, float wrap_pos) {
+static bool draw_parent_folder_ticker(Wrapping_Horizontal_Layout& layout, Folder_Tree_Node* folder_tree_node, bool ghost_tag, bool can_wrap) {
     static const u32 border_color_default = argb_to_agbr(0xffe0e0e0);
     static const u32 border_color_hover = argb_to_agbr(0xffb3b3b3);
 
     char* text_begin = folder_tree_node->name.start;
     char* text_end = text_begin + folder_tree_node->name.length;
 
-    ImGui::PushID(folder_tree_node);
-
-    ImVec2 offset = ImVec2(4.0f, 2.0f) * platform_get_pixel_ratio();
+    ImVec2 offset = ImVec2(4.0f, 2.0f) * layout.scale;
     ImVec2 text_size = ImGui::CalcTextSize(text_begin, text_end);
     ImVec2 size = text_size + offset * 2;
 
-    float window_start_x = ImGui::GetCursorPosX();
-    float rounding = 1.0f * platform_get_pixel_ratio();
+    float rounding = 1.0f * layout.scale;
 
-    if (window_start_x + size.x > wrap_pos && can_wrap) {
-        ImGui::NewLine();
+    if (can_wrap) {
+        layout_check_and_wrap(layout, size);
     }
 
-    ImVec2 start = ImGui::GetCursorScreenPos();
+    ImVec2 start = layout.cursor;
 
-    bool is_pressed = ImGui::InvisibleButton("folder_ticker", size);
-    bool is_hovered = ImGui::IsItemHovered();
+    ImGui::PushID(folder_tree_node);
+    Button_State button_state = button("folder_ticker", start, size);
+    ImGui::PopID();
+
+    layout_advance(layout, size.x + 9.0f * layout.scale);
+
+    if (button_state.clipped) {
+        return button_state.pressed;
+    }
 
     ImDrawList* draw_list = ImGui::GetWindowDrawList();
 
     Folder_Color* color = folder_tree_node->color;
 
-    u32 background_color = is_hovered ? color->background_hover : color->background;
+    u32 background_color = button_state.hovered ? color->background_hover : color->background;
     u32 text_color = color->text;
-    u32 border_color = is_hovered ? border_color_hover : border_color_default;
+    u32 border_color = button_state.hovered ? border_color_hover : border_color_default;
 
     if (ghost_tag) {
-        const u32 alpha = is_hovered ? 190 : 128;
+        const u32 alpha = button_state.hovered ? 190 : 128;
         const u32 clear_alpha = 0x00FFFFFF;
         const u32 half_alpha_mask = alpha << 24;
 
@@ -388,9 +461,7 @@ static bool draw_parent_folder_ticker(Folder_Tree_Node* folder_tree_node, bool g
     draw_list->AddRect(start, start + size, border_color, rounding);
     draw_list->AddText(start + offset, text_color, text_begin, text_end);
 
-    ImGui::PopID();
-
-    return is_pressed;
+    return button_state.pressed;
 }
 
 static bool draw_folder_picker_folder_selection_button(ImDrawList* draw_list, String name, Folder_Color* color, ImVec2 size, float spacing) {
@@ -400,7 +471,7 @@ static bool draw_folder_picker_folder_selection_button(ImDrawList* draw_list, St
     ImVec2 top_left = ImGui::GetCursorScreenPos();
     ImVec2 bottom_right = top_left + size;
 
-    bool clicked = ImGui::InvisibleButton("select_assignee", size);
+    bool clicked = ImGui::InvisibleButton("select_folder", size);
     bool hovered = ImGui::IsItemHovered();
     bool active = ImGui::IsItemActive();
 
@@ -437,7 +508,7 @@ static void draw_folder_picker_contents(bool set_focus) {
 
     ImDrawList* draw_list = ImGui::GetWindowDrawList();
     ImVec2 selection_button_size{ ImGui::GetContentRegionAvailWidth(), 24.0f * platform_get_pixel_ratio() };
-    float padding = ImGui::GetStyle().FramePadding.x;
+    float padding = 4.0f * platform_get_pixel_ratio();
 
     // TODO code duplication. Same occurs in folder search in folder_tree.cpp.
     // TODO Maybe we could just fill search result with all data in case of an empty query?
@@ -497,25 +568,42 @@ static void draw_folder_picker_contents(bool set_focus) {
     }
 }
 
-static void draw_folder_picker_button(float wrap_pos) {
-    static const char* picker_button_text = "+";
+static void draw_folder_picker_button(Wrapping_Horizontal_Layout& layout) {
     static const ImGuiID folder_picker_id = ImGui::GetID("folder_picker");
 
     bool is_folder_picker_open = ImGui::IsPopupOpen(folder_picker_id);
 
-    ImVec2 folder_picker_position = ImGui::GetCursorScreenPos();
+    ImVec2 folder_picker_position = layout.cursor;
     ImVec2 folder_picker_size = ImVec2(300, 300) * platform_get_pixel_ratio();
 
     bool should_set_focus = false;
 
     if (!is_folder_picker_open) {
-        // TODO account for wrapping
-        // TODO styling
-        // TODO button should have more text when there are no assignees yet
-        if (ImGui::SmallButton(picker_button_text)) {
+        float button_side_px = 9.0f * layout.scale;
+        ImVec2 button_size{ button_side_px, button_side_px };
+
+        layout_check_and_wrap(layout, button_size);
+
+        ImVec2 top_left = layout.cursor + ImVec2(0, 5.0f * layout.scale);
+
+        Button_State button_state = button("add_folder", top_left, button_size);
+
+        if (button_state.pressed) {
             ImGui::OpenPopupEx(folder_picker_id);
 
             should_set_focus = true;
+        }
+
+        if (!button_state.clipped) {
+            const float icon_half_width = button_side_px / 2.0f;
+
+            ImDrawList* draw_list = ImGui::GetWindowDrawList();
+            ImVec2 center = top_left + button_size / 2.0f;
+
+            const u32 color = button_state.hovered ? color_link : 0xffc0c0c2;
+
+            draw_list->AddLine(center - ImVec2(0, icon_half_width), center + ImVec2(0, icon_half_width), color, 4.0f);
+            draw_list->AddLine(center - ImVec2(icon_half_width, 0), center + ImVec2(icon_half_width, 0), color, 4.0f);
         }
     }
 
@@ -526,8 +614,6 @@ static void draw_folder_picker_button(float wrap_pos) {
         if (ImGui::IsKeyDown(ImGui::GetKeyIndex(ImGuiKey_Escape))) {
             ImGui::ClosePopup(folder_picker_id);
         }
-
-        ImGui::NewLine();
     }
 
     if (ImGui::BeginPopupEx(folder_picker_id, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoResize)) {
@@ -537,36 +623,31 @@ static void draw_folder_picker_button(float wrap_pos) {
     }
 }
 
-static void draw_parent_folders(float wrap_pos) {
-    for (u32 parent_index = 0; parent_index < current_task.super_parents.length; parent_index++) {
-        Folder_Id folder_id = current_task.super_parents[parent_index];
+static void draw_parent_folders(Wrapping_Horizontal_Layout& layout, List<Folder_Id> folders, bool ghost_tags) {
+    for (u32 parent_index = 0; parent_index < folders.length; parent_index++) {
+        Folder_Id folder_id = folders[parent_index];
         Folder_Tree_Node* folder_tree_node = find_folder_tree_node_by_id(folder_id);
 
         if (folder_tree_node) {
-            if (draw_parent_folder_ticker(folder_tree_node, true, parent_index > 0, wrap_pos)) {
+            if (draw_parent_folder_ticker(layout, folder_tree_node, ghost_tags, folder_id != layout.has_drawn_at_least_one_element)) {
                 select_folder_node_and_request_contents_if_necessary(folder_tree_node);
             }
 
-            ImGui::SameLine();
+            layout.has_drawn_at_least_one_element = true;
         }
     }
+}
 
-    for (u32 parent_index = 0; parent_index < current_task.parents.length; parent_index++) {
-        Folder_Id folder_id = current_task.parents[parent_index];
-        Folder_Tree_Node* folder_tree_node = find_folder_tree_node_by_id(folder_id);
+static float draw_parent_folders(ImVec2 top_left, float wrap_width) {
+    float row_height = 24.0f * platform_get_pixel_ratio();
+    Wrapping_Horizontal_Layout layout = wrapping_horizontal_layout(top_left, row_height, wrap_width);
 
-        if (folder_tree_node) {
-            if (draw_parent_folder_ticker(folder_tree_node, false, parent_index > 0, wrap_pos)) {
-                select_folder_node_and_request_contents_if_necessary(folder_tree_node);
-            }
+    draw_parent_folders(layout, current_task.super_parents, true);
+    draw_parent_folders(layout, current_task.parents, false);
 
-            ImGui::SameLine();
-        }
-    }
+    draw_folder_picker_button(layout);
 
-    if (current_task.parents.length) {
-        draw_folder_picker_button(wrap_pos);
-    }
+    return (layout.cursor.y + layout.row_height) - layout.top_left.y;
 }
 
 static bool draw_contact_picker_assignee_selection_button(ImDrawList* draw_list, User* user, ImVec2 size, float spacing) {
@@ -588,11 +669,7 @@ static bool draw_contact_picker_assignee_selection_button(ImDrawList* draw_list,
         draw_list->AddRectFilled(top_left, bottom_right, hover_color);
     }
 
-    if (check_and_request_user_avatar_if_necessary(user)) {
-        draw_list->AddImage((void*)(intptr_t) user->avatar.texture_id, top_left, top_left + ImVec2(size.y, size.y));
-    } else {
-        // TODO dummy image?
-    }
+    draw_circular_user_avatar(draw_list, user, top_left, size.y);
 
     s32 buffer_length = snprintf(NULL, 0, "%.*s %.*s", user->first_name.length, user->first_name.start, user->last_name.length, user->last_name.start);
 
@@ -614,32 +691,66 @@ static bool draw_contact_picker_assignee_selection_button(ImDrawList* draw_list,
     return clicked;
 }
 
-static void draw_add_assignee_button_and_contact_picker() {
-    const float avatar_side_px = assignee_avatar_side * platform_get_pixel_ratio();
-    const ImVec2 contact_picker_size = ImVec2(300.0f, 330.0f) * platform_get_pixel_ratio();
+static bool draw_add_assignee_button(ImVec2 top_left, float button_side_px, float scale) {
+    ImVec2 button_size{ button_side_px, button_side_px };
+    ImVec2 text_size;
 
-    ImVec2 contact_picker_position = ImGui::GetCursorScreenPos();
+    bool no_assignees = !current_task.assignees.length;
+    const char* label_start = "Add assignee";
+    const char* label_end = label_start + strlen(label_start);
+
+    ImGui::PushFont(font_large);
+
+    if (no_assignees) {
+        text_size = ImGui::CalcTextSize(label_start, label_end);
+        button_size.x += text_size.x;
+    }
+
+    Button_State button_state = button("add_assignee", top_left, button_size);
+
+    if (!button_state.clipped) {
+        const float icon_half_width = button_side_px / 4.0f;
+
+        ImDrawList* draw_list = ImGui::GetWindowDrawList();
+        ImVec2 center = top_left + ImVec2(button_side_px, button_side_px) / 2.0f;
+
+        const u32 color = button_state.hovered ? color_link : color_black_text_on_white;
+
+        draw_list->AddLine(center - ImVec2(0, icon_half_width), center + ImVec2(0, icon_half_width), color, 1.5f);
+        draw_list->AddLine(center - ImVec2(icon_half_width, 0), center + ImVec2(icon_half_width, 0), color, 1.5f);
+
+        if (no_assignees) {
+            ImVec2 text_top_left = top_left + ImVec2(button_side_px, 0) + ImVec2(0, button_size.y / 2.0f - text_size.y / 2.0f);
+
+            draw_list->AddText(text_top_left, color, label_start, label_end);
+        }
+    }
+
+    ImGui::PopFont();
+
+    return button_state.pressed;
+}
+
+static void draw_add_assignee_button_and_contact_picker(Horizontal_Layout& layout) {
+    const float button_side_px = assignee_avatar_side * platform_get_pixel_ratio();
+    const ImVec2 contact_picker_size = ImVec2(300.0f, 330.0f) * platform_get_pixel_ratio();
 
     ImGuiID contact_picker_id = ImGui::GetID("contact_picker");
 
     bool should_open_contact_picker = false;
     bool is_contact_picker_open = ImGui::IsPopupOpen(contact_picker_id);
 
-    if (is_contact_picker_open) {
-        ImGui::NewLine();
-    } else {
-        if (current_task.assignees.length) {
-            should_open_contact_picker = ImGui::Button("+", { avatar_side_px, avatar_side_px });
-        } else {
-            should_open_contact_picker = ImGui::Button(add_assignee_text, {0, avatar_side_px});
-        }
+    ImVec2 top_left = layout_center_vertically(layout, button_side_px);
+
+    if (!is_contact_picker_open) {
+        should_open_contact_picker = draw_add_assignee_button(top_left, button_side_px, layout.scale);
     }
 
     if (should_open_contact_picker) {
         ImGui::OpenPopupEx(contact_picker_id);
     }
 
-    ImGui::SetNextWindowPos(contact_picker_position);
+    ImGui::SetNextWindowPos(top_left);
     ImGui::SetNextWindowSize(contact_picker_size);
 
     if (is_contact_picker_open && ImGui::IsKeyDown(ImGui::GetKeyIndex(ImGuiKey_Escape))) {
@@ -678,7 +789,7 @@ static void draw_add_assignee_button_and_contact_picker() {
 
         if (strlen(search_buffer) == 0) {
             for (User* it = suggested_users.data; it != suggested_users.data + suggested_users.length; it++) {
-                if (draw_contact_picker_assignee_selection_button(draw_list, it, {button_width, avatar_side_px}, spacing)) {
+                if (draw_contact_picker_assignee_selection_button(draw_list, it, {button_width, button_side_px}, spacing)) {
                     add_item_to_list(current_task.assignees, it->id);
                     add_assignee_to_task(current_task.id, it->id);
 
@@ -691,7 +802,7 @@ static void draw_add_assignee_button_and_contact_picker() {
 
         while (clipper.Step()) {
             for (User** it = filtered_users.data + clipper.DisplayStart; it != filtered_users.data + clipper.DisplayEnd; it++) {
-                if (draw_contact_picker_assignee_selection_button(draw_list, *it, { button_width, avatar_side_px }, spacing)) {
+                if (draw_contact_picker_assignee_selection_button(draw_list, *it, { button_width, button_side_px }, spacing)) {
                     add_item_to_list(current_task.assignees, (*it)->id);
                     add_assignee_to_task(current_task.id, (*it)->id);
 
@@ -715,15 +826,9 @@ struct Assignee {
 static bool draw_unassign_button(ImVec2 top_left, float button_side) {
     ImVec2 size { button_side, button_side };
 
-    ImGuiID id = ImGui::GetID("unassign");
+    Button_State button_state = button("unassign_user", top_left, size);
 
-    const ImRect bounds(top_left, top_left + size);
-    bool is_clipped = !ImGui::ItemAdd(bounds, id);
-
-    bool hovered, held;
-    bool pressed = ImGui::ButtonBehavior(bounds, id, &hovered, &held);
-
-    if (is_clipped) return pressed;
+    if (button_state.clipped) return button_state.pressed;
 
     ImDrawList* draw_list = ImGui::GetWindowDrawList();
     ImVec2 center = top_left + size / 2.0f;
@@ -738,16 +843,13 @@ static bool draw_unassign_button(ImVec2 top_left, float button_side) {
                        center + ImVec2(-button_side, button_side) / 4.0f,
                        0xffffffff);
 
-    return pressed;
+    return button_state.pressed;
 }
 
-static bool draw_assignee(Assignee* assignee, float avatar_side_px) {
-    ImVec2 top_left = ImGui::GetCursorScreenPos();
-
+static bool draw_assignee(ImVec2 top_left, Assignee* assignee, float avatar_side_px) {
     ImGui::PushID(assignee->user);
 
-    ImGui::InvisibleButton("assignee", { avatar_side_px, avatar_side_px });
-
+    button("assign_user", top_left, { avatar_side_px, avatar_side_px });
     bool is_hovered = ImGui::IsItemHovered(ImGuiHoveredFlags_RectOnly);
 
     ImGui::SetItemAllowOverlap();
@@ -773,14 +875,12 @@ static bool draw_assignee(Assignee* assignee, float avatar_side_px) {
     return is_unassign_clicked;
 }
 
-static bool draw_assignee_with_name(Assignee* assignee, float avatar_side_px, float spacing) {
-    ImVec2 top_left = ImGui::GetCursorScreenPos();
-
-    float total_width = avatar_side_px + spacing + assignee->name_width;
+static bool draw_assignee_with_name(ImVec2 top_left, Assignee* assignee, float avatar_side_px, float margin_left, float& out_width) {
+    float total_width = avatar_side_px + margin_left + assignee->name_width;
 
     ImGui::PushID(assignee->user);
 
-    ImGui::InvisibleButton("assignee", { total_width, avatar_side_px });
+    button("assignee", top_left, { total_width, avatar_side_px });
     bool is_hovered = ImGui::IsItemHovered(ImGuiHoveredFlags_RectOnly);
 
     ImGui::SetItemAllowOverlap();
@@ -789,17 +889,32 @@ static bool draw_assignee_with_name(Assignee* assignee, float avatar_side_px, fl
 
     ImVec2 bottom_right = top_left + ImVec2(total_width, avatar_side_px);
     ImVec2 text_top_left = top_left + ImVec2(
-            avatar_side_px + spacing,
+            avatar_side_px + margin_left,
             avatar_side_px / 2.0f - ImGui::GetFontSize() / 2.0f
     );
 
     if (is_hovered) {
-        draw_list->AddRectFilled(top_left, bottom_right, 0x11000000, 8.0f * platform_get_pixel_ratio());
+        float capsule_radius = avatar_side_px / 2.0f;
+        ImVec2 capsule_left_center = top_left + ImVec2(capsule_radius, capsule_radius);
+        ImVec2 capsule_right_center = bottom_right - ImVec2(capsule_radius, capsule_radius);
+
+        /*
+         * PI/2  ->  PI/2
+         *   --------
+         *  (lc    rc)
+         *   --------
+         * 3PI/2 <- -PI/2 because of the nature of PathArcTo
+         */
+
+        draw_list->PathClear();
+        draw_list->PathArcTo(capsule_left_center,  capsule_radius, IM_PI * 3.0f / 2.0f, IM_PI / 2.0f, 64);
+        draw_list->PathArcTo(capsule_right_center, capsule_radius, IM_PI / 2.0f,       -IM_PI / 2.0f, 64);
+        draw_list->PathFillConvex(0x11000000);
     }
 
     draw_circular_user_avatar(draw_list, assignee->user, top_left, avatar_side_px);
 
-    draw_list->AddText(text_top_left, 0xff000000, assignee->name.start, assignee->name.start + assignee->name.length);
+    draw_list->AddText(text_top_left, color_black_text_on_white, assignee->name.start, assignee->name.start + assignee->name.length);
 
     bool is_unassign_clicked = false;
 
@@ -815,10 +930,46 @@ static bool draw_assignee_with_name(Assignee* assignee, float avatar_side_px, fl
 
     ImGui::PopID();
 
+    out_width = total_width;
+
     return is_unassign_clicked;
 }
 
-static void draw_assignees(float wrap_pos) {
+static bool draw_more_assignees_button(ImVec2 top_left, u32 how_many, float side_px) {
+    ImDrawList* draw_list = ImGui::GetWindowDrawList();
+
+    const u32 color = 0xfff5f5f5;
+
+    char* text_start = NULL;
+    char* text_end = NULL;
+
+    tprintf("+%i", &text_start, &text_end, how_many);
+
+    ImGui::PushFont(font_large);
+    ImVec2 text_size = ImGui::CalcTextSize(text_start, text_end);
+    ImVec2 button_size{ side_px, side_px };
+
+    Button_State state = button("show_more_assignees", top_left, button_size);
+
+    if (state.clipped) {
+        ImGui::PopFont();
+
+        return state.pressed;
+    }
+
+    draw_list->AddCircleFilled(top_left + ImVec2(side_px, side_px) / 2.0f, side_px / 2.0f, color);
+    draw_list->AddText(top_left + button_size / 2.0f - text_size / 2.0f, 0xe6000000, text_start, text_end);
+
+    if (state.hovered) {
+        draw_list->AddCircle(top_left + ImVec2(side_px, side_px) / 2.0f, side_px / 2.0f, color_link);
+    }
+
+    ImGui::PopFont();
+
+    return state.pressed;
+}
+
+static void draw_assignees(Horizontal_Layout& layout, float wrap_pos) {
     static User_Id assignee_to_remove_next_frame = 0;
 
     const float avatar_side_px = assignee_avatar_side * platform_get_pixel_ratio();
@@ -848,8 +999,9 @@ static void draw_assignees(float wrap_pos) {
 
     u32 name_plus_avatar_assignees = 0;
 
-    float margin = ImGui::GetStyle().FramePadding.x * 2.0f;
-    float add_assignee_button_width = avatar_side_px + margin;
+    float name_margin_left = 8.0f * layout.scale;
+    float element_margin_left = 12.0f * layout.scale;
+    float add_assignee_button_width = avatar_side_px + name_margin_left;
 
     name_plus_avatar_total_width += add_assignee_button_width;
 
@@ -868,12 +1020,12 @@ static void draw_assignees(float wrap_pos) {
 
         sprintf(new_assignee.name.start, "%.*s %.1s.", user->first_name.length, user->first_name.start, user->last_name.start);
 
-        new_assignee.name_width = ImGui::CalcTextSize(new_assignee.name.start, new_assignee.name.start + new_assignee.name.length, false).x + margin;
+        new_assignee.name_width = ImGui::CalcTextSize(new_assignee.name.start, new_assignee.name.start + new_assignee.name.length, false).x + name_margin_left;
 
         assignees.data[assignees.length++] = new_assignee;
 
         if (index < assignees_to_consider_for_name_plus_avatar_display) {
-            name_plus_avatar_total_width += new_assignee.name_width + margin + avatar_side_px + margin;
+            name_plus_avatar_total_width += avatar_side_px + name_margin_left + new_assignee.name_width + element_margin_left;
             name_plus_avatar_assignees++;
         }
     }
@@ -882,16 +1034,16 @@ static void draw_assignees(float wrap_pos) {
 
     // Then add a +X avatar-sized circle where X is remaining
     if (remaining_after_name_plus_avatar_display) {
-        name_plus_avatar_total_width += avatar_side_px + margin;
+        name_plus_avatar_total_width += avatar_side_px + name_margin_left;
     }
 
-    float window_start_x = ImGui::GetCursorPosX();
+    float window_start_x = layout.cursor.x;
 
     if (window_start_x + name_plus_avatar_total_width > wrap_pos) {
         // If we don't fit then render everyone who fits as avatars
         float available_space = MAX(0, wrap_pos - window_start_x - add_assignee_button_width);
 
-        u32 can_fit_avatars = MAX(1, (u32) floorf(available_space / (avatar_side_px + margin)));
+        u32 can_fit_avatars = MAX(1, (u32) floorf(available_space / (avatar_side_px + element_margin_left)));
         u32 fits_avatars = MIN(can_fit_avatars, assignees.length);
 
         if (available_space < 0) {
@@ -899,87 +1051,90 @@ static void draw_assignees(float wrap_pos) {
         }
 
         for (u32 assignee_index = 0; assignee_index < fits_avatars; assignee_index++) {
+            layout_advance(layout, element_margin_left);
+
             bool is_last = assignee_index == (fits_avatars - 1);
             Assignee* assignee = &assignees[assignee_index];
-            ImVec2 avatar_size = { avatar_side_px, avatar_side_px };
+            ImVec2 assignee_element_top_left = layout_center_vertically(layout, avatar_side_px);
 
             if (!is_last) {
-                if (draw_assignee(assignee, avatar_side_px)) {
+                if (draw_assignee(assignee_element_top_left, assignee, avatar_side_px)) {
                     assignee_to_remove_next_frame = assignee->user->id;
                     remove_assignee_from_task(current_task.id, assignee->user->id);
                 }
-
-                ImGui::SameLine();
             } else {
                 u32 remaining_after_avatars = assignees.length - fits_avatars;
 
                 if (!remaining_after_avatars) {
-                    if (draw_assignee(assignee, avatar_side_px)) {
+                    if (draw_assignee(assignee_element_top_left, assignee, avatar_side_px)) {
                         assignee_to_remove_next_frame = assignee->user->id;
                         remove_assignee_from_task(current_task.id, assignee->user->id);
                     }
                 } else {
-                    // TODO poor results with more than 9 additional assignees
-                    const char ascii_numbers_start = 48;
-                    char text[3]{'+', (s8) (ascii_numbers_start + remaining_after_avatars + 1), '\0'};
-
-                    ImGui::Button(text, avatar_size);
+                    draw_more_assignees_button(assignee_element_top_left, remaining_after_avatars + 1, avatar_side_px);
                 }
             }
+
+            layout_advance(layout, avatar_side_px);
         }
     } else {
         for (u32 assignee_index = 0; assignee_index < name_plus_avatar_assignees; assignee_index++) {
+            layout_advance(layout, element_margin_left);
+
             Assignee* assignee = &assignees[assignee_index];
 
-            if (draw_assignee_with_name(assignee, avatar_side_px, margin)) {
+            float assignee_with_name_width = 0.0f;
+            ImVec2 assignee_element_top_left = layout_center_vertically(layout, avatar_side_px);
+
+            if (draw_assignee_with_name(assignee_element_top_left, assignee, avatar_side_px, name_margin_left, assignee_with_name_width)) {
                 assignee_to_remove_next_frame = assignee->user->id;
                 remove_assignee_from_task(current_task.id, assignee->user->id);
             }
 
-            ImGui::SameLine();
+            layout_advance(layout, assignee_with_name_width);
         }
 
         if (remaining_after_name_plus_avatar_display) {
-            // TODO poor results with more than 9 additional assignees
-            char text[3] { '+', (s8) (48 + remaining_after_name_plus_avatar_display), '\0' };
+            layout_advance(layout, element_margin_left);
 
-            ImGui::Button(text, { avatar_side_px, avatar_side_px });
-        } else {
-            ImGui::NewLine();
+            ImVec2 more_button_top_left = layout_center_vertically(layout, avatar_side_px);
+
+            draw_more_assignees_button(more_button_top_left, remaining_after_name_plus_avatar_display, avatar_side_px);
+
+            layout_advance(layout, avatar_side_px);
         }
     }
 }
 
-static float draw_authors_and_task_id_and_return_new_wrap_pos(float wrap_pos) {
+static float draw_authors_and_task_id_and_return_new_wrap_width(Horizontal_Layout& layout, float wrap_width) {
     User_Id author_id = current_task.authors[0]; // TODO currently only using the first
     User* author = find_user_by_id(author_id);
 
-    if (author) {
-        ImGui::SameLine();
-
-        float right_border_x_absolute = ImGui::GetWindowPos().x + wrap_pos;
-        ImVec2 cursor = ImGui::GetCursorScreenPos();
-
-        static const u32 color_id_and_author = argb_to_agbr(0xff8c8c8c);
-
-        char* buffer = (char*) talloc(256);
-        sprintf(buffer, "#%i by %.*s %.1s",
-                current_task.id,
-                author->first_name.length, author->first_name.start,
-                author->last_name.start);
-
-        u32 length = (u32) strlen(buffer);
-
-        float text_width = ImGui::CalcTextSize(buffer, buffer + length, false).x;
-        float left_border_x = right_border_x_absolute - text_width;
-
-        ImGui::GetWindowDrawList()->AddText({ left_border_x, cursor.y }, color_id_and_author, buffer, buffer + length);
-        ImGui::NewLine();
-
-        return wrap_pos - text_width;
+    if (!author) {
+        return wrap_width;
     }
 
-    return wrap_pos;
+    static const u32 color_id_and_author = argb_to_agbr(0xff8c8c8c);
+
+    char* start = NULL, *end = NULL;
+
+    tprintf("#%i by %.*s %.1s", &start, &end,
+            current_task.id,
+            author->first_name.length, author->first_name.start,
+            author->last_name.start);
+
+    ImVec2 text_size = ImGui::CalcTextSize(start, end, false);
+
+    float right_margin = 8.0f * layout.scale;
+    float right_border_x_absolute = layout.top_left.x + wrap_width;
+    float left_border_x = right_border_x_absolute - text_size.x - right_margin;
+    float centered_y = layout_center_vertically(layout, text_size.y).y;
+
+    ImVec2 text_top_left{ left_border_x, centered_y };
+
+    ImGui::GetWindowDrawList()->AddText(text_top_left, color_id_and_author, start, end);
+
+    return wrap_width - text_size.x - right_margin;
 }
 
 // TODO a naive and slow approach, could cache
@@ -1004,19 +1159,15 @@ static const char* get_custom_field_placeholder_text_by_custom_field_type(Custom
     }
 }
 
-static bool draw_custom_fields(float wrap_pos) {
+static float draw_custom_fields(ImVec2 top_left, float wrap_width) {
     static const u32 key_value_text_color = argb_to_agbr(0xff111111);
     static const u32 placeholder_text_color = argb_to_agbr(0xffaeaeae);
     static const u32 border_color = argb_to_agbr(0xffeeeeee);
     static const u32 background_color = argb_to_agbr(0xfffafafa);
 
-    bool drew_at_least_one_custom_field = false;
-
     ImGui::PushFont(font_bold);
-    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2());
 
-    ImVec2 top_left_corner = ImGui::GetCursorScreenPos();
-    float previous_line_end_x = top_left_corner.x;
+    float previous_line_end_x = top_left.x;
 
     ImDrawList* draw_list = ImGui::GetWindowDrawList();
 
@@ -1030,6 +1181,14 @@ static bool draw_custom_fields(float wrap_pos) {
     draw_list->PrimReserve(6, 4);
     draw_list->PrimRect({0,0}, {0,0}, 0);
 
+    float scale = platform_get_pixel_ratio();
+    const ImVec2 padding = ImVec2(27.0f, 5.0f) * scale;
+    const ImVec2 text_margin_right = ImVec2(9.0f, 0.0f) * scale;
+
+    float row_height = ImGui::GetFontSize() + padding.y * 2.0f;
+
+    Wrapping_Horizontal_Layout layout = wrapping_horizontal_layout(top_left, row_height, wrap_width);
+
     for (u32 field_index = 0; field_index < current_task.inherited_custom_fields.length; field_index++) {
         Custom_Field_Id custom_field_id = current_task.inherited_custom_fields[field_index];
         Custom_Field* custom_field = find_custom_field_by_id(custom_field_id);
@@ -1038,21 +1197,13 @@ static bool draw_custom_fields(float wrap_pos) {
             continue;
         }
 
-        drew_at_least_one_custom_field = true;
-
         Custom_Field_Value* possible_value = find_custom_field_value_by_custom_field_id(custom_field_id);
 
         const char* key_text_begin = custom_field->title.start;
         const char* key_text_end = key_text_begin + custom_field->title.length;
 
-        ImVec2 cursor = ImGui::GetCursorPos();
         ImVec2 key_text_size = ImGui::CalcTextSize(key_text_begin, key_text_end, false);
-
-        const float scale = platform_get_pixel_ratio();
-        const ImVec2 padding = ImVec2(27.0f, 5.0f) * scale;
-        const ImVec2 text_margin_right = ImVec2(9.0f, 0.0f) * scale;
-
-        ImVec2 value_size = ImVec2(100.0f * scale, key_text_size.y + padding.y * 2);
+        ImVec2 value_size = ImVec2(100.0f * layout.scale, key_text_size.y + padding.y * 2);
 
         String value_text;
 
@@ -1067,25 +1218,27 @@ static bool draw_custom_fields(float wrap_pos) {
 
         ImVec2 box_size = key_text_size + padding * 2 + text_margin_right + ImVec2(value_size.x, 0.0f);
 
-        if (cursor.x + box_size.x > wrap_pos && field_index > 0) {
-            ImVec2 cursor_screen = ImGui::GetCursorScreenPos();
-            ImVec2 row_line_start = ImVec2(top_left_corner.x, cursor_screen.y + box_size.y);
-            ImVec2 row_line_end = cursor_screen + ImVec2(0, box_size.y);
+        if (layout_check_wrap(layout, box_size)) {
+            ImVec2 pre_wrap_cursor = layout.cursor;
+
+            ImVec2 row_line_start = ImVec2(layout.top_left.x, pre_wrap_cursor.y + box_size.y);
+            ImVec2 row_line_end = pre_wrap_cursor + ImVec2(0, box_size.y);
+            ImVec2 previous_line_part_start = ImVec2(previous_line_end_x, pre_wrap_cursor.y);
 
             draw_list->AddLine(row_line_start, row_line_end, border_color);
-
-            ImVec2 previous_line_part_start = ImVec2(previous_line_end_x, cursor_screen.y);
-
-            draw_list->AddLine(previous_line_part_start, cursor_screen, border_color);
+            draw_list->AddLine(previous_line_part_start, pre_wrap_cursor, border_color);
 
             previous_line_end_x = row_line_end.x;
 
-            ImGui::NewLine();
+            layout_wrap(layout);
         }
 
-        ImVec2 screen_start = ImGui::GetCursorScreenPos();
-        ImVec2 separator_top = screen_start + padding + text_margin_right + ImVec2(key_text_size.x, 0);
-        ImVec2 separator_bot = screen_start + padding + text_margin_right + key_text_size;
+        ImVec2 cursor_screen = layout.cursor;
+
+        layout.has_drawn_at_least_one_element = true;
+
+        ImVec2 separator_top = cursor_screen + padding + text_margin_right + ImVec2(key_text_size.x, 0);
+        ImVec2 separator_bot = cursor_screen + padding + text_margin_right + key_text_size;
         ImVec2 value_text_start = separator_top + text_margin_right;
 
         const char* value_text_begin = value_text.start;
@@ -1093,24 +1246,25 @@ static bool draw_custom_fields(float wrap_pos) {
 
         const u32 value_color = possible_value ? key_value_text_color : placeholder_text_color;
 
-        draw_list->AddText(screen_start + padding, key_value_text_color, key_text_begin, key_text_end);
+        draw_list->AddText(cursor_screen + padding, key_value_text_color, key_text_begin, key_text_end);
         draw_list->AddLine(separator_top, separator_bot, border_color);
-        draw_list->AddLine(screen_start + ImVec2(box_size.x, 0), screen_start + box_size, border_color);
+        draw_list->AddLine(cursor_screen + ImVec2(box_size.x, 0), cursor_screen + box_size, border_color);
         draw_list->AddText(font_regular, font_regular->FontSize, value_text_start, value_color, value_text_begin, value_text_end);
 
-        ImGui::Dummy(box_size);
-        ImGui::SameLine();
+        layout_advance(layout, box_size.x);
     }
 
-    if (drew_at_least_one_custom_field) {
-        ImGui::NewLine();
+    float bottom_y = layout.cursor.y;
+
+    if (layout.has_drawn_at_least_one_element) {
+        bottom_y += layout.row_height;
     }
 
     // Fill background
     {
         ImVec2 bottom_right_corner = ImVec2(
-                ImGui::GetWindowPos().x + ImGui::GetWindowContentRegionWidth(),
-                ImGui::GetCursorScreenPos().y
+                layout.top_left.x + ImGui::GetWindowContentRegionWidth(),
+                bottom_y
         );
 
         // Here we keep raw pointers instead of sizes because a resize won't occur without PrimReserve
@@ -1122,22 +1276,27 @@ static bool draw_custom_fields(float wrap_pos) {
         draw_list->_IdxWritePtr = draw_list->IdxBuffer.Data + idx_buffer_old_size;
         draw_list->_VtxCurrentIdx = vtx_background_idx;
 
-        draw_list->PrimRect(top_left_corner, bottom_right_corner, background_color);
+        draw_list->PrimRect(layout.top_left, bottom_right_corner, background_color);
 
         draw_list->_VtxWritePtr = current_vtx_write;
         draw_list->_IdxWritePtr = current_idx_write;
         draw_list->_VtxCurrentIdx = current_vtx_current_idx;
     }
 
-    ImGui::PopStyleVar();
     ImGui::PopFont();
 
-    return drew_at_least_one_custom_field;
+    return bottom_y - layout.top_left.y;
 }
 
-static void draw_task_description(float wrap_width) {
+static float draw_task_description(ImVec2 top_left, float wrap_width) {
     Rich_Text_String* text_start = current_task.description;
     Rich_Text_String* text_end = text_start + current_task.description_strings - 1;
+
+    ImVec2 cursor = top_left;
+
+    float scale = platform_get_pixel_ratio();
+
+    ImDrawList* draw_list = ImGui::GetWindowDrawList();
 
     for (Rich_Text_String* paragraph_end = text_start, *paragraph_start = paragraph_end; paragraph_end <= text_end; paragraph_end++) {
         bool is_newline = paragraph_end->text.length == 0;
@@ -1147,7 +1306,9 @@ static void draw_task_description(float wrap_width) {
         char* string_end = paragraph_end->text.start + paragraph_end->text.length;
 
         if (is_newline && (string_end - string_start) == 0) {
-            ImGui::NewLine();
+            cursor.x = top_left.x;
+            cursor.y += 24.0f * scale;
+
             paragraph_start = paragraph_end + 1;
             continue;
         }
@@ -1168,30 +1329,110 @@ static void draw_task_description(float wrap_width) {
                 }
 #endif
 
-            float indent = paragraph_start->style.list_depth * 15.0f;
+            float indent = paragraph_start->style.list_depth * 20.0f;
 
             if (indent) {
-                ImGui::Indent(indent);
-                ImGui::Bullet();
-                ImGui::SameLine();
+                cursor.x += indent * scale;
             }
 
-            add_rich_text(
-                    ImGui::GetWindowDrawList(),
-                    ImGui::GetCursorScreenPos(),
+            float text_height = add_rich_text(
+                    draw_list,
+                    cursor,
                     paragraph_start,
                     paragraph_end,
                     wrap_width,
                     1.0f
             );
 
-            if (indent) {
-                ImGui::Unindent(indent);
-            }
+            cursor.x = top_left.x;
+            cursor.y += text_height;
 
             paragraph_start = paragraph_end + 1;
         }
     }
+
+    return cursor.y - top_left.y;
+}
+
+static void draw_default_status_picker(ImVec2 top_left, float& out_width) {
+    static const u32 active_status_color = argb_to_agbr(0xFF2196F3);
+    static const char* active_status_name = "Active";
+
+    String name{};
+    name.start = (char*) active_status_name;
+    name.length = (u32) strlen(active_status_name);
+
+    draw_status_picker(top_left, active_status_color, name, false, out_width);
+}
+
+static void draw_task_header(float wrap_width) {
+    float scale = platform_get_pixel_ratio();
+    ImDrawList* draw_list = ImGui::GetWindowDrawList();
+
+    ImVec2 top_left = ImGui::GetCursorScreenPos();
+    ImVec2 padding = ImVec2(24, 12) * scale;
+
+    float padded_x = top_left.x + padding.x;
+    float cursor_row_y = top_left.y + padding.y;
+
+    {
+        ImGui::PushFont(font_header);
+
+        String title = current_task.title;
+
+        ImVec2 title_top_left = ImVec2(padded_x, cursor_row_y);
+        ImVec2 title_size = ImGui::CalcTextSize(title.start, title.start + title.length, false, wrap_width);
+
+        draw_list->AddText(NULL, 0, title_top_left, color_black_text_on_white, title.start, title.start + title.length, wrap_width);
+
+        ImGui::PopFont();
+
+        cursor_row_y += title_size.y;
+    }
+
+    cursor_row_y += 8.0f * scale;
+
+    {
+        ImVec2 parent_folders_top_left = ImVec2(padded_x, cursor_row_y);
+
+        float parent_folders_height = draw_parent_folders(parent_folders_top_left, wrap_width);
+
+        cursor_row_y += parent_folders_height;
+    }
+
+    cursor_row_y += padding.y;
+
+    ImGui::Dummy(ImVec2(0, cursor_row_y - top_left.y));
+}
+
+static void draw_status_and_assignees_row(ImVec2 top_left, float wrap_width) {
+    float row_height = status_picker_row_height * platform_get_pixel_ratio();
+
+    Horizontal_Layout layout = horizontal_layout(top_left, row_height);
+
+    Custom_Status* status = find_custom_status_by_id(current_task.status_id);
+    float picker_width = 0.0f;
+
+    if (status) {
+        bool is_completed = status->group == Status_Group_Completed;
+
+        static const ImGuiID status_picker_dropdown_id = ImGui::GetID("status_picker");
+
+        if (draw_status_picker(layout.cursor, status->color, status->name, is_completed, picker_width)) {
+            ImGui::OpenPopupEx(status_picker_dropdown_id);
+        }
+
+        draw_status_picker_dropdown_if_open(layout.cursor + ImVec2(0, row_height), status_picker_dropdown_id, status);
+    } else {
+        draw_default_status_picker(layout.cursor, picker_width);
+    }
+
+    layout_advance(layout, picker_width);
+
+    wrap_width = draw_authors_and_task_id_and_return_new_wrap_width(layout, wrap_width);
+
+    draw_assignees(layout, layout.top_left.x + wrap_width);
+    draw_add_assignee_button_and_contact_picker(layout);
 }
 
 void draw_task_contents() {
@@ -1200,80 +1441,78 @@ void draw_task_contents() {
         load_png_from_disk("resources/checkmark_task_complete.png", checkmark);
     }
 
-    float wrap_width = ImGui::GetContentRegionAvailWidth() - 50.0f * platform_get_pixel_ratio(); // Accommodate for scroll bar
+    float header_wrap_width = ImGui::GetContentRegionAvailWidth() - 50.0f * platform_get_pixel_ratio(); // Accommodate for scroll bar
 
     ImGuiID task_content_id = ImGui::GetID("task_content");
     ImGui::BeginChildFrame(task_content_id, ImVec2(-1, -1), ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
-    float wrap_pos = ImGui::GetCursorPosX() + wrap_width;
-    ImGui::PushTextWrapPos(wrap_pos);
-    ImGui::PushFont(font_header);
-    ImGui::TextColored({ 0, 0, 0, 255 }, "%.*s", current_task.title.length, current_task.title.start);
-    ImGui::PopFont();
-    ImGui::PopTextWrapPos();
-
-    draw_parent_folders(wrap_pos);
-
-    ImGui::Separator();
+    draw_task_header(header_wrap_width);
 
     ImGui::BeginChild("task_contents", ImVec2(-1, -1));
 
-    {
-        Custom_Status* status = find_custom_status_by_id(current_task.status_id);
+    float content_wrap_width = ImGui::GetContentRegionAvailWidth();
 
-        if (status) {
-            static const ImGuiID status_picker_dropdown_id = ImGui::GetID("status_picker");
+    ImVec2 top_left = ImGui::GetCursorScreenPos();
+    ImDrawList* draw_list = ImGui::GetWindowDrawList();
 
-            if (draw_status_picker(status->color, status->name, status->group == Status_Group_Completed)) {
-                ImGui::OpenPopupEx(status_picker_dropdown_id);
-            }
+    float scale = platform_get_pixel_ratio();
+    float cursor_y = top_left.y;
+    float full_width = ImGui::GetContentRegionAvailWidth();
+    float leftmost_x = top_left.x;
 
-            draw_status_picker_dropdown_if_open(status_picker_dropdown_id, status);
-        } else {
-            static const u32 active_status_color = argb_to_agbr(0xFF2196F3);
-            static const char* active_status_name = "Active";
+    ImVec2 status_picker_top_left = ImVec2(leftmost_x, cursor_y);
 
-            String name{};
-            name.start = (char*) active_status_name;
-            name.length = (u32) strlen(active_status_name);
+    draw_status_and_assignees_row(status_picker_top_left, content_wrap_width);
 
-            draw_status_picker(active_status_color, name, false);
-        }
+    ImVec2 pre_status_separator_left = ImVec2(leftmost_x, cursor_y);
+    ImVec2 pre_status_separator_right = pre_status_separator_left + ImVec2(full_width, 0);
 
-        float header_wrap_pos = wrap_pos;
+    ImVec2 post_status_separator_left = ImVec2(leftmost_x, cursor_y) + ImVec2(0, status_picker_row_height) * scale;
+    ImVec2 post_status_separator_right = post_status_separator_left + ImVec2(full_width, 0);
 
-        if (current_task.authors.length) {
-            header_wrap_pos = draw_authors_and_task_id_and_return_new_wrap_pos(wrap_pos);
-        }
-
-        if (current_task.assignees.length) {
-            ImGui::SameLine();
-
-            draw_assignees(header_wrap_pos);
-        }
-
-        ImGui::SameLine();
-
-        draw_add_assignee_button_and_contact_picker();
-    }
-
-    ImGui::Separator();
-
-    if (ImGui::Button("Open in Wrike")) {
-        platform_open_in_wrike(current_task.permalink);
-    }
-
-    ImGui::Separator();
+    cursor_y += status_picker_row_height * scale;
 
     if (current_task.inherited_custom_fields.length) {
-        if (draw_custom_fields(wrap_pos)) {
-            ImGui::Separator();
-        }
+        ImVec2 custom_fields_top_left(leftmost_x, cursor_y);
+
+        float custom_fields_total_height = draw_custom_fields(custom_fields_top_left, content_wrap_width);
+
+        cursor_y += custom_fields_total_height;
     }
 
+    ImVec2 post_custom_fields_left = ImVec2(leftmost_x, cursor_y);
+    ImVec2 post_custom_fields_right = post_custom_fields_left + ImVec2(full_width, 0);
+
+    const u32 separator_color = 0xffd6d6d6;
+
+    draw_list->AddLine(pre_status_separator_left, pre_status_separator_right, separator_color);
+    draw_list->AddLine(post_status_separator_left, post_status_separator_right, separator_color);
+    draw_list->AddLine(post_custom_fields_left, post_custom_fields_right, separator_color);
+
+    cursor_y += 48.0f * scale;
+
     if (current_task.description_strings > 0) {
-        draw_task_description(wrap_width);
+        float text_padding_x = 32.0f * scale;
+
+        ImVec2 description_top_left(top_left.x + text_padding_x, cursor_y);
+
+        cursor_y += draw_task_description(description_top_left, content_wrap_width - text_padding_x * 2.0f);
+        cursor_y += 8.0f * scale;
     }
+
+    bool should_draw_shadow = ImGui::GetScrollY() > 0.01f;
+
+    if (should_draw_shadow) {
+        ImVec2 shadow_top_left = top_left + ImVec2(0, ImGui::GetScrollY());
+        ImVec2 shadow_bottom_right = shadow_top_left + ImVec2(full_width, 4.0f * scale);
+
+        const u32 shadow_start = 0x33000000;
+        const u32 shadow_end = 0x00000000;
+
+        draw_list->AddRectFilledMultiColor(shadow_top_left, shadow_bottom_right, shadow_start, shadow_start, shadow_end, shadow_end);
+    }
+
+    ImGui::Dummy({ 0, cursor_y - top_left.y });
 
     ImGui::EndChild();
 
