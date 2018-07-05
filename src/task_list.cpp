@@ -592,7 +592,7 @@ void draw_folder_header(Table_Paint_Context& context, float content_width) {
 
     ImGui::Dummy({ 0, folder_header_height + toolbar_height});
 
-    ImGui::PushFont(font_header);
+    ImGui::PushFont(font_28px);
 
     ImVec2 folder_header_padding = ImVec2(32.0f, folder_header_height / 2.0f - ImGui::GetFontSize() / 2.0f);
 
@@ -704,7 +704,7 @@ void draw_task_list() {
         draw_folder_header(paint_context, ImGui::GetWindowWidth());
 
         ImGui::BeginChild("table_content", ImVec2(-1, -1), false, ImGuiWindowFlags_HorizontalScrollbar);
-        ImGui::PushFont(font_large);
+        ImGui::PushFont(font_19px);
 
         ImDrawList* draw_list = ImGui::GetWindowDrawList();
 

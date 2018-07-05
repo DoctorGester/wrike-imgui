@@ -123,7 +123,7 @@ static void draw_profile_widget(User* user, float header_height) {
 
     ImDrawList* draw_list = ImGui::GetWindowDrawList();
 
-    ImGui::PushFont(font_large);
+    ImGui::PushFont(font_19px);
 
     String name = user->first_name;
     ImVec2 name_size = ImGui::CalcTextSize(name.start, name.start + name.length);
@@ -182,7 +182,7 @@ void draw_header(bool draw_side_menu_this_frame, bool& draw_side_menu, float fol
     ImVec2 header_menu_cursor = ImVec2(new_entity_button_top_left.x + new_entity_button_size.x + 8.0f * scale, 0);
     ImVec2 out_size{};
 
-    ImGui::PushFont(font_large);
+    ImGui::PushFont(font_19px);
 
     draw_header_button("Inbox", header_menu_cursor, header_height, out_size); header_menu_cursor.x += out_size.x;
     draw_header_button("My Work", header_menu_cursor, header_height, out_size); header_menu_cursor.x += out_size.x;

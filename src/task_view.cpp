@@ -699,7 +699,7 @@ static bool draw_add_assignee_button(ImVec2 top_left, float button_side_px) {
     const char* label_start = "Add assignee";
     const char* label_end = label_start + strlen(label_start);
 
-    ImGui::PushFont(font_large);
+    ImGui::PushFont(font_19px);
 
     if (no_assignees) {
         text_size = ImGui::CalcTextSize(label_start, label_end);
@@ -945,7 +945,7 @@ static bool draw_more_assignees_button(ImVec2 top_left, u32 how_many, float side
 
     tprintf("+%i", &text_start, &text_end, how_many);
 
-    ImGui::PushFont(font_large);
+    ImGui::PushFont(font_19px);
     ImVec2 text_size = ImGui::CalcTextSize(text_start, text_end);
     ImVec2 button_size{ side_px, side_px };
 
@@ -1376,7 +1376,7 @@ static void draw_task_header(float wrap_width) {
     float cursor_row_y = top_left.y + padding.y;
 
     {
-        ImGui::PushFont(font_header);
+        ImGui::PushFont(font_28px);
 
         String title = current_task.title;
 
