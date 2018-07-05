@@ -12,6 +12,8 @@
 #define GL_VERTEX_ARRAY_BINDING GL_VERTEX_ARRAY_BINDING_OES
 #else
 #include <SDL2/SDL_opengl.h>
+#include <imgui_internal.h>
+
 #endif
 
 #include "common.h"
@@ -36,7 +38,6 @@ static s32 attribute_uv;
 
 ImFont* font_regular;
 ImFont* font_28px;
-ImFont* font_21px;
 ImFont* font_19px;
 ImFont* font_bold;
 ImFont* font_italic;
@@ -146,16 +147,21 @@ static void renderer_init_font() {
     font_config.OversampleH = 3;
     font_config.OversampleV = 1;
 
+    size_t file_size = 0;
+    void* sans_regular = ImFileLoadToMemory("resources/OpenSans-Regular.ttf", "r", &file_size);
+
+    assert(sans_regular);
+
+#define LOAD_SANS(size) io.Fonts->AddFontFromMemoryTTF(sans_regular, file_size, (size) * scale, &font_config, io.Fonts->GetGlyphRangesCyrillic())
 #define LOAD_FONT(name, size) io.Fonts->AddFontFromFileTTF((name), (size) * scale, &font_config, io.Fonts->GetGlyphRangesCyrillic())
 
     const float default_font_size = 16.0f;
 
     // font_regular should be loaded first, so it becomes a default font
-    font_regular = LOAD_FONT("resources/OpenSans-Regular.ttf", default_font_size);
+    font_regular = LOAD_SANS(default_font_size);
 
-    font_28px = LOAD_FONT("resources/OpenSans-Regular.ttf", 28.0f);
-    font_21px = LOAD_FONT("resources/OpenSans-Regular.ttf", 21.0f);
-    font_19px = LOAD_FONT("resources/OpenSans-Regular.ttf", 19.0f);
+    font_28px = LOAD_SANS(28.0f);
+    font_19px = LOAD_SANS(19.0f);
     font_bold = LOAD_FONT("resources/OpenSans-Bold.ttf", default_font_size);
     font_italic = LOAD_FONT("resources/OpenSans-Italic.ttf", default_font_size);
     font_bold_italic = LOAD_FONT("resources/OpenSans-BoldItalic.ttf", default_font_size);
@@ -163,6 +169,9 @@ static void renderer_init_font() {
     io.Fonts->GetTexDataAsRGBA32(&pixels, &width, &height);
     //io.FontGlobalScale = 1.0f / scale;
 
+    ImGui::MemFree(sans_regular);
+
+#undef LOAD_SANS
 #undef LOAD_FONT
 
     GLint last_texture;

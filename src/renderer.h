@@ -8,7 +8,6 @@ void renderer_init(const char* vertex_shader_source, const char* fragment_shader
 
 extern ImFont* font_regular;
 extern ImFont* font_28px;
-extern ImFont* font_21px;
 extern ImFont* font_19px;
 extern ImFont* font_bold;
 extern ImFont* font_italic;
