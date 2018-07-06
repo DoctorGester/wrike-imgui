@@ -790,6 +790,7 @@ void draw_task_list() {
 
         u32
                 loading_end_time = MAX(finished_loading_folder_contents_at, finished_loading_statuses_at);
+                loading_end_time = MAX(finished_loading_folder_header_at, loading_end_time);
                 loading_end_time = MAX(finished_loading_users_at, loading_end_time);
                 loading_end_time = MAX(finished_loading_statuses_at, loading_end_time);
 
