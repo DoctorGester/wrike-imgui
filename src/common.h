@@ -146,6 +146,7 @@ inline void fill_id16(const u8 type1, s32 id1, const u8 type2, s32 id2, u8* outp
 }
 
 PRINTLIKE(1, 4) void tprintf(const char* format, char** start, char** end, ...);
+PRINTLIKE(1, 2) String tprintf(const char* format, ...);
 
 inline char* string_to_temporary_null_terminated_string(String string) {
     void* talloc(u32);

@@ -142,14 +142,7 @@ static void select_account() {
     selected_account_id = accounts[0].id;
 
     {
-        char* text_start;
-        char* text_end;
-
-        tprintf("%i", &text_start, &text_end, selected_account_id);
-
-        String account_id_string;
-        account_id_string.start = text_start;
-        account_id_string.length = (u32) (text_end - text_start);
+        String account_id_string = tprintf("%i", selected_account_id);
 
         platform_local_storage_set("selected_account", account_id_string);
     }

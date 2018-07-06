@@ -287,6 +287,30 @@ char* string_in_substring(const s8* big, const s8* small, size_t slen) {
     return ((char*) big);
 }
 
+PRINTLIKE(1, 2) String tprintf(const char* format, ...) {
+    va_list args;
+    va_start(args, format);
+
+    va_list args_copy;
+    va_copy(args_copy, args);
+
+    String result{};
+
+    result.length = (u32) vsnprintf(NULL, 0, format, args_copy);
+
+    va_end(args_copy);
+
+    assert(length >= 0);
+
+    result.start = (char*) talloc((u32) result.length + 1);
+
+    vsnprintf(result.start, result.length + 1, format, args);
+
+    va_end(args);
+
+    return result;
+}
+
 PRINTLIKE(1, 4) void tprintf(const char* format, char** start, char** end, ...) {
     va_list args;
     va_start(args, end);
