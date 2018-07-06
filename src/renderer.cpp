@@ -1,19 +1,18 @@
 #include "renderer.h"
 #include <imgui.h>
 #include <stdio.h>
+#include <imgui_internal.h>
 
 #define GL_GLEXT_PROTOTYPES
 #if EMSCRIPTEN
-#include <GLES2/gl2.h>
-#include <GLES2/gl2ext.h>
+    #include <GLES2/gl2.h>
+    #include <GLES2/gl2ext.h>
 
-#define glBindVertexArray(x) glBindVertexArrayOES(x)
-#define glGenVertexArrays(x, y) glGenVertexArraysOES(x, y)
-#define GL_VERTEX_ARRAY_BINDING GL_VERTEX_ARRAY_BINDING_OES
+    #define glBindVertexArray(x) glBindVertexArrayOES(x)
+    #define glGenVertexArrays(x, y) glGenVertexArraysOES(x, y)
+    #define GL_VERTEX_ARRAY_BINDING GL_VERTEX_ARRAY_BINDING_OES
 #else
-#include <SDL2/SDL_opengl.h>
-#include <imgui_internal.h>
-
+    #include <SDL2/SDL_opengl.h>
 #endif
 
 #include "common.h"
