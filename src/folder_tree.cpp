@@ -35,11 +35,10 @@ static char search_buffer[128];
 
 Folder_Tree_Node* root_node = NULL;
 Folder_Tree_Node* all_nodes;
-Folder_Tree_Node** starred_nodes = NULL;
 u32 total_nodes;
-u32 total_starred = 0;
 
-List<Suggested_Folder> suggested_folders{};
+List<Folder> starred_folders{};
+List<Folder> suggested_folders{};
 List<Folder_Tree_Node*> folder_tree_search_result{};
 
 static void draw_folder_tree_node(Folder_Tree_Node* tree_node) {
@@ -62,7 +61,7 @@ static void draw_folder_tree_node(Folder_Tree_Node* tree_node) {
         ImGui::PopID();
 
         if (ImGui::IsItemClicked()) {
-            select_folder_node_and_request_contents_if_necessary(child_node);
+            select_folder_node_and_request_contents_if_necessary(child_node->id);
         }
 
         if (node_open && !leaf_node) {
@@ -142,10 +141,6 @@ void draw_folder_tree(float column_width) {
     ImGui::PushStyleColor(ImGuiCol_ScrollbarBg, color_background_dark);
     ImGui::ListBoxHeader("##folder_tree_content", ImVec2(-1, -1));
 
-    if (folder_tree_request != NO_REQUEST) {
-        draw_loading_indicator(ImGui::GetCursorScreenPos(), 0, { 24, 24 });
-    }
-
     u32 buffer_length = strlen(search_buffer);
     if (buffer_length > 0 && folder_tree_search_result.data) {
         for (Folder_Tree_Node** node_pointer = folder_tree_search_result.data; node_pointer != folder_tree_search_result.data + folder_tree_search_result.length; node_pointer++) {
@@ -154,23 +149,25 @@ void draw_folder_tree(float column_width) {
 
             ImGui::PushID(node->id);
             if (ImGui::Selectable(name)) {
-                select_folder_node_and_request_contents_if_necessary(node);
+                select_folder_node_and_request_contents_if_necessary(node->id);
             }
             ImGui::PopID();
         }
     } else {
-        if (total_starred > 0) {
-            for (u32 node_index = 0; node_index < total_starred; node_index++) {
-                Folder_Tree_Node* starred_node = starred_nodes[node_index];
+        for (Folder* it = starred_folders.data; it != starred_folders.data + starred_folders.length; it++) {
+            char* name = string_to_temporary_null_terminated_string(it->name);
 
-                char* name = string_to_temporary_null_terminated_string(starred_node->name);
-
-                if (ImGui::Selectable(name)) {
-                    select_folder_node_and_request_contents_if_necessary(starred_node);
-                }
+            if (ImGui::Selectable(name)) {
+                select_folder_node_and_request_contents_if_necessary(it->id);
             }
+        }
 
+        if (starred_folders.length > 0) {
             ImGui::Separator();
+        }
+
+        if (folder_tree_request != NO_REQUEST) {
+            draw_loading_indicator(ImGui::GetCursorScreenPos(), 0, { 24, 24 });
         }
 
         if (root_node) {
@@ -214,7 +211,6 @@ static void process_folder_tree_data_object(char* json, jsmntok_t*& token) {
 
     String scope;
     u32 num_children = 0;
-    bool is_starred = false;
 
     Folder_Tree_Node* new_node = &all_nodes[current_node++];
     new_node->name.start = NULL;
@@ -245,9 +241,6 @@ static void process_folder_tree_data_object(char* json, jsmntok_t*& token) {
             json_token_to_string(json, value_token, color);
 
             new_node->color = string_to_folder_color(color);
-        } else if (json_string_equals(json, property_token, "starred")) {
-            assert(value_token->type == JSMN_PRIMITIVE);
-            is_starred = *(json + value_token->start) == 't';
         } else if (json_string_equals(json, property_token, "childIds")) {
             assert(value_token->type == JSMN_ARRAY);
 
@@ -275,11 +268,6 @@ static void process_folder_tree_data_object(char* json, jsmntok_t*& token) {
 
     new_node->id_hash = id_hash;
     new_node->num_children = 0;
-    new_node->is_starred = is_starred;
-
-    if (is_starred) {
-        total_starred++;
-    }
 
     if (num_children > 0) {
         new_node->children = lazy_array_reserve_n_values_relative_pointer(child_nodes, num_children);
@@ -406,12 +394,10 @@ static void process_folder_tree_data(char* json, u32 data_size, jsmntok_t*& toke
     }
 }
 
-static void process_folder_contents_data_object(char* json, jsmntok_t*& token) {
+static void process_plain_folder_data_object(Folder* folder, char* json, jsmntok_t*& token) {
     jsmntok_t* object_token = token++;
 
     assert(object_token->type == JSMN_OBJECT);
-
-    Suggested_Folder* suggested_folder = &suggested_folders[suggested_folders.length++];
 
     for (u32 propety_index = 0; propety_index < object_token->size; propety_index++, token++) {
         jsmntok_t* property_token = token++;
@@ -421,15 +407,15 @@ static void process_folder_contents_data_object(char* json, jsmntok_t*& token) {
         jsmntok_t* next_token = token;
 
         if (json_string_equals(json, property_token, "title")) {
-            json_token_to_string(json, next_token, suggested_folder->name);
+            json_token_to_string(json, next_token, folder->name);
         } else if (json_string_equals(json, property_token, "id")) {
-            json_token_to_right_part_of_id16(json, next_token, suggested_folder->id);
+            json_token_to_right_part_of_id16(json, next_token, folder->id);
         } else if (json_string_equals(json, property_token, "color")) {
             String color;
 
             json_token_to_string(json, next_token, color);
 
-            suggested_folder->color = string_to_folder_color(color);
+            folder->color = string_to_folder_color(color);
         } else {
             eat_json(token);
             token--;
@@ -451,16 +437,6 @@ void process_folder_tree_request(char* json, jsmntok_t* tokens, u32 num_tokens) 
     process_json_data_segment(json, tokens, num_tokens, process_folder_tree_data);
     match_tree_parent_child_pairs();
 
-    starred_nodes = (Folder_Tree_Node**) MALLOC(sizeof(Folder_Tree_Node*) * total_starred);
-
-    for (u32 node_index = 0, starred_counter = 0; node_index < total_nodes; node_index++) {
-        Folder_Tree_Node* node = &all_nodes[node_index];
-
-        if (node->is_starred) {
-            starred_nodes[starred_counter++] = node;
-        }
-    }
-
     lazy_array_clear(parent_child_pairs);
 
     build_folder_tree_search_index();
@@ -468,13 +444,29 @@ void process_folder_tree_request(char* json, jsmntok_t* tokens, u32 num_tokens) 
 
 void process_suggested_folders_data(char* json, u32 data_size, jsmntok_t*& token) {
     if (suggested_folders.length < data_size) {
-        suggested_folders.data = (Suggested_Folder*) REALLOC(suggested_folders.data, sizeof(Suggested_Folder) * data_size);
+        suggested_folders.data = (Folder*) REALLOC(suggested_folders.data, sizeof(Folder) * data_size);
     }
 
     suggested_folders.length = 0;
 
     for (u32 array_index = 0; array_index < data_size; array_index++) {
-        process_folder_contents_data_object(json, token);
+        Folder* suggested_folder = &suggested_folders[suggested_folders.length++];
+
+        process_plain_folder_data_object(suggested_folder, json, token);
+    }
+}
+
+void process_starred_folders_data(char* json, u32 data_size, jsmntok_t*& token) {
+    if (starred_folders.length < data_size) {
+        starred_folders.data = (Folder*) REALLOC(starred_folders.data, sizeof(Folder) * data_size);
+    }
+
+    starred_folders.length = 0;
+
+    for (u32 array_index = 0; array_index < data_size; array_index++) {
+        Folder* starred_folder = &starred_folders[starred_folders.length++];
+
+        process_plain_folder_data_object(starred_folder, json, token);
     }
 }
 

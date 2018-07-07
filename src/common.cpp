@@ -300,7 +300,7 @@ PRINTLIKE(1, 2) String tprintf(const char* format, ...) {
 
     va_end(args_copy);
 
-    assert(length >= 0);
+    assert(result.length >= 0);
 
     result.start = (char*) talloc((u32) result.length + 1);
 

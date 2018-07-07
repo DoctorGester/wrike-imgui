@@ -38,6 +38,7 @@ Request_Id workflows_request = NO_REQUEST;
 Request_Id modify_task_request = NO_REQUEST;
 Request_Id suggested_folders_request = NO_REQUEST;
 Request_Id suggested_contacts_request = NO_REQUEST;
+Request_Id starred_folders_request = NO_REQUEST;
 
 const Account_Id NO_ACCOUNT = -1;
 
@@ -45,7 +46,7 @@ bool had_last_selected_folder_so_doesnt_need_to_load_the_root_folder = false;
 bool custom_statuses_were_loaded = false;
 
 static bool draw_memory_debug = false;
-static bool draw_side_menu = false;
+static bool draw_side_menu = true;
 
 static bool task_view_open_requested = false;
 
@@ -65,6 +66,7 @@ static char* workflows_json_content = NULL;
 static char* folder_header_json_content = NULL;
 static char* suggested_folders_json_content = NULL; // TODO looks like a lot of waste
 static char* suggested_users_json_content = NULL; // TODO also there
+static char* starred_folders_json_content = NULL;
 
 u32 tick = 0;
 
@@ -163,6 +165,7 @@ static void request_suggestions_for_account(Account_Id account_id) {
 
     fill_id8('A', account_id, output_account_id);
 
+    api_request(Http_Get, starred_folders_request, "accounts/%.*s/folders?starred&fields=['color']", (u32) ARRAY_SIZE(output_account_id), output_account_id);
     api_request(Http_Get, suggested_folders_request, "accounts/%.*s/folders?suggestedParents&fields=['color']", (u32) ARRAY_SIZE(output_account_id), output_account_id);
     api_request(Http_Get, suggested_contacts_request, "internal/accounts/%.*s/contacts?suggestType=Responsibles", (u32) ARRAY_SIZE(output_account_id), output_account_id);
 }
@@ -178,6 +181,10 @@ void api_request_success(Request_Id request_id, char* content, u32 content_lengt
     if (request_id == folder_tree_request) {
         folder_tree_request = NO_REQUEST;
         process_folder_tree_request(content, json_with_tokens.tokens, json_with_tokens.num_tokens);
+    } else if (request_id == starred_folders_request) {
+        starred_folders_request = NO_REQUEST;
+
+        process_json_content(starred_folders_json_content, process_starred_folders_data, json_with_tokens);
     } else if (request_id == folder_contents_request) {
         folder_contents_request = NO_REQUEST;
 
@@ -267,10 +274,10 @@ void request_folder_contents(String &folder_id) {
     started_loading_folder_contents_at = tick;
 }
 
-void select_folder_node_and_request_contents_if_necessary(Folder_Tree_Node* folder_node) {
+void select_folder_node_and_request_contents_if_necessary(Folder_Id id) {
     u8* account_and_folder_id = (u8*) talloc(sizeof(u8) * 16);
 
-    fill_id16('A', selected_account_id, 'G', folder_node->id, account_and_folder_id);
+    fill_id16('A', selected_account_id, 'G', id, account_and_folder_id);
 
     String id_as_string;
     id_as_string.start = (char*) account_and_folder_id;
@@ -630,7 +637,7 @@ bool init() {
     setup_ui();
 
     api_request(Http_Get, accounts_request, "accounts?fields=['customFields']");
-    api_request(Http_Get, folder_tree_request, "folders?fields=['starred','color']");
+    api_request(Http_Get, folder_tree_request, "folders?fields=['color']&deleted=false");
     api_request(Http_Get, contacts_request, "contacts");
 
     started_loading_users_at = tick;

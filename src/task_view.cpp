@@ -534,7 +534,7 @@ static void draw_folder_picker_contents(bool set_focus) {
 
         clipper.End();
     } else {
-        for (Suggested_Folder* it = suggested_folders.data; it != suggested_folders.data + suggested_folders.length; it++) {
+        for (Folder* it = suggested_folders.data; it != suggested_folders.data + suggested_folders.length; it++) {
             ImGui::PushID(it);
 
             if (draw_folder_picker_folder_selection_button(draw_list, it->name, it->color, selection_button_size, padding)) {
@@ -630,7 +630,7 @@ static void draw_parent_folders(Wrapping_Horizontal_Layout& layout, List<Folder_
 
         if (folder_tree_node) {
             if (draw_parent_folder_ticker(layout, folder_tree_node, ghost_tags, folder_id != layout.has_drawn_at_least_one_element)) {
-                select_folder_node_and_request_contents_if_necessary(folder_tree_node);
+                select_folder_node_and_request_contents_if_necessary(folder_tree_node->id);
             }
 
             layout.has_drawn_at_least_one_element = true;
@@ -961,7 +961,7 @@ static bool draw_more_assignees_button(ImVec2 top_left, u32 how_many, float side
     draw_list->AddText(top_left + button_size / 2.0f - text_size / 2.0f, 0xe6000000, text_start, text_end);
 
     if (state.hovered) {
-        draw_list->AddCircle(top_left + ImVec2(side_px, side_px) / 2.0f, side_px / 2.0f, color_link);
+        draw_list->AddCircle(top_left + ImVec2(side_px, side_px) / 2.0f, side_px / 2.0f, color_link, 32);
     }
 
     ImGui::PopFont();
