@@ -6,6 +6,7 @@
 #include "main.h"
 #include "platform.h"
 #include "ui.h"
+#include "renderer.h"
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -15,60 +16,218 @@
 #include <imgui_internal.h>
 
 struct Parent_Child_Pair {
-    Folder_Tree_Node* parent;
+    Folder_Handle parent;
 
     Folder_Id child_id;
     u32 child_hash;
 };
 
-static Lazy_Array<Folder_Tree_Node*, 64> child_nodes{};
+static Lazy_Array<Folder_Handle, 64> child_nodes{};
 static Lazy_Array<Parent_Child_Pair, 64> parent_child_pairs{};
-static Id_Hash_Map<Folder_Id, Folder_Tree_Node*> folder_id_to_node_map{};
-
-static u32 current_node = 0;
-static u32 total_names_length = 0;
-static char* search_index = NULL;
-
-static char* json_content = NULL;
+// We can't use Id_Hash_Map<Folder_Id, Folder_Handle, NULL_FOLDER_HANDLE> because C++ reasons
+static Id_Hash_Map<Folder_Id, s32, -1> folder_id_to_node_map{};
 
 static char search_buffer[128];
 
-Folder_Tree_Node* root_node = NULL;
-Folder_Tree_Node* all_nodes;
-u32 total_nodes;
+Folder_Handle root_node = NULL_FOLDER_HANDLE;
+List<Folder_Tree_Node> all_nodes{};
 
 List<Folder> starred_folders{};
 List<Folder> suggested_folders{};
 List<Folder_Tree_Node*> folder_tree_search_result{};
 
-static void draw_folder_tree_node(Folder_Tree_Node* tree_node) {
-    for (int i = 0; i < tree_node->num_children; i++) {
-        Folder_Tree_Node* child_node = tree_node->children[i];
-        ImGuiTreeNodeFlags node_flags = ImGuiTreeNodeFlags_OpenOnArrow;
+inline List<Folder_Handle> get_node_children(Folder_Tree_Node* node) {
+    List<Folder_Handle> result;
+    result.length = node->num_children;
+    result.data = child_nodes.data + (s32) node->children;
 
-        bool leaf_node = child_node->num_children == 0;
+    return result;
+}
 
-        if (leaf_node) {
-            node_flags |= ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
+inline Folder_Tree_Node* get_folder_node_by_handle(Folder_Handle handle) {
+    return all_nodes.data + (s32) handle;
+}
+
+inline Folder_Handle get_handle_by_folder_id(Folder_Id folder_id, u32 id_hash) {
+    return Folder_Handle(id_hash_map_get(&folder_id_to_node_map, folder_id, id_hash));
+}
+
+static Folder_Handle get_or_push_folder_node(Folder_Id folder_id, u32 id_hash) {
+    Folder_Handle handle = get_handle_by_folder_id(folder_id, id_hash);
+
+    if (handle != NULL_FOLDER_HANDLE) {
+        return handle;
+    }
+
+    Folder_Handle new_handle = Folder_Handle(all_nodes.length);
+    Folder_Tree_Node* new_node = get_folder_node_by_handle(new_handle);
+    new_node->id = folder_id;
+    new_node->id_hash = id_hash;
+    new_node->num_children = 0;
+    new_node->is_expanded = false;
+    new_node->num_expected_children = 0;
+    new_node->children_loaded = false;
+
+    id_hash_map_put(&folder_id_to_node_map, (s32) new_handle, new_node->id, new_node->id_hash);
+
+    all_nodes.length++;
+
+    return new_handle;
+}
+
+static bool draw_folder_tree_folder_element(ImDrawList* draw_list, ImVec2 element_top_left, ImVec2 element_size, float text_offset, u32 alpha, Folder* folder) {
+    const float scale = platform_get_pixel_ratio(); // TODO might be slow
+    const float text_height = ImGui::GetFontSize();
+
+    static const u32 hover_color = argb_to_agbr(0x80a3acb6);
+
+    ImVec2 content_top_left = element_top_left + ImVec2(text_offset, 0);
+    ImVec2 button_top_left = content_top_left + ImVec2(36.0f * scale, 0.0f);
+    ImVec2 button_size{ element_top_left.x + element_size.x - button_top_left.x, element_size.y };
+    ImVec2 text_top_left = content_top_left + ImVec2(40.0f * scale, element_size.y / 2.0f - text_height / 2.0f);
+
+    Button_State button_state = button("folder_tree_node", button_top_left, button_size);
+
+    if (button_state.clipped) return button_state.pressed;
+
+    if (button_state.hovered) {
+        ImVec2 button_bottom_right = element_top_left + element_size;
+
+        draw_list->AddRectFilled(element_top_left, button_bottom_right, hover_color, 4.0f * scale, ImDrawCornerFlags_Right);
+    }
+
+    draw_list->AddRectFilled(element_top_left, element_top_left + ImVec2(scale * 3.0f, element_size.y), folder->color->background);
+    draw_list->AddText(text_top_left, 0x00FFFFFF | (alpha << 24), folder->name.start, folder->name.start + folder->name.length);
+
+    return button_state.pressed;
+}
+
+static void folder_tree_node_element(ImDrawList* draw_list, ImVec2 element_top_left, ImVec2 element_size, u32 nesting_level, u32 alpha, Folder_Tree_Node* node) {
+    float scale = platform_get_pixel_ratio();
+    float content_offset = 18.0f * scale * nesting_level;
+
+    ImVec2 arrow_point = element_top_left + ImVec2(26.0f * scale + content_offset, element_size.y / 2.0f);
+
+    if (draw_folder_tree_folder_element(draw_list, element_top_left, element_size, content_offset, alpha, node)) {
+        select_folder_node_and_request_contents_if_necessary(node->id);
+    }
+
+    if (node->num_expected_children && draw_expand_arrow_button(draw_list, arrow_point, element_size.y, node->is_expanded)) {
+        node->is_expanded = !node->is_expanded;
+
+        if (node->is_expanded) {
+            request_folder_children_for_folder_tree(node->id);
         }
+    }
+}
+
+static void draw_child_node_skeletons(Folder_Tree_Node* tree_node, Vertical_Layout& layout, u32 nesting_level) {
+    ImDrawList* draw_list = ImGui::GetWindowDrawList();
+    float width = ImGui::GetContentRegionAvailWidth();
+    float element_height = 30.0f * layout.scale; // TODO lots of math duplication
+    float scale = platform_get_pixel_ratio(); // TODO lots of math duplication
+    float content_offset = 18.0f * scale * nesting_level + 40.0f * scale; // TODO lots of math duplication
+    float text_height = ImGui::GetFontSize();
+    ImVec2 skeleton_offset { content_offset, element_height / 2.0f - text_height / 2.0f };
+
+    for (int child_index = 0; child_index < tree_node->num_expected_children; child_index++) {
+        ImVec2 skeleton_top_left = layout.cursor + skeleton_offset;
+        ImVec2 skeleton_bottom_right{ layout.cursor.x + width, skeleton_top_left.y + text_height };
+
+        draw_list->AddRectFilled(skeleton_top_left, skeleton_bottom_right, 0x80ffffff, 2.0f * layout.scale);
+
+        layout_advance(layout, element_height);
+    }
+}
+
+static void draw_folder_tree_node_recursively(Folder_Tree_Node* tree_node, Vertical_Layout& layout, u32 nesting_level, u32 finished_loading_children_at) {
+    List<Folder_Handle> children = get_node_children(tree_node);
+
+    ImDrawList* draw_list = ImGui::GetWindowDrawList();
+    float width = ImGui::GetContentRegionAvailWidth();
+    float element_height = 30.0f * layout.scale;
+
+    u32 alpha = (u32) lroundf(lerp(finished_loading_children_at, tick, 0xff, 12));
+
+    for (int child_index = 0; child_index < children.length; child_index++) {
+        Folder_Tree_Node* child_node = get_folder_node_by_handle(children[child_index]);
 
         if (!child_node->name.start) {
             continue;
         }
 
+        ImVec2 element_top_left = layout.cursor;
+        ImVec2 element_size{ width, element_height };
+
+        // TODO this might not be unique, flattening will fix it
         ImGui::PushID(child_node->id);
-        bool node_open = ImGui::TreeNodeEx(child_node, node_flags, "%.*s", child_node->name.length, child_node->name.start);
+
+        folder_tree_node_element(draw_list, element_top_left, element_size, nesting_level, alpha, child_node);
+
+        layout_advance(layout, element_height);
+
         ImGui::PopID();
 
-        if (ImGui::IsItemClicked()) {
-            select_folder_node_and_request_contents_if_necessary(child_node->id);
+        if (child_node->is_expanded) {
+            if (child_node->children_loaded) {
+                draw_folder_tree_node_recursively(child_node, layout, nesting_level + 1, child_node->finished_loading_children_at);
+            } else {
+                draw_child_node_skeletons(child_node, layout, nesting_level + 1);
+            }
         }
+    }
+}
 
-        if (node_open && !leaf_node) {
-            draw_folder_tree_node(child_node);
+static void draw_star_icon_filled(ImDrawList* draw_list, ImVec2 center, float scale) {
+    ImVec2 tri_right[] = {
+            {  0.00f, -0.80f },
+            {  0.50f,  0.68f },
+            { -0.30f,  0.10f }
+    };
 
-            ImGui::TreePop();
-        }
+    ImVec2 tri_left[] = {
+            {  0.00f, -0.80f },
+            {  0.30f,  0.10f },
+            { -0.50f,  0.68f }
+    };
+
+    ImVec2 tri_down[] = {
+            { -0.80f, -0.26f },
+            {  0.80f, -0.26f },
+            {  0.00f,  0.32f }
+    };
+
+    auto fill = [=] (ImVec2* v) {
+        draw_list->AddTriangleFilled(center + v[0] * scale, center + v[1] * scale, center + v[2] * scale, IM_COL32_WHITE);
+    };
+
+    fill(tri_right);
+    fill(tri_left);
+    fill(tri_down);
+}
+
+static void draw_star_icon(ImDrawList* draw_list, ImVec2 center, float scale) {
+    const ImVec2 right_side[] = {
+            {0, 0.8f},
+            {0.18f, 0.26f},
+            {0.8f, 0.26f},
+            {0.3f, -0.1f},
+            {0.5f, -0.68f},
+            {0, -0.32f},
+    };
+
+    for (u32 index = 1; index < ARRAY_SIZE(right_side); index++) {
+        ImVec2 a = right_side[index - 1] * ImVec2(1, -1);;
+        ImVec2 b = right_side[index] * ImVec2(1, -1);;
+
+        draw_list->AddLine(center + a * scale, center + b * scale, IM_COL32_WHITE, 2.0f);
+    }
+
+    for (s32 index = ARRAY_SIZE(right_side) - 2; index >= 0; index--) {
+        ImVec2 a = right_side[index + 1] * ImVec2(-1, -1);
+        ImVec2 b = right_side[index] * ImVec2(-1, -1);
+
+        draw_list->AddLine(center + a * scale, center + b * scale, IM_COL32_WHITE, 2.0f);
     }
 }
 
@@ -79,17 +238,25 @@ static void draw_folder_tree_search_input() {
 
     ImGui::PushStyleColor(ImGuiCol_FrameBg, color_background_dark);
     ImGui::PushStyleColor(ImGuiCol_Text, 0xFFFFFFFF);
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(4.0f, 4.0f) * platform_get_pixel_ratio());
+
+    ImVec2 top_left = ImGui::GetCursorScreenPos();
+
+    ImGui::Dummy({ 26.0f * platform_get_pixel_ratio(), 0 });
+    ImGui::SameLine();
 
     ImVec2 placeholder_text_position = ImGui::GetCursorPos() + ImGui::GetStyle().FramePadding;
 
-    ImGui::PushItemWidth(-1);
+    float input_width = ImGui::GetContentRegionAvailWidth() - 24.0f * platform_get_pixel_ratio();
+
+    ImGui::PushItemWidth(input_width);
 
     if (ImGui::InputText("##tree_search", search_buffer, ARRAY_SIZE(search_buffer))) {
         u64 search_start = platform_get_app_time_precise();
 
         folder_tree_search(search_buffer, &folder_tree_search_result);
 
-        printf("Took %f to search %i elements by %s\n", platform_get_delta_time_ms(search_start), total_nodes, search_buffer);
+        printf("Took %f to search %i elements by %s\n", platform_get_delta_time_ms(search_start), all_nodes.length, search_buffer);
     }
 
     ImGui::PopItemWidth();
@@ -104,7 +271,7 @@ static void draw_folder_tree_search_input() {
 
     if (strlen(search_buffer) == 0) {
         ImGui::SetCursorPos(placeholder_text_position);
-        ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(non_active_color), "Filter");
+        ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(non_active_color), "Search folders & projects");
     }
 
     ImVec2& frame_padding = ImGui::GetStyle().FramePadding;
@@ -117,16 +284,88 @@ static void draw_folder_tree_search_input() {
         bottom_border_color = bottom_border_hover_color;
     }
 
-    ImGui::GetWindowDrawList()->AddLine(
+    ImDrawList* draw_list = ImGui::GetWindowDrawList();
+
+    draw_list->AddLine(
             ImVec2(input_rect_min.x, input_rect_max.y) + frame_padding,
             input_rect_max + frame_padding,
             bottom_border_color,
             1.0f
     );
 
+    {
+        float circle_radius = 5.0f * platform_get_pixel_ratio();
+        ImVec2 icon_top_left = top_left + ImVec2(16.0f, 8.0f) * platform_get_pixel_ratio();
+        ImVec2 circle_center = icon_top_left + ImVec2(circle_radius, circle_radius);
+        ImVec2 handle_offset = ImVec2(1, 1);
+        handle_offset *= ImInvLength(handle_offset, 1.0f); // Normal
+        handle_offset *= circle_radius;
+
+        draw_list->AddCircle(circle_center, circle_radius, IM_COL32_WHITE, 32, 2.0f);
+        draw_list->AddLine(circle_center + handle_offset * 0.98f, circle_center + handle_offset * 2.0f, IM_COL32_WHITE, 3.0f);
+    }
+
+    ImGui::PopStyleVar();
     ImGui::PopStyleColor();
     ImGui::PopStyleColor();
     ImGui::SetCursorPos(post_input);
+
+    ImGui::Dummy({ 0, 12.0f * platform_get_pixel_ratio() });
+}
+
+static void draw_folder_collection_header(ImDrawList* draw_list, ImVec2 top_left, ImVec2 element_size, const char* text) {
+    ImGui::PushFont(font_bold);
+
+    float font_height = ImGui::GetFontSize();
+
+    ImVec2 text_top_left = top_left + ImVec2(40.0f * platform_get_pixel_ratio(), element_size.y / 2.0f - font_height / 2.0f);
+
+    draw_list->AddText(text_top_left, IM_COL32_WHITE, text, text + strlen(text));
+
+    ImGui::PopFont();
+}
+
+static void draw_starred_folders() {
+    float scale = platform_get_pixel_ratio();
+
+    ImDrawList* draw_list = ImGui::GetWindowDrawList();
+
+    Vertical_Layout layout = vertical_layout(ImGui::GetCursorScreenPos());
+    ImVec2 element_size{ ImGui::GetContentRegionAvailWidth(), 30.0f * scale };
+
+    draw_star_icon_filled(draw_list, layout.cursor + ImVec2(23.0f, 16.0f) * scale, scale * 10.0f);
+    draw_folder_collection_header(draw_list, layout.cursor, element_size, "STARRED");
+
+    layout_advance(layout, element_size.y);
+
+    for (Folder* it = starred_folders.data; it != starred_folders.data + starred_folders.length; it++) {
+        ImGui::PushID(it);
+
+        if (draw_folder_tree_folder_element(draw_list, layout.cursor, element_size, 0, 0xff, it)) {
+            select_folder_node_and_request_contents_if_necessary(it->id);
+        }
+
+        ImGui::PopID();
+
+        layout_advance(layout, element_size.y);
+    }
+
+    {
+        layout_advance(layout, 6.0f * scale);
+
+        const u32 separator_color = argb_to_agbr(0xff344b5d);
+
+        float separator_x_offset = 26.0f * scale;
+
+        ImVec2 separator_left = ImVec2(layout.cursor.x + separator_x_offset, layout.cursor.y);
+        ImVec2 separator_right = separator_left + ImVec2(element_size.x - separator_x_offset, 0);
+
+        draw_list->AddLine(separator_left, separator_right, separator_color);
+
+        layout_advance(layout, 6.0f * scale);
+    }
+
+    layout_push_item_size(layout);
 }
 
 void draw_folder_tree(float column_width) {
@@ -154,24 +393,33 @@ void draw_folder_tree(float column_width) {
             ImGui::PopID();
         }
     } else {
-        for (Folder* it = starred_folders.data; it != starred_folders.data + starred_folders.length; it++) {
-            char* name = string_to_temporary_null_terminated_string(it->name);
-
-            if (ImGui::Selectable(name)) {
-                select_folder_node_and_request_contents_if_necessary(it->id);
-            }
-        }
-
         if (starred_folders.length > 0) {
-            ImGui::Separator();
+            draw_starred_folders();
         }
 
-        if (folder_tree_request != NO_REQUEST) {
-            draw_loading_indicator(ImGui::GetCursorScreenPos(), 0, { 24, 24 });
-        }
+        if (root_node != NULL_FOLDER_HANDLE) {
+            if (!get_folder_node_by_handle(root_node)->children_loaded) {
+                draw_window_loading_indicator();
+            }
 
-        if (root_node) {
-            draw_folder_tree_node(root_node);
+            float scale = platform_get_pixel_ratio();
+
+            ImVec2 element_size{ ImGui::GetContentRegionAvailWidth(), 30.0f * scale };
+
+            Vertical_Layout layout = vertical_layout(ImGui::GetCursorScreenPos());
+
+            ImGui::GetWindowDrawList()->AddCircleFilled(layout.cursor + ImVec2(23.0f, 16.0f) * scale, 3.0f * scale, IM_COL32_WHITE, 24);
+
+            // TODO hardcoded account name
+            draw_folder_collection_header(ImGui::GetWindowDrawList(), layout.cursor, element_size, "WRIKE");
+
+            layout_advance(layout, element_size.y);
+
+            Folder_Tree_Node* root = get_folder_node_by_handle(root_node);
+
+            draw_folder_tree_node_recursively(root, layout, 0, root->finished_loading_children_at);
+
+            layout_push_item_size(layout);
         }
     }
 
@@ -183,8 +431,19 @@ void draw_folder_tree(float column_width) {
     ImGui::PopStyleColor();
 }
 
-void folder_tree_init() {
+void folder_tree_init(Folder_Id root_node_id) {
     id_hash_map_init(&folder_id_to_node_map);
+
+    all_nodes.data = (Folder_Tree_Node*) REALLOC(all_nodes.data, sizeof(Folder_Tree_Node));
+
+    static Folder_Color root_node_color(0, 0xff555555, 0);
+
+    root_node = get_or_push_folder_node(root_node_id, hash_id(root_node_id));
+
+    Folder_Tree_Node* root = get_folder_node_by_handle(root_node);
+    root->color = &root_node_color;
+    root->name.start = (char*) "Root"; // TODO use the string storage
+    root->name.length = strlen(root->name.start);
 }
 
 Folder_Tree_Node* find_folder_tree_node_by_id(Folder_Id id, u32 id_hash) {
@@ -192,10 +451,16 @@ Folder_Tree_Node* find_folder_tree_node_by_id(Folder_Id id, u32 id_hash) {
         id_hash = hash_id(id);
     }
 
-    return id_hash_map_get(&folder_id_to_node_map, id, id_hash);
+    Folder_Handle handle = get_handle_by_folder_id(id, id_hash);
+
+    if (handle == NULL_FOLDER_HANDLE) {
+        return NULL;
+    }
+
+    return &all_nodes[(s32) handle];
 }
 
-static void add_parent_child_pair(Folder_Tree_Node* parent, Folder_Id child_id) {
+static void add_parent_child_pair(Folder_Handle parent, Folder_Id child_id) {
     Parent_Child_Pair* pair = lazy_array_reserve_n_values(parent_child_pairs, 1);
     pair->parent = parent;
     pair->child_id = child_id;
@@ -209,11 +474,12 @@ static void process_folder_tree_data_object(char* json, jsmntok_t*& token) {
 
     assert(object_token->type == JSMN_OBJECT);
 
-    String scope;
     u32 num_children = 0;
 
-    Folder_Tree_Node* new_node = &all_nodes[current_node++];
-    new_node->name.start = NULL;
+    Folder_Tree_Node folder_data;
+    folder_data.name.start = NULL;
+
+    jsmntok_t* children_array_token = NULL;
 
     for (u32 propety_index = 0; propety_index < object_token->size; propety_index++, token++) {
         jsmntok_t* property_token = token++;
@@ -224,112 +490,60 @@ static void process_folder_tree_data_object(char* json, jsmntok_t*& token) {
 
         // TODO string comparison there is inefficient, can be faster
         if (json_string_equals(json, property_token, "title")) {
-            json_token_to_string(json, value_token, new_node->name);
-
-            total_names_length += new_node->name.length + 1;
-
-            if (new_node->name.length >= 256) {
-                total_names_length++; // 0-terminator
-            }
+            json_token_to_string(json, value_token, folder_data.name);
         } else if (json_string_equals(json, property_token, "id")) {
-            json_token_to_right_part_of_id16(json, value_token, new_node->id);
-        } else if (json_string_equals(json, property_token, "scope")) {
-            json_token_to_string(json, value_token, scope);
+            json_token_to_right_part_of_id16(json, value_token, folder_data.id);
         } else if (json_string_equals(json, property_token, "color")) {
             String color;
 
             json_token_to_string(json, value_token, color);
 
-            new_node->color = string_to_folder_color(color);
+            folder_data.color = string_to_folder_color(color);
         } else if (json_string_equals(json, property_token, "childIds")) {
             assert(value_token->type == JSMN_ARRAY);
 
             num_children = value_token->size;
 
-            for (u32 array_index = 0; array_index < value_token->size; array_index++) {
-                jsmntok_t* id_token = ++token;
+            children_array_token = value_token;
 
-                assert(id_token->type == JSMN_STRING);
-
-                Folder_Id child_id;
-
-                json_token_to_right_part_of_id16(json, id_token, child_id);
-
-                // TODO could be adding multiple pairs at once
-                add_parent_child_pair(new_node, child_id);
-            }
+            eat_json(token);
+            token--;
         } else {
             eat_json(token);
             token--;
         }
     }
 
-    u32 id_hash = hash_id(new_node->id);
+    Folder_Handle new_handle = get_or_push_folder_node(folder_data.id, hash_id(folder_data.id));
+    Folder_Tree_Node* new_node = get_folder_node_by_handle(new_handle);
 
-    new_node->id_hash = id_hash;
-    new_node->num_children = 0;
+    new_node->name = folder_data.name;
+    new_node->color = folder_data.color;
 
     if (num_children > 0) {
-        new_node->children = lazy_array_reserve_n_values_relative_pointer(child_nodes, num_children);
+        // TODO this is very incorrect when loading children multiple times for the same node
+        // TODO try going to Internal -> Sprint archive -> Sprint 1 and then reloading Sprint archive multiple times
+        new_node->children = Folder_Handle(lazy_array_reserve_n_values_and_get_offset(child_nodes, num_children));
+
+        for (u32 array_index = 0; array_index < num_children; array_index++) {
+            jsmntok_t* id_token = ++children_array_token;
+
+            assert(id_token->type == JSMN_STRING);
+
+            Folder_Id child_id;
+
+            json_token_to_right_part_of_id16(json, id_token, child_id);
+
+            // TODO could be adding multiple pairs at once
+            add_parent_child_pair(new_handle, child_id);
+        }
     }
 
-    id_hash_map_put(&folder_id_to_node_map, new_node, new_node->id, id_hash);
-
-    bool is_root = strlen("WsRoot") == scope.length && strncmp(scope.start, "WsRoot", scope.length) == 0;
-
-    if (is_root) {
-        root_node = new_node;
-    }
+    new_node->num_expected_children = num_children;
 }
 
 void folder_tree_search(const char* query, List<Folder_Tree_Node*>* result) {
-    u32 query_length = (u32) strlen(query);
 
-    if (!query_length) {
-        return;
-    }
-
-    if (!total_nodes) {
-        return;
-    }
-
-    char* query_lowercase = (char*) talloc(query_length + 1);
-
-    for (u32 index = 0; index < query_length; index++) {
-        query_lowercase[index] = (char) tolower(query[index]);
-    }
-
-    query_lowercase[query_length] = 0;
-
-    if (!result->data) {
-        result->data = (Folder_Tree_Node**) MALLOC(sizeof(Folder_Tree_Node*) * total_nodes);
-    }
-
-    result->length = 0;
-
-    char* it = search_index;
-
-    for (u32 node_index = 0; node_index < total_nodes; node_index++) {
-        u32 length_or_zero = (u8) *it;
-
-        it++;
-
-        bool has_to_calculate_length = !length_or_zero;
-
-        if (has_to_calculate_length) {
-            length_or_zero = (u32) strlen(it);
-        }
-
-        if (string_in_substring(it, query_lowercase, length_or_zero)) {
-            result->data[result->length++] = &all_nodes[node_index];
-        }
-
-        it += length_or_zero;
-
-        if (has_to_calculate_length) {
-            it++;
-        }
-    }
 }
 
 static void match_tree_parent_child_pairs() {
@@ -337,57 +551,38 @@ static void match_tree_parent_child_pairs() {
 
     u32 found_pairs = 0;
 
-    for (u32 i = 0; i < parent_child_pairs.length; i++) {
-        Parent_Child_Pair& pair = parent_child_pairs[i];
+    for (s32 pair_index = 0; pair_index < parent_child_pairs.length; pair_index++) {
+        Parent_Child_Pair& pair = parent_child_pairs[pair_index];
 
-        Folder_Tree_Node* parent_node = pair.parent;
-        Folder_Tree_Node* child_node = id_hash_map_get(&folder_id_to_node_map, pair.child_id, pair.child_hash);
+        Folder_Tree_Node* parent_node = get_folder_node_by_handle(pair.parent);
+        Folder_Handle child_node = get_handle_by_folder_id(pair.child_id, pair.child_hash);
 
-        if (child_node) {
+        if (child_node != NULL_FOLDER_HANDLE) {
             found_pairs++;
 
-            parent_node->children[parent_node->num_children] = child_node;
+            List<Folder_Handle> children = get_node_children(parent_node);
+            children[children.length] = child_node;
+
             parent_node->num_children++;
+
+            if (parent_child_pairs.length > 1) {
+                parent_child_pairs[pair_index] = parent_child_pairs[parent_child_pairs.length - 1];
+            }
+
+            pair_index--;
+            parent_child_pairs.length--;
         }
     }
 
     printf("Found pairs %i\n", found_pairs);
 }
 
-static void build_folder_tree_search_index() {
-    search_index = (char*) REALLOC(search_index, total_names_length);
-    memset(search_index, 0, total_names_length);
-
-    char* index_position = search_index;
-
-    // Format is char length (or 0 if length exceeds u8) / char[] name
-    for (u32 node_index = 0; node_index < total_nodes; node_index++) {
-        Folder_Tree_Node* node = &all_nodes[node_index];
-        String name = node->name;
-        bool length_fits_char = name.length < 256;
-
-        if (length_fits_char) {
-            *index_position = (u8) name.length;
-        }
-
-        index_position++;
-
-        for (u32 index = 0; index < name.length; index++) {
-            index_position[index] = (char) tolower(name.start[index]);
-        }
-
-        index_position += node->name.length;
-
-        if (!length_fits_char) {
-            index_position++;
-        }
-    }
-}
-
 static void process_folder_tree_data(char* json, u32 data_size, jsmntok_t*& token) {
-    all_nodes = (Folder_Tree_Node*) MALLOC(sizeof(Folder_Tree_Node) * data_size);
-    total_nodes = data_size;
-    current_node = 0;
+    u32 new_size = all_nodes.length + data_size;
+
+    if (all_nodes.length < new_size) {
+        all_nodes.data = (Folder_Tree_Node*) REALLOC(all_nodes.data, sizeof(Folder_Tree_Node) * new_size);
+    }
 
     for (u32 array_index = 0; array_index < data_size; array_index++) {
         process_folder_tree_data_object(json, token);
@@ -423,23 +618,38 @@ static void process_plain_folder_data_object(Folder* folder, char* json, jsmntok
     }
 }
 
-// TODO not a good signature, should we be leaving those in globals?
-// TODO also we are managing char* json there, but not managing tokens!
-void process_folder_tree_request(char* json, jsmntok_t* tokens, u32 num_tokens) {
-    if (json_content) {
-        FREE(json_content);
+void process_folder_tree_request(Folder_Id folder, char* json, jsmntok_t* tokens, u32 num_tokens) {
+    Folder_Handle parent_handle = get_handle_by_folder_id(folder, hash_id(folder));
+
+    if (parent_handle == NULL_FOLDER_HANDLE) {
+        assert(!"Parent node not found");
+        return;
     }
 
-    json_content = json;
+    {
+        Folder_Tree_Node* parent_node = get_folder_node_by_handle(parent_handle);
 
-    total_names_length = 0;
+        parent_node->children_loaded = true;
+        parent_node->finished_loading_children_at = tick;
+    }
 
+    // TODO String storage to store folder names
     process_json_data_segment(json, tokens, num_tokens, process_folder_tree_data);
+
+    Folder_Tree_Node* root = get_folder_node_by_handle(root_node);
+    Folder_Tree_Node* parent = get_folder_node_by_handle(parent_handle);
+
+    if (parent == root) {
+        u32 num_children = all_nodes.length - 1; // TODO this is kind of implicit and is in a wrong function
+        root->children = Folder_Handle(lazy_array_reserve_n_values_and_get_offset(child_nodes, num_children));
+        root->num_children = 0;
+
+        for (u32 child_index = 0; child_index < num_children; child_index++) {
+            add_parent_child_pair(root_node, get_folder_node_by_handle(Folder_Handle(1 + child_index))->id);
+        }
+    }
+
     match_tree_parent_child_pairs();
-
-    lazy_array_clear(parent_child_pairs);
-
-    build_folder_tree_search_index();
 }
 
 void process_suggested_folders_data(char* json, u32 data_size, jsmntok_t*& token) {

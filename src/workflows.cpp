@@ -144,7 +144,6 @@ static void process_custom_status(Workflow* workflow, char* json, jsmntok_t*& to
 
     custom_status->id_hash = hash_id(custom_status->id);
 
-    // TODO I'm not totally sure about this, what if a task has a hidden status somehow?
     id_hash_map_put(&id_to_custom_status, custom_status, custom_status->id, custom_status->id_hash);
 }
 

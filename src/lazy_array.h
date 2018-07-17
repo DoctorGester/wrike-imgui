@@ -76,6 +76,15 @@ T* lazy_array_reserve_n_values(Lazy_Array<T, initial_watermark>& array, u32 n) {
 }
 
 template <typename T, u8 initial_watermark>
+u32 lazy_array_reserve_n_values_and_get_offset(Lazy_Array<T, initial_watermark>& array, u32 n) {
+    u32 offset = array.length;
+
+    lazy_array_reserve_n_values(array, n);
+
+    return offset;
+};
+
+template <typename T, u8 initial_watermark>
 Relative_Pointer<T> lazy_array_reserve_n_values_relative_pointer(Lazy_Array<T, initial_watermark>& array, u32 n) {
     Relative_Pointer<T> pointer;
 

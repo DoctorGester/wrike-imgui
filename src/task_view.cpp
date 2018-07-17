@@ -32,18 +32,6 @@ struct HSL {
     float l;
 };
 
-struct Horizontal_Layout {
-    ImVec2 top_left;
-    ImVec2 cursor;
-    float row_height;
-    float scale;
-};
-
-struct Wrapping_Horizontal_Layout : Horizontal_Layout {
-    float wrap_width;
-    bool has_drawn_at_least_one_element;
-};
-
 static Memory_Image checkmark{};
 static List<User*> filtered_users{};
 
@@ -151,57 +139,6 @@ static char* string_contains_substring_ignore_case(String string, char* query_lo
     string_buffer[string.length] = 0;
 
     return string_in_substring(string_buffer, query_lowercase, string.length);
-}
-
-static Horizontal_Layout horizontal_layout(ImVec2 top_left, float row_height) {
-    Horizontal_Layout layout;
-    layout.scale = platform_get_pixel_ratio();
-    layout.cursor = top_left;
-    layout.top_left = top_left;
-    layout.row_height = row_height;
-
-    return layout;
-}
-
-static Wrapping_Horizontal_Layout wrapping_horizontal_layout(ImVec2 top_left, float row_height, float wrap_width) {
-    Wrapping_Horizontal_Layout layout;
-    layout.scale = platform_get_pixel_ratio();
-    layout.cursor = top_left;
-    layout.top_left = top_left;
-    layout.row_height = row_height;
-    layout.wrap_width = wrap_width;
-    layout.has_drawn_at_least_one_element = false;
-
-    return layout;
-}
-
-static bool layout_check_wrap(Wrapping_Horizontal_Layout& layout, ImVec2 item_size) {
-    bool would_like_to_wrap = layout.cursor.x + item_size.x > layout.top_left.x + layout.wrap_width;
-
-    return layout.has_drawn_at_least_one_element && would_like_to_wrap;
-}
-
-static void layout_wrap(Wrapping_Horizontal_Layout& layout) {
-    layout.cursor.x = layout.top_left.x;
-    layout.cursor.y += layout.row_height;
-}
-
-static bool layout_check_and_wrap(Wrapping_Horizontal_Layout& layout, ImVec2 item_size) {
-    if (layout_check_wrap(layout, item_size)) {
-        layout_wrap(layout);
-
-        return true;
-    }
-
-    return false;
-}
-
-static void layout_advance(Horizontal_Layout& layout, float value) {
-    layout.cursor.x += value;
-}
-
-static ImVec2 layout_center_vertically(Horizontal_Layout& layout, float known_height) {
-    return { layout.cursor.x, layout.cursor.y + layout.row_height / 2.0f - known_height / 2.0f };
 }
 
 static void update_user_search(char* query) {
@@ -547,10 +484,10 @@ static void draw_folder_picker_contents(bool set_focus) {
             ImGui::PopID();
         }
 
-        ImGuiListClipper clipper(total_nodes);
+        ImGuiListClipper clipper(all_nodes.length);
 
         while (clipper.Step()) {
-            for (Folder_Tree_Node* it = all_nodes + clipper.DisplayStart; it != all_nodes + clipper.DisplayEnd; it++) {
+            for (Folder_Tree_Node* it = all_nodes.data + clipper.DisplayStart; it != all_nodes.data + clipper.DisplayEnd; it++) {
                 ImGui::PushID(it);
 
                 if (draw_folder_picker_folder_selection_button(draw_list, it->name, it->color, selection_button_size, padding)) {

@@ -22,7 +22,7 @@ float platform_get_delta_time_ms(u64 delta_to);
 
 void platform_open_url(String& permalink);
 
-void platform_api_request(Request_Id& request_id, char* url, Http_Method method);
-void platform_load_remote_image(Request_Id& request_id, char* full_url);
+void platform_api_request(Request_Id request_id, char* url, Http_Method method, void* data = NULL);
+void platform_load_remote_image(Request_Id request_id, char* full_url);
 void platform_local_storage_set(const char* key, String& value); // TODO bad definition...
 char* platform_local_storage_get(const char* key); // You own the memory!

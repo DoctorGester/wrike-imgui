@@ -27,6 +27,7 @@
 #include "ui.h"
 
 const Request_Id NO_REQUEST = -1;
+const Request_Id FOLDER_TREE_CHILDREN_REQUEST = -2; // TODO BIG HAQ
 
 Request_Id folder_tree_request = NO_REQUEST;
 Request_Id folder_header_request = NO_REQUEST;
@@ -41,6 +42,7 @@ Request_Id suggested_contacts_request = NO_REQUEST;
 Request_Id starred_folders_request = NO_REQUEST;
 
 const Account_Id NO_ACCOUNT = -1;
+const Folder_Id ROOT_FOLDER = -1;
 
 bool had_last_selected_folder_so_doesnt_need_to_load_the_root_folder = false;
 bool custom_statuses_were_loaded = false;
@@ -53,6 +55,8 @@ static bool task_view_open_requested = false;
 static float folder_tree_column_width = 300.0f;
 
 static Account_Id selected_account_id = NO_ACCOUNT;
+
+static Memory_Image logo{};
 
 Task_Id selected_folder_task_id = 0;
 
@@ -143,11 +147,19 @@ static void select_account() {
 
     selected_account_id = accounts[0].id;
 
-    {
-        String account_id_string = tprintf("%i", selected_account_id);
+    String account_id_string = tprintf("%i", accounts[0].id);
 
-        platform_local_storage_set("selected_account", account_id_string);
-    }
+    platform_local_storage_set("selected_account", account_id_string);
+}
+
+void request_folder_children_for_folder_tree(Folder_Id folder_id) {
+    u8 output_folder_and_account_id[16];
+
+    fill_id16('A', selected_account_id, 'G', folder_id, output_folder_and_account_id);
+
+    String url = tprintf("folders/%.16s/folders?descendants=false&fields=['color']", output_folder_and_account_id);
+
+    platform_api_request(FOLDER_TREE_CHILDREN_REQUEST, url.start, Http_Get, (void*) (intptr_t) folder_id);
 }
 
 static void request_workflow_for_account(Account_Id account_id) {
@@ -172,15 +184,14 @@ static void request_suggestions_for_account(Account_Id account_id) {
 
 extern "C"
 EXPORT
-void api_request_success(Request_Id request_id, char* content, u32 content_length) {
+void api_request_success(Request_Id request_id, char* content, u32 content_length, void* data) {
 //    printf("Got request %lu with content at %p\n", request_id, (void*) content_json);
     Json_With_Tokens json_with_tokens;
     json_with_tokens.json = content;
     json_with_tokens.tokens = parse_json_into_tokens(content, content_length, json_with_tokens.num_tokens);
 
-    if (request_id == folder_tree_request) {
-        folder_tree_request = NO_REQUEST;
-        process_folder_tree_request(content, json_with_tokens.tokens, json_with_tokens.num_tokens);
+    if (request_id == FOLDER_TREE_CHILDREN_REQUEST) {
+        process_folder_tree_request((Folder_Id) (intptr_t) data, content, json_with_tokens.tokens, json_with_tokens.num_tokens);
     } else if (request_id == starred_folders_request) {
         starred_folders_request = NO_REQUEST;
 
@@ -212,6 +223,9 @@ void api_request_success(Request_Id request_id, char* content, u32 content_lengt
             select_account();
             request_suggestions_for_account(selected_account_id);
             request_workflow_for_account(selected_account_id);
+
+            folder_tree_init(ROOT_FOLDER);
+            request_folder_children_for_folder_tree(ROOT_FOLDER);
         }
     } else if (request_id == workflows_request) {
         workflows_request = NO_REQUEST;
@@ -371,6 +385,10 @@ void set_task_status(Task_Id task_id, Custom_Status_Id status_id) {
 }
 
 void ImGui::FadeInOverlay(float alpha) {
+    if (alpha >= 0.99f) {
+        return;
+    }
+
     float rounding = ImGui::GetStyle().FrameRounding;
 
     ImVec2 top_left = ImGui::GetWindowPos();
@@ -446,7 +464,7 @@ static void draw_task_view_popup_if_necessary() {
             ImGui::ListBoxHeader("##task_content", ImVec2(-1, -1));
 
             if (task_is_loading) {
-                draw_loading_indicator(ImGui::GetCursorScreenPos(), MIN(started_loading_task_at, started_loading_users_at), { 24, 24 });
+                draw_window_loading_indicator();
             }
 
             ImGui::ListBoxFooter();
@@ -477,7 +495,18 @@ static void draw_ui() {
     bool loading_workflows = !custom_statuses_were_loaded;
 
     if (loading_contacts || loading_workflows) {
-        draw_loading_indicator(ImGui::GetIO().DisplaySize / 2.0f, 0);
+        ImVec2 screen_center = ImGui::GetIO().DisplaySize / 2.0f;
+        ImVec2 image_size{ (float) logo.width, (float) logo.height };
+
+        float spinner_side = image_size.y / 5.0f;
+
+        ImVec2 image_top_left = screen_center - (image_size / 2.0f);
+        ImVec2 spinner_top_left = image_top_left + ImVec2(image_size.x + 20.0f, image_size.y / 2.0f - spinner_side / 2.0f);
+
+        ImDrawList* draw_list = ImGui::GetWindowDrawList();
+
+        draw_list->AddImage((void*) (uintptr_t) logo.texture_id, image_top_left, image_top_left + image_size);
+        draw_loading_spinner(draw_list, spinner_top_left, spinner_side, 6, color_link);
 
         return;
     }
@@ -576,8 +605,11 @@ void load_persisted_settings() {
         selected_account_id = (s32) strtol(selected_account, &number_end, 10);
 
         if (selected_account_id != NO_ACCOUNT) {
+            folder_tree_init(ROOT_FOLDER);
+
             request_workflow_for_account(selected_account_id);
             request_suggestions_for_account(selected_account_id);
+            request_folder_children_for_folder_tree(ROOT_FOLDER);
         }
     }
 
@@ -637,18 +669,14 @@ bool init() {
     setup_ui();
 
     api_request(Http_Get, accounts_request, "accounts?fields=['customFields']");
-    api_request(Http_Get, folder_tree_request, "folders?fields=['color']&deleted=false");
     api_request(Http_Get, contacts_request, "contacts");
 
     started_loading_users_at = tick;
-
-    folder_tree_init();
 
     load_persisted_settings();
 
     printf("Platform init: %s\n", result ? "true" : "false");
 
-    Memory_Image logo{};
     load_png_from_disk("resources/wrike_logo.png", logo);
     set_header_logo(logo);
 

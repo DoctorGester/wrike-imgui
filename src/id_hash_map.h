@@ -40,11 +40,11 @@ static const struct {
 };
 
 #define hash_table_foreach(ht, entry)                \
-    for (entry = id_hash_table_next_entry(ht, (Id_Hash_Entry<Key, T>*) NULL);        \
+    for (entry = id_hash_table_next_entry(ht, (Id_Hash_Entry<Key, T, NULL_VALUE>*) NULL);        \
          entry != NULL;                    \
          entry = id_hash_table_next_entry(ht, entry))
 
-template<typename Key, typename T>
+template<typename Key, typename T, T NULL_VALUE = nullptr>
 struct Id_Hash_Entry {
     u32 hash;
     T data;
@@ -52,9 +52,9 @@ struct Id_Hash_Entry {
     bool present;
 };
 
-template<typename Key, typename T>
+template<typename Key, typename T, T NULL_VALUE = nullptr>
 struct Id_Hash_Map {
-    Id_Hash_Entry<Key, T>* table = NULL;
+    Id_Hash_Entry<Key, T, NULL_VALUE>* table = NULL;
     u32 size; // TODO rename this
     u32 rehash;
     u32 max_entries;
@@ -62,23 +62,23 @@ struct Id_Hash_Map {
     u32 entries;
 };
 
-template<typename Key, typename T>
-void id_hash_map_init(Id_Hash_Map<Key, T>* map) {
+template<typename Key, typename T, T NULL_VALUE = nullptr>
+void id_hash_map_init(Id_Hash_Map<Key, T, NULL_VALUE>* map) {
     map->size_index = 0;
     map->size = hash_sizes[map->size_index].size;
     map->rehash = hash_sizes[map->size_index].rehash;
     map->max_entries = hash_sizes[map->size_index].max_entries;
-    map->table = (Id_Hash_Entry<Key, T>*) CALLOC(map->size, sizeof(Id_Hash_Entry<Key, T>));
+    map->table = (Id_Hash_Entry<Key, T, NULL_VALUE>*) CALLOC(map->size, sizeof(Id_Hash_Entry<Key, T, NULL_VALUE>));
     map->entries = 0;
 }
 
-template<typename Key, typename T>
-void id_hash_map_destroy(Id_Hash_Map<Key, T>* map) {
+template<typename Key, typename T, T NULL_VALUE = nullptr>
+void id_hash_map_destroy(Id_Hash_Map<Key, T, NULL_VALUE>* map) {
     FREE(map->table);
 }
 
-template<typename Key, typename T>
-void id_hash_map_clear(Id_Hash_Map<Key, T>* map) {
+template<typename Key, typename T, T NULL_VALUE = nullptr>
+void id_hash_map_clear(Id_Hash_Map<Key, T, NULL_VALUE>* map) {
 //    if (!map->size) {
 //        return;
 //    }
@@ -93,8 +93,8 @@ void id_hash_map_clear(Id_Hash_Map<Key, T>* map) {
 //    map->size = 0;
 }
 
-template<typename Key, typename T>
-Id_Hash_Entry<Key, T>* id_hash_table_next_entry(Id_Hash_Map<Key, T>* map, Id_Hash_Entry<Key, T>* entry) {
+template<typename Key, typename T, T NULL_VALUE = nullptr>
+Id_Hash_Entry<Key, T, NULL_VALUE>* id_hash_table_next_entry(Id_Hash_Map<Key, T, NULL_VALUE>* map, Id_Hash_Entry<Key, T, NULL_VALUE>* entry) {
     if (entry == NULL) {
         entry = map->table;
     } else {
@@ -110,15 +110,15 @@ Id_Hash_Entry<Key, T>* id_hash_table_next_entry(Id_Hash_Map<Key, T>* map, Id_Has
     return NULL;
 }
 
-template<typename Key, typename T>
-void id_hash_map_rehash(Id_Hash_Map<Key, T>* map, u32 new_size_index) {
-    Id_Hash_Map<Key, T> old_ht;
-    Id_Hash_Entry<Key, T>* table;
+template<typename Key, typename T, T NULL_VALUE = nullptr>
+void id_hash_map_rehash(Id_Hash_Map<Key, T, NULL_VALUE>* map, u32 new_size_index) {
+    Id_Hash_Map<Key, T, NULL_VALUE> old_ht;
+    Id_Hash_Entry<Key, T, NULL_VALUE>* table;
 
     if (new_size_index >= ARRAY_SIZE(hash_sizes))
         return;
 
-    table = (Id_Hash_Entry<Key, T>*) CALLOC(hash_sizes[new_size_index].size, sizeof(Id_Hash_Entry<Key, T>));
+    table = (Id_Hash_Entry<Key, T, NULL_VALUE>*) CALLOC(hash_sizes[new_size_index].size, sizeof(Id_Hash_Entry<Key, T, NULL_VALUE>));
     if (table == NULL)
         return;
 
@@ -131,7 +131,7 @@ void id_hash_map_rehash(Id_Hash_Map<Key, T>* map, u32 new_size_index) {
     map->max_entries = hash_sizes[map->size_index].max_entries;
     map->entries = 0;
 
-    Id_Hash_Entry<Key, T>* entry;
+    Id_Hash_Entry<Key, T, NULL_VALUE>* entry;
 
     hash_table_foreach(&old_ht, entry) {
         id_hash_map_put(map, entry->data, entry->key, entry->hash);
@@ -140,9 +140,9 @@ void id_hash_map_rehash(Id_Hash_Map<Key, T>* map, u32 new_size_index) {
     FREE(old_ht.table);
 }
 
-template<typename Key, typename T>
-bool id_hash_map_put(Id_Hash_Map<Key, T>* map, T value, Key key, u32 hash) {
-    Id_Hash_Entry<Key, T>* available_entry = NULL;
+template<typename Key, typename T, T NULL_VALUE = nullptr>
+bool id_hash_map_put(Id_Hash_Map<Key, T, NULL_VALUE>* map, T value, Key key, u32 hash) {
+    Id_Hash_Entry<Key, T, NULL_VALUE>* available_entry = NULL;
 
     if (map->entries >= map->max_entries) {
         id_hash_map_rehash(map, map->size_index + 1);
@@ -152,7 +152,7 @@ bool id_hash_map_put(Id_Hash_Map<Key, T>* map, T value, Key key, u32 hash) {
     u32 hash_address = start_hash_address;
 
     do {
-        Id_Hash_Entry<Key, T>* entry = map->table + hash_address;
+        Id_Hash_Entry<Key, T, NULL_VALUE>* entry = map->table + hash_address;
         u32 double_hash;
 
         if (!entry->present) {
@@ -201,10 +201,10 @@ bool id_hash_map_put(Id_Hash_Map<Key, T>* map, T value, Key key, u32 hash) {
     return false;
 }
 
-template<typename Key, typename T>
-T id_hash_map_get(Id_Hash_Map<Key, T>* map, Key key, u32 hash) {
+template<typename Key, typename T, T NULL_VALUE = nullptr>
+T id_hash_map_get(Id_Hash_Map<Key, T, NULL_VALUE>* map, Key key, u32 hash) {
     if (!map->size) {
-        return NULL;
+        return NULL_VALUE;
     }
 
     u32 start_hash_address = hash % map->size;
@@ -213,10 +213,10 @@ T id_hash_map_get(Id_Hash_Map<Key, T>* map, Key key, u32 hash) {
     do {
         u32 double_hash;
 
-        Id_Hash_Entry<Key, T>* entry = map->table + hash_address;
+        Id_Hash_Entry<Key, T, NULL_VALUE>* entry = map->table + hash_address;
 
         if (!entry->present) {
-            return NULL;
+            return NULL_VALUE;
         } else if (entry->hash == hash && key == entry->key) {
             return entry->data;
         }
@@ -226,5 +226,5 @@ T id_hash_map_get(Id_Hash_Map<Key, T>* map, Key key, u32 hash) {
         hash_address = (hash_address + double_hash) % map->size;
     } while (hash_address != start_hash_address);
 
-    return NULL;
+    return NULL_VALUE;
 }

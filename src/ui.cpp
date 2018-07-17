@@ -128,6 +128,49 @@ void draw_loading_indicator(ImVec2 center, u32 started_showing_at, ImVec2 offset
     );
 }
 
+void draw_window_loading_indicator() {
+    float spinner_side = 12.0f * platform_get_pixel_ratio();
+
+    ImVec2 top_left = ImGui::GetWindowPos() + ImGui::GetWindowSize() / 2.0f - ImVec2(spinner_side, spinner_side);
+
+    draw_loading_spinner(ImGui::GetWindowDrawList(), top_left, spinner_side, 6, color_link);
+}
+
+bool draw_expand_arrow_button(ImDrawList* draw_list, ImVec2 arrow_point, float height, bool is_expanded) {
+    const static u32 expand_arrow_color = 0xff848484;
+    const static u32 expand_arrow_hovered = argb_to_agbr(0xff73a6ff);
+
+    float arrow_half_height = ImGui::GetFontSize() / 4.0f;
+    float arrow_width = arrow_half_height;
+
+    ImVec2 button_top_left{ arrow_point.x - arrow_width * 3.5f, arrow_point.y - height / 2.0f };
+    ImVec2 button_size{ arrow_width * 7.0f, height };
+
+    Button_State button_state = button("expand_arrow", button_top_left, button_size);
+
+    if (button_state.clipped) {
+        return button_state.pressed;
+    }
+
+    u32 color = button_state.hovered ? expand_arrow_hovered : expand_arrow_color;
+
+    if (!is_expanded) {
+        ImVec2 arrow_top_left = arrow_point - ImVec2(arrow_width,  arrow_half_height);
+        ImVec2 arrow_bottom_right = arrow_point - ImVec2(arrow_width, -arrow_half_height);
+
+        draw_list->AddLine(arrow_point, arrow_top_left, color);
+        draw_list->AddLine(arrow_point, arrow_bottom_right, color);
+    } else {
+        ImVec2 arrow_right = arrow_point + ImVec2(arrow_width / 2.0f, 0.0f);
+        ImVec2 arrow_bottom_point = arrow_right - ImVec2(arrow_width, -arrow_half_height);
+
+        draw_list->AddLine(arrow_right - ImVec2(arrow_width * 2.0f, 0.0f), arrow_bottom_point, color);
+        draw_list->AddLine(arrow_right, arrow_bottom_point, color);
+    }
+
+    return button_state.pressed;
+}
+
 static void button(ImGuiID id, ImVec2 top_left, ImVec2 size, Button_State& state) {
     ImRect bounds(top_left, top_left + size);
 
@@ -151,4 +194,77 @@ Button_State button(const char* string_id, ImVec2 top_left, ImVec2 size) {
     button(id, top_left, size, state);
 
     return state;
+}
+
+Vertical_Layout vertical_layout(ImVec2 top_left) {
+    Vertical_Layout layout;
+    layout.scale = platform_get_pixel_ratio();
+    layout.cursor = top_left;
+    layout.top_left = top_left;
+    layout.maximum_width = 0.0f;
+
+    return layout;
+}
+
+Horizontal_Layout horizontal_layout(ImVec2 top_left, float row_height) {
+    Horizontal_Layout layout;
+    layout.scale = platform_get_pixel_ratio();
+    layout.cursor = top_left;
+    layout.top_left = top_left;
+    layout.row_height = row_height;
+
+    return layout;
+}
+
+Wrapping_Horizontal_Layout wrapping_horizontal_layout(ImVec2 top_left, float row_height, float wrap_width) {
+    Wrapping_Horizontal_Layout layout;
+    layout.scale = platform_get_pixel_ratio();
+    layout.cursor = top_left;
+    layout.top_left = top_left;
+    layout.row_height = row_height;
+    layout.wrap_width = wrap_width;
+    layout.has_drawn_at_least_one_element = false;
+
+    return layout;
+}
+
+bool layout_check_wrap(Wrapping_Horizontal_Layout& layout, ImVec2 item_size) {
+    bool would_like_to_wrap = layout.cursor.x + item_size.x > layout.top_left.x + layout.wrap_width;
+
+    return layout.has_drawn_at_least_one_element && would_like_to_wrap;
+}
+
+void layout_wrap(Wrapping_Horizontal_Layout& layout) {
+    layout.cursor.x = layout.top_left.x;
+    layout.cursor.y += layout.row_height;
+}
+
+bool layout_check_and_wrap(Wrapping_Horizontal_Layout& layout, ImVec2 item_size) {
+    if (layout_check_wrap(layout, item_size)) {
+        layout_wrap(layout);
+
+        return true;
+    }
+
+    return false;
+}
+
+void layout_advance(Horizontal_Layout& layout, float value) {
+    layout.cursor.x += value;
+}
+
+ImVec2 layout_center_vertically(Horizontal_Layout& layout, float known_height) {
+    return { layout.cursor.x, layout.cursor.y + layout.row_height / 2.0f - known_height / 2.0f };
+}
+
+void layout_advance(Vertical_Layout& layout, float value) {
+    layout.cursor.y += value;
+}
+
+void layout_push_max_width(Vertical_Layout& layout, float width) {
+    layout.maximum_width = MAX(layout.maximum_width, width);
+}
+
+void layout_push_item_size(Vertical_Layout& layout) {
+    ImGui::ItemSize({ layout.maximum_width, layout.cursor.y - layout.top_left.y });
 }

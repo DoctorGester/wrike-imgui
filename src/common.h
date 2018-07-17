@@ -21,6 +21,8 @@ typedef long long s64;
 typedef int s32;
 typedef short s16;
 
+typedef s32 Request_Id;
+
 // TODO strong typedefs?
 // TODO hash could be optionally contained within the ID
 typedef s32 Account_Id;

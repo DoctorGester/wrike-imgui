@@ -8,10 +8,8 @@ bool init();
 extern "C"
 void loop();
 
-typedef signed long Request_Id;
-
 extern "C"
-void api_request_success(Request_Id request_id, char* content, u32 content_length);
+void api_request_success(Request_Id request_id, char* content, u32 content_length, void* data);
 
 extern "C"
 void image_load_success(Request_Id request_id, u8* pixel_data, u32 width, u32 height);
@@ -81,6 +79,7 @@ void remove_assignee_from_task(Task_Id task_id, User_Id user_id);
 void remove_parent_folder(Task_Id task_id, Folder_Id folder_id);
 void set_task_status(Task_Id task_id, Custom_Status_Id status_id);
 void select_folder_node_and_request_contents_if_necessary(Folder_Id id);
+void request_folder_children_for_folder_tree(Folder_Id folder_id);
 
 // TODO those probably leak both on desktop and web
 extern "C" char* handle_clipboard_copy();
