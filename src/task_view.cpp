@@ -1459,6 +1459,43 @@ void draw_task_contents() {
     ImGui::EndChildFrame();
 }
 
+static void find_and_request_missing_folders_if_necessary() {
+    List<Folder_Id> missing_folder_data{};
+
+    auto count_missing_folders = [] (List<Folder_Id> folders) {
+        u32 result = 0;
+
+        for (Folder_Id* it = folders.data; it != folders.data + folders.length; it++) {
+            if (!find_folder_tree_node_by_id(*it, hash_id(*it))) {
+                result++;
+            }
+        }
+
+        return result;
+    };
+
+    auto fill_missing_folders = [&] (List<Folder_Id> folders) {
+        for (Folder_Id* it = folders.data; it != folders.data + folders.length; it++) {
+            Folder_Id folder_id = *it;
+
+            if (!find_folder_tree_node_by_id(folder_id, hash_id(folder_id))) {
+                missing_folder_data.data[missing_folder_data.length++] = folder_id;
+            }
+        }
+    };
+
+    u32 total_count = count_missing_folders(current_task.parents) + count_missing_folders(current_task.super_parents);
+
+    if (total_count > 0) {
+        missing_folder_data.data = (Folder_Id*) talloc(sizeof(Folder_Id) * total_count);
+
+        fill_missing_folders(current_task.parents);
+        fill_missing_folders(current_task.super_parents);
+
+        request_multiple_folders(missing_folder_data);
+    }
+}
+
 typedef void (*Id_Processor)(char* json, jsmntok_t* token, s32& id);
 
 template <typename T>
@@ -1635,4 +1672,6 @@ void process_task_data(char* json, u32 data_size, jsmntok_t*& token) {
     }
 
     printf("Parsed description with a total length of %i\n", total_text_length);
+
+    find_and_request_missing_folders_if_necessary();
 }

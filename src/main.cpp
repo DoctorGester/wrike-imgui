@@ -29,9 +29,9 @@
 const Request_Id NO_REQUEST = -1;
 const Request_Id FOLDER_TREE_CHILDREN_REQUEST = -2; // TODO BIG HAQ
 
-Request_Id folder_tree_request = NO_REQUEST;
 Request_Id folder_header_request = NO_REQUEST;
 Request_Id folder_contents_request = NO_REQUEST;
+Request_Id folders_request = NO_REQUEST;
 Request_Id task_request = NO_REQUEST;
 Request_Id contacts_request = NO_REQUEST;
 Request_Id accounts_request = NO_REQUEST;
@@ -162,6 +162,30 @@ void request_folder_children_for_folder_tree(Folder_Id folder_id) {
     platform_api_request(FOLDER_TREE_CHILDREN_REQUEST, url.start, Http_Get, (void*) (intptr_t) folder_id);
 }
 
+void request_multiple_folders(List<Folder_Id> folders) {
+    assert(folders.length > 0);
+
+    String url = tprintf("folders/");
+
+    for (Folder_Id* it = folders.data; it != folders.data + folders.length; it++) {
+        Folder_Id folder_id = *it;
+
+        u8 output_folder_and_account_id[16];
+
+        fill_id16('A', selected_account_id, 'G', folder_id, output_folder_and_account_id);
+
+        if (it == folders.data) {
+            url = tprintf("%.*s%.16s", url.length, url.start, output_folder_and_account_id);
+        } else {
+            url = tprintf("%.*s,%.16s", url.length, url.start, output_folder_and_account_id);
+        }
+    }
+
+    url = tprintf("%.*s%s", url.length, url.start, "?fields=['color']");
+
+    api_request(Http_Get, folders_request, "%s", url.start);
+}
+
 static void request_workflow_for_account(Account_Id account_id) {
     u8 output_account_id[8];
 
@@ -196,6 +220,10 @@ void api_request_success(Request_Id request_id, char* content, u32 content_lengt
         starred_folders_request = NO_REQUEST;
 
         process_json_content(starred_folders_json_content, process_starred_folders_data, json_with_tokens);
+    } else if (request_id == folders_request) {
+        folders_request = NO_REQUEST;
+
+        process_json_data_segment(content, json_with_tokens.tokens, json_with_tokens.num_tokens, process_multiple_folders_data);
     } else if (request_id == folder_contents_request) {
         folder_contents_request = NO_REQUEST;
 

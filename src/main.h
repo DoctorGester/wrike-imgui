@@ -80,6 +80,7 @@ void remove_parent_folder(Task_Id task_id, Folder_Id folder_id);
 void set_task_status(Task_Id task_id, Custom_Status_Id status_id);
 void select_folder_node_and_request_contents_if_necessary(Folder_Id id);
 void request_folder_children_for_folder_tree(Folder_Id folder_id);
+void request_multiple_folders(List<Folder_Id> folders);
 
 // TODO those probably leak both on desktop and web
 extern "C" char* handle_clipboard_copy();

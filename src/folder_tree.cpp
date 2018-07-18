@@ -577,7 +577,7 @@ static void match_tree_parent_child_pairs() {
     printf("Found pairs %i\n", found_pairs);
 }
 
-static void process_folder_tree_data(char* json, u32 data_size, jsmntok_t*& token) {
+void process_multiple_folders_data(char* json, u32 data_size, jsmntok_t*& token) {
     u32 new_size = all_nodes.length + data_size;
 
     if (all_nodes.length < new_size) {
@@ -634,7 +634,7 @@ void process_folder_tree_request(Folder_Id folder, char* json, jsmntok_t* tokens
     }
 
     // TODO String storage to store folder names
-    process_json_data_segment(json, tokens, num_tokens, process_folder_tree_data);
+    process_json_data_segment(json, tokens, num_tokens, process_multiple_folders_data);
 
     Folder_Tree_Node* root = get_folder_node_by_handle(root_node);
     Folder_Tree_Node* parent = get_folder_node_by_handle(parent_handle);
