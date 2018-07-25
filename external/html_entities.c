@@ -351,7 +351,7 @@ static bool parse_entity(
         if(!entity) return 0;
 
         size_t len = strlen(entity);
-        memcpy(*to, entity, len);
+        memmove(*to, entity, len);
 
         *to += len;
         *from = end + 1;

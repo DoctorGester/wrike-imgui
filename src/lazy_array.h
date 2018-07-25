@@ -36,7 +36,7 @@ struct Block_Array {
  */
 
 
-template <typename T, u8 initial_watermark>
+template <typename T, u16 initial_watermark>
 struct Lazy_Array {
     T* data = NULL;
     u32 length = 0;
@@ -47,7 +47,7 @@ struct Lazy_Array {
     }
 };
 
-template <typename T, u8 initial_watermark>
+template <typename T, u16 initial_watermark>
 T* lazy_array_reserve_n_values(Lazy_Array<T, initial_watermark>& array, u32 n) {
 //    printf("Reserve %lu, watermark is %lu, length is %lu\n", n, array.watermark, array.length);
     u32 new_length = array.length + n;
@@ -75,7 +75,7 @@ T* lazy_array_reserve_n_values(Lazy_Array<T, initial_watermark>& array, u32 n) {
     return result;
 }
 
-template <typename T, u8 initial_watermark>
+template <typename T, u16 initial_watermark>
 u32 lazy_array_reserve_n_values_and_get_offset(Lazy_Array<T, initial_watermark>& array, u32 n) {
     u32 offset = array.length;
 
@@ -84,7 +84,7 @@ u32 lazy_array_reserve_n_values_and_get_offset(Lazy_Array<T, initial_watermark>&
     return offset;
 };
 
-template <typename T, u8 initial_watermark>
+template <typename T, u16 initial_watermark>
 Relative_Pointer<T> lazy_array_reserve_n_values_relative_pointer(Lazy_Array<T, initial_watermark>& array, u32 n) {
     Relative_Pointer<T> pointer;
 
@@ -96,12 +96,12 @@ Relative_Pointer<T> lazy_array_reserve_n_values_relative_pointer(Lazy_Array<T, i
     return pointer;
 };
 
-template <typename T, u8 initial_watermark>
+template <typename T, u16 initial_watermark>
 inline void lazy_array_soft_reset(Lazy_Array<T, initial_watermark>& lazy_array) {
     lazy_array.length = 0;
 }
 
-template <typename T, u8 initial_watermark>
+template <typename T, u16 initial_watermark>
 inline void lazy_array_clear(Lazy_Array<T, initial_watermark>& lazy_array) {
     lazy_array.length = 0;
     lazy_array.watermark = 0;

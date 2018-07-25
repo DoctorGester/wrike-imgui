@@ -33,6 +33,7 @@ Request_Id folder_header_request = NO_REQUEST;
 Request_Id folder_contents_request = NO_REQUEST;
 Request_Id folders_request = NO_REQUEST;
 Request_Id task_request = NO_REQUEST;
+Request_Id task_comments_request = NO_REQUEST;
 Request_Id contacts_request = NO_REQUEST;
 Request_Id accounts_request = NO_REQUEST;
 Request_Id workflows_request = NO_REQUEST;
@@ -64,6 +65,7 @@ Task current_task{};
 
 static char* task_json_content = NULL;
 static char* users_json_content = NULL;
+static char* comments_json_content = NULL;
 static char* accounts_json_content = NULL;
 static char* folder_tasks_json_content = NULL;
 static char* workflows_json_content = NULL;
@@ -80,6 +82,7 @@ u32 finished_loading_folder_header_at = 0;
 
 u32 started_loading_task_at = 0;
 u32 finished_loading_task_at = 0;
+u32 finished_loading_task_comments_at = 0;
 
 u32 started_loading_statuses_at = 0;
 u32 finished_loading_statuses_at = 0;
@@ -239,6 +242,11 @@ void api_request_success(Request_Id request_id, char* content, u32 content_lengt
 
         process_json_content(task_json_content, process_task_data, json_with_tokens);
         finished_loading_task_at = tick;
+    } else if (request_id == task_comments_request) {
+        task_comments_request = NO_REQUEST;
+
+        process_json_content(comments_json_content, process_task_comments_data, json_with_tokens);
+        finished_loading_task_comments_at = tick;
     } else if (request_id == contacts_request) {
         contacts_request = NO_REQUEST;
         process_json_content(users_json_content, process_users_data, json_with_tokens);
@@ -328,34 +336,17 @@ void select_folder_node_and_request_contents_if_necessary(Folder_Id id) {
     request_folder_contents(id_as_string);
 }
 
-static void request_task_by_full_id(String &full_id) {
-    // TODO I'm not sure if that's all a good solution
-    // TODO might make sense to store a regular id and only build API id on request
-
-    u8* string_start = (u8*) full_id.start;
-    u8 result[UNBASE32_LEN(16)];
-
-    // TODO wasteful to decode all bytes but only use some
-    base32_decode(string_start, 16, result);
-
-    selected_folder_task_id = uchars_to_s32(result + 6);
-
-    platform_local_storage_set("last_selected_task", full_id);
-
-    api_request(Http_Get, task_request, "tasks/%.*s?fields=['inheritedCustomColumnIds']", full_id.length, full_id.start);
-    started_loading_task_at = tick;
-}
-
 void request_task_by_task_id(Task_Id task_id) {
-    u8* account_and_task_id = (u8*) talloc(sizeof(u8) * 16);
+    u8 output_account_and_task_id[16];
 
-    fill_id16('A', selected_account_id, 'T', task_id, account_and_task_id);
+    fill_id16('A', selected_account_id, 'T', task_id, output_account_and_task_id);
 
-    String id_as_string;
-    id_as_string.start = (char*) account_and_task_id;
-    id_as_string.length = 16;
+    selected_folder_task_id = task_id;
 
-    request_task_by_full_id(id_as_string);
+    api_request(Http_Get, task_request, "tasks/%.16s?fields=['inheritedCustomColumnIds']", output_account_and_task_id);
+    api_request(Http_Get, task_comments_request, "tasks/%.16s/comments", output_account_and_task_id);
+
+    started_loading_task_at = tick;
 
     task_view_open_requested = true;
 }
@@ -474,7 +465,7 @@ static void draw_task_view_popup_if_necessary() {
 
     ImGui::PushStyleVar(ImGuiStyleVar_PopupRounding, 4.0f * platform_get_pixel_ratio());
 
-    if (ImGui::BeginPopupEx(task_view_id, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoSavedSettings)) {
+    if (ImGui::BeginPopupEx(task_view_id, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_ResizeFromAnySide)) {
         const u32 backdrop_color_no_alpha = argb_to_agbr(0x0027415a);
 
         u32 alpha = (u32) lroundf(lerp(task_view_opened_at, tick, 0xd8, 12));
@@ -625,7 +616,6 @@ void loop() {
 void load_persisted_settings() {
     char* selected_account = platform_local_storage_get("selected_account");
     char* last_selected_folder = platform_local_storage_get("last_selected_folder");
-    char* last_selected_task = platform_local_storage_get("last_selected_task");
 
     if (selected_account) {
         char* number_end = NULL;
@@ -649,14 +639,6 @@ void load_persisted_settings() {
         request_folder_contents(folder_id);
 
         had_last_selected_folder_so_doesnt_need_to_load_the_root_folder = true;
-    }
-
-    if (last_selected_task) {
-        String task_id;
-        task_id.start = last_selected_task;
-        task_id.length = strlen(last_selected_task);
-
-        request_task_by_full_id(task_id);
     }
 }
 

@@ -29,16 +29,18 @@ void render_rich_text(
         float size,
         ImVec2 pos,
         const ImVec4& clip_rect,
-        Rich_Text_String* rich_text_begin,
-        Rich_Text_String* rich_text_end,
+        Rich_Text& text,
         float wrap_width,
         float alpha,
         bool cpu_fine_clip
 ) {
     static const u32 default_color = 0xFF000000;
 
-    char* text_begin = rich_text_begin->text.start;
-    char* text_end = rich_text_end->text.start + rich_text_end->text.length;
+    Rich_Text_String* rich_text_begin = &text.rich[0];
+    Rich_Text_String* rich_text_end = &LIST_LAST(text.rich);
+
+    char* text_begin = text.raw.start + rich_text_begin->start;
+    char* text_end   = text.raw.start + rich_text_end->end;
 
     Rich_Text_String* current_string = rich_text_begin;
     ImFont* current_font = get_font_from_style(rich_text_begin->style);
@@ -47,7 +49,7 @@ void render_rich_text(
     u32 fg_color = default_color;
 
     bool has_bg_color = bg_color != 0;
-    bool is_a_link = current_string->style.link.length > 0;
+    bool is_a_link = (current_string->style.flags & Rich_Text_Flags_Link) != 0;
 
     if (has_bg_color) {
         fg_color = 0xFFFFFFFF;
@@ -58,8 +60,6 @@ void render_rich_text(
     fg_color = (fg_color & ~IM_COL32_A_MASK) | alpha_col;
     bg_color = (bg_color & ~IM_COL32_A_MASK) | alpha_col; // Set alpha
 
-    PushFont(current_font);
-
     // Align to be pixel perfect
     pos.x = (float)(int)pos.x + current_font->DisplayOffset.x;
     pos.y = (float)(int)pos.y + current_font->DisplayOffset.y;
@@ -67,6 +67,8 @@ void render_rich_text(
     float y = pos.y;
     if (y > clip_rect.w)
         return;
+
+    PushFont(current_font);
 
     const float scale = size / current_font->FontSize;
     const float line_height = current_font->FontSize * scale;
@@ -139,15 +141,23 @@ void render_rich_text(
         ImVec2 bottom_right = { x, y + line_height };
         ImVec2 link_size = bottom_right - string_top_left;
 
-        Button_State state = button((void*) (link_string->text.start), string_top_left, link_size);
+        String link_url;
+        link_url.start = text.raw.start + link_string->style.link_start;
+        link_url.length = link_string->style.link_end - link_string->style.link_start;
+
+        String link_text;
+        link_text.start = text.raw.start + link_string->start;
+        link_text.length = link_string->end - link_string->start;
+
+        Button_State state = button((void*) link_url.start, string_top_left, link_size);
 
         if (state.pressed) {
-            platform_open_url(link_string->style.link.length ? link_string->style.link : link_string->text);
+            platform_open_url(link_url.length ? link_url : link_text);
         }
     };
 
     while (s < text_end) {
-        if (s >= current_string->text.start + current_string->text.length) {
+        if (s >= text.raw.start + current_string->end) {
             Rich_Text_String* previous_string = current_string;
 
             current_string++;
@@ -165,7 +175,7 @@ void render_rich_text(
             }
 
             bg_color = current_string->style.background_color;
-            is_a_link = current_string->style.link.length > 0;
+            is_a_link = (current_string->style.flags & Rich_Text_Flags_Link) != 0;
             has_bg_color = bg_color != 0;
 
             if (has_bg_color) {
@@ -337,28 +347,15 @@ void render_rich_text(
     PopFont();
 }
 
-float add_rich_text(
+void add_rich_text(
         ImDrawList* draw_list,
         const ImVec2& pos,
-        Rich_Text_String* rich_text_begin,
-        Rich_Text_String* rich_text_end,
+        Rich_Text& text,
         float wrap_width,
         float alpha
 ) {
-    char* text_begin = rich_text_begin->text.start;
-    char* text_end = rich_text_end->text.start + rich_text_end->text.length;
-
-    const ImVec2 text_size = CalcTextSize(text_begin, text_end, false, wrap_width);
-
-    // Account of baseline offset
-    ImRect bb(pos, pos + text_size);
-
-    if (!ItemAdd(bb, 0)) {
-        return text_size.y;
-    }
-
-    if (text_begin == text_end) {
-        return 0;
+    if (text.rich[0].start == LIST_LAST(text.rich).end) {
+        return;
     }
 
     // Pull default font/size from the shared ImDrawListSharedData instance
@@ -366,7 +363,5 @@ float add_rich_text(
 
     ImVec4 clip_rect = draw_list->_ClipRectStack.back();
 
-    render_rich_text(draw_list, font_size, pos, clip_rect, rich_text_begin, rich_text_end, wrap_width, alpha, false);
-
-    return text_size.y;
+    render_rich_text(draw_list, font_size, pos, clip_rect, text, wrap_width, alpha, false);
 }

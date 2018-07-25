@@ -91,6 +91,7 @@ bool load_png_from_disk(const char* path, Memory_Image& out);
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
 #define ARRAY_SIZE(array) (sizeof(array) / sizeof(array[0]))
+#define LIST_LAST(list) (list.length ? list[list.length - 1] : list[0])
 
 #define GL_CHECKED(command)\
     command;\
