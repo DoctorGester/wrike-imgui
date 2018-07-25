@@ -1572,7 +1572,7 @@ static void find_and_request_missing_folders_if_necessary() {
     }
 }
 
-Rich_Text rich_text_to_temporary_rich_string_array(String raw_text) {
+Rich_Text parse_string_into_temporary_rich_text(String raw_text) {
     // We copy to strip comments from description
     // In fact we could just do that in the original string, since stripping comments
     //  never adds characters, only removes them, but this is 'cleaner'
@@ -1610,10 +1610,10 @@ Rich_Text rich_text_to_temporary_rich_string_array(String raw_text) {
     out.raw.start = (char*) talloc(total_text_length);
     out.raw.length = total_text_length;
 
-    {
-        // We are copying all text into one memory chunk while also decoding html entities
-        u32 current_location = 0;
+    u32 text_cursor = 0;
 
+    // Copying all text into one memory chunk while also decoding html entities
+    {
         for (u32 index = 0; index < temporary_strings.length; index++) {
             Rich_Text_String& string = temporary_strings[index];
 
@@ -1621,39 +1621,42 @@ Rich_Text rich_text_to_temporary_rich_string_array(String raw_text) {
 
             if (string.end - string.start > 0) {
                 new_length = decode_html_entities_utf8(
-                        out.raw.start + current_location,
+                        out.raw.start + text_cursor,
                         temporary_raw_string.start + string.start,
                         temporary_raw_string.start + string.end
                 );
             }
 
-            string.start = current_location;
-            string.end = (u32) (current_location + new_length);
+            string.start = text_cursor;
+            string.end = (u32) (text_cursor + new_length);
 
-            current_location += new_length;
+            text_cursor += new_length;
         }
+    }
 
-        // Copying link texts to the very end
+
+    // Appending link urls to the very end
+    {
         for (u32 index = 0; index < temporary_strings.length; index++) {
             Rich_Text_String& string = temporary_strings[index];
 
             if (string.style.flags & Rich_Text_Flags_Link) {
                 u32 link_length = string.style.link_end - string.style.link_start;
 
-                memcpy(out.raw.start + current_location,
+                memcpy(out.raw.start + text_cursor,
                        temporary_raw_string.start + string.style.link_start,
                        link_length
                 );
 
-                string.style.link_start = current_location;
-                string.style.link_end = current_location + link_length;
+                string.style.link_start = text_cursor;
+                string.style.link_end = text_cursor + link_length;
 
-                current_location += link_length;
+                text_cursor += link_length;
             }
         }
-
-        out.raw.length = current_location;
     }
+
+    out.raw.length = text_cursor;
 
     return out;
 }
@@ -1738,7 +1741,7 @@ void process_task_comments_data(char* json, u32 data_size, jsmntok_t*& token) {
 
                 temporary_storage_mark();
 
-                Rich_Text temporary_text = rich_text_to_temporary_rich_string_array(comment_text);
+                Rich_Text temporary_text = parse_string_into_temporary_rich_text(comment_text);
                 Rich_Text_String* persisted_strings = lazy_array_reserve_n_values(comment_strings, temporary_text.rich.length);
                 char* persisted_chars = lazy_array_reserve_n_values(comment_chars, temporary_text.raw.length);
 
@@ -1775,7 +1778,7 @@ void process_task_comments_data(char* json, u32 data_size, jsmntok_t*& token) {
 }
 
 void parse_and_update_task_description(String description) {
-    Rich_Text temporary_text = rich_text_to_temporary_rich_string_array(description);
+    Rich_Text temporary_text = parse_string_into_temporary_rich_text(description);
     Rich_Text& persistent_text = current_task.description;
 
     persistent_text.raw.start = (char*) REALLOC(persistent_text.raw.start, temporary_text.raw.length);
