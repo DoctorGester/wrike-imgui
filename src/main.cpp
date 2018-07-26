@@ -65,7 +65,6 @@ Task current_task{};
 
 static char* task_json_content = NULL;
 static char* users_json_content = NULL;
-static char* comments_json_content = NULL;
 static char* accounts_json_content = NULL;
 static char* folder_tasks_json_content = NULL;
 static char* workflows_json_content = NULL;
@@ -245,8 +244,10 @@ void api_request_success(Request_Id request_id, char* content, u32 content_lengt
     } else if (request_id == task_comments_request) {
         task_comments_request = NO_REQUEST;
 
-        process_json_content(comments_json_content, process_task_comments_data, json_with_tokens);
+        process_json_data_segment(json_with_tokens.json, json_with_tokens.tokens, json_with_tokens.num_tokens, process_task_comments_data);
         finished_loading_task_comments_at = tick;
+
+        FREE(json_with_tokens.json);
     } else if (request_id == contacts_request) {
         contacts_request = NO_REQUEST;
         process_json_content(users_json_content, process_users_data, json_with_tokens);
