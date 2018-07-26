@@ -8,10 +8,8 @@ bool init();
 extern "C"
 void loop();
 
-typedef signed long Request_Id;
-
 extern "C"
-void api_request_success(Request_Id request_id, char* content, u32 content_length);
+void api_request_success(Request_Id request_id, char* content, u32 content_length, void* data);
 
 extern "C"
 void image_load_success(Request_Id request_id, u8* pixel_data, u32 width, u32 height);
@@ -21,15 +19,18 @@ struct Custom_Field_Value {
     String value;
 };
 
+struct Task_Comment {
+    Rich_Text text{};
+    User_Id author;
+};
+
 // TODO is this just another form of Folder_Task? We could merge them
 struct Task {
     Task_Id id;
 
     String title;
     String permalink;
-    Rich_Text_String* description = NULL;
-    u32 description_strings = 0;
-    String description_text{};
+    Rich_Text description{};
 
     Custom_Status_Id status_id;
 
@@ -39,6 +40,7 @@ struct Task {
     List<Folder_Id> super_parents{};
     List<User_Id> authors{};
     List<User_Id> assignees{};
+    List<Task_Comment> comments{};
 };
 
 // TODO make this a define?
@@ -81,6 +83,9 @@ void remove_assignee_from_task(Task_Id task_id, User_Id user_id);
 void remove_parent_folder(Task_Id task_id, Folder_Id folder_id);
 void set_task_status(Task_Id task_id, Custom_Status_Id status_id);
 void select_folder_node_and_request_contents_if_necessary(Folder_Id id);
+void request_folder_children_for_folder_tree(Folder_Id folder_id);
+void request_multiple_folders(List<Folder_Id> folders);
+void request_task_comments(Task_Id task_id);
 
 // TODO those probably leak both on desktop and web
 extern "C" char* handle_clipboard_copy();

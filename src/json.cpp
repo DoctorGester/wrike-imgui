@@ -88,13 +88,12 @@ jsmntok_t* parse_json_into_tokens(char* content_json, u32 json_length, u32& resu
 
     u32 parsed_tokens = (u32) num_tokens;
 
-    printf("Parsed %i tokens in %fms\n", parsed_tokens, platform_get_delta_time_ms(start_time));
+    printf("Parsed %i tokens in %.3fms\n", parsed_tokens, platform_get_delta_time_ms(start_time));
 
     result_parsed_tokens = (u32) parsed_tokens;
 
     return json_tokens;
 }
-
 
 void process_json_data_segment(char* json, jsmntok_t* tokens, u32 num_tokens, Data_Process_Callback callback) {
     jsmntok_t* end_token = tokens + num_tokens;

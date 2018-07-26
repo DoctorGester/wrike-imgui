@@ -27,11 +27,13 @@
 #include "ui.h"
 
 const Request_Id NO_REQUEST = -1;
+const Request_Id FOLDER_TREE_CHILDREN_REQUEST = -2; // TODO BIG HAQ
 
-Request_Id folder_tree_request = NO_REQUEST;
 Request_Id folder_header_request = NO_REQUEST;
 Request_Id folder_contents_request = NO_REQUEST;
+Request_Id folders_request = NO_REQUEST;
 Request_Id task_request = NO_REQUEST;
+Request_Id task_comments_request = NO_REQUEST;
 Request_Id contacts_request = NO_REQUEST;
 Request_Id accounts_request = NO_REQUEST;
 Request_Id workflows_request = NO_REQUEST;
@@ -41,6 +43,7 @@ Request_Id suggested_contacts_request = NO_REQUEST;
 Request_Id starred_folders_request = NO_REQUEST;
 
 const Account_Id NO_ACCOUNT = -1;
+const Folder_Id ROOT_FOLDER = -1;
 
 bool had_last_selected_folder_so_doesnt_need_to_load_the_root_folder = false;
 bool custom_statuses_were_loaded = false;
@@ -54,12 +57,15 @@ static float folder_tree_column_width = 300.0f;
 
 static Account_Id selected_account_id = NO_ACCOUNT;
 
+static Memory_Image logo{};
+
 Task_Id selected_folder_task_id = 0;
 
 Task current_task{};
 
 static char* task_json_content = NULL;
 static char* users_json_content = NULL;
+static char* comments_json_content = NULL;
 static char* accounts_json_content = NULL;
 static char* folder_tasks_json_content = NULL;
 static char* workflows_json_content = NULL;
@@ -76,6 +82,7 @@ u32 finished_loading_folder_header_at = 0;
 
 u32 started_loading_task_at = 0;
 u32 finished_loading_task_at = 0;
+u32 finished_loading_task_comments_at = 0;
 
 u32 started_loading_statuses_at = 0;
 u32 finished_loading_statuses_at = 0;
@@ -143,11 +150,43 @@ static void select_account() {
 
     selected_account_id = accounts[0].id;
 
-    {
-        String account_id_string = tprintf("%i", selected_account_id);
+    String account_id_string = tprintf("%i", accounts[0].id);
 
-        platform_local_storage_set("selected_account", account_id_string);
+    platform_local_storage_set("selected_account", account_id_string);
+}
+
+void request_folder_children_for_folder_tree(Folder_Id folder_id) {
+    u8 output_folder_and_account_id[16];
+
+    fill_id16('A', selected_account_id, 'G', folder_id, output_folder_and_account_id);
+
+    String url = tprintf("folders/%.16s/folders?descendants=false&fields=['color']", output_folder_and_account_id);
+
+    platform_api_request(FOLDER_TREE_CHILDREN_REQUEST, url.start, Http_Get, (void*) (intptr_t) folder_id);
+}
+
+void request_multiple_folders(List<Folder_Id> folders) {
+    assert(folders.length > 0);
+
+    String url = tprintf("folders/");
+
+    for (Folder_Id* it = folders.data; it != folders.data + folders.length; it++) {
+        Folder_Id folder_id = *it;
+
+        u8 output_folder_and_account_id[16];
+
+        fill_id16('A', selected_account_id, 'G', folder_id, output_folder_and_account_id);
+
+        if (it == folders.data) {
+            url = tprintf("%.*s%.16s", url.length, url.start, output_folder_and_account_id);
+        } else {
+            url = tprintf("%.*s,%.16s", url.length, url.start, output_folder_and_account_id);
+        }
     }
+
+    url = tprintf("%.*s%s", url.length, url.start, "?fields=['color']");
+
+    api_request(Http_Get, folders_request, "%s", url.start);
 }
 
 static void request_workflow_for_account(Account_Id account_id) {
@@ -172,19 +211,22 @@ static void request_suggestions_for_account(Account_Id account_id) {
 
 extern "C"
 EXPORT
-void api_request_success(Request_Id request_id, char* content, u32 content_length) {
+void api_request_success(Request_Id request_id, char* content, u32 content_length, void* data) {
 //    printf("Got request %lu with content at %p\n", request_id, (void*) content_json);
     Json_With_Tokens json_with_tokens;
     json_with_tokens.json = content;
     json_with_tokens.tokens = parse_json_into_tokens(content, content_length, json_with_tokens.num_tokens);
 
-    if (request_id == folder_tree_request) {
-        folder_tree_request = NO_REQUEST;
-        process_folder_tree_request(content, json_with_tokens.tokens, json_with_tokens.num_tokens);
+    if (request_id == FOLDER_TREE_CHILDREN_REQUEST) {
+        process_folder_tree_request((Folder_Id) (intptr_t) data, content, json_with_tokens.tokens, json_with_tokens.num_tokens);
     } else if (request_id == starred_folders_request) {
         starred_folders_request = NO_REQUEST;
 
         process_json_content(starred_folders_json_content, process_starred_folders_data, json_with_tokens);
+    } else if (request_id == folders_request) {
+        folders_request = NO_REQUEST;
+
+        process_json_data_segment(content, json_with_tokens.tokens, json_with_tokens.num_tokens, process_multiple_folders_data);
     } else if (request_id == folder_contents_request) {
         folder_contents_request = NO_REQUEST;
 
@@ -200,6 +242,11 @@ void api_request_success(Request_Id request_id, char* content, u32 content_lengt
 
         process_json_content(task_json_content, process_task_data, json_with_tokens);
         finished_loading_task_at = tick;
+    } else if (request_id == task_comments_request) {
+        task_comments_request = NO_REQUEST;
+
+        process_json_content(comments_json_content, process_task_comments_data, json_with_tokens);
+        finished_loading_task_comments_at = tick;
     } else if (request_id == contacts_request) {
         contacts_request = NO_REQUEST;
         process_json_content(users_json_content, process_users_data, json_with_tokens);
@@ -212,6 +259,9 @@ void api_request_success(Request_Id request_id, char* content, u32 content_lengt
             select_account();
             request_suggestions_for_account(selected_account_id);
             request_workflow_for_account(selected_account_id);
+
+            folder_tree_init(ROOT_FOLDER);
+            request_folder_children_for_folder_tree(ROOT_FOLDER);
         }
     } else if (request_id == workflows_request) {
         workflows_request = NO_REQUEST;
@@ -262,7 +312,9 @@ void request_folder_contents(String &folder_id) {
 
     s32 id = uchars_to_s32(result + 6);
 
-    api_request(Http_Get, folder_contents_request, "folders/%.*s/tasks%s", (int) folder_id.length, folder_id.start, "?fields=['customFields','superTaskIds','responsibleIds']&subTasks=true");
+    set_current_folder_id(id);
+
+    api_request(Http_Get, folder_contents_request, "folders/%.*s/tasks%s", (int) folder_id.length, folder_id.start, "?fields=['customFields','superTaskIds','parentIds','responsibleIds']&subTasks=true");
 
     if (id >= 0) {
         api_request(Http_Get, folder_header_request, "folders/%.*s%s", (int) folder_id.length, folder_id.start, "?fields=['customColumnIds']");
@@ -286,34 +338,17 @@ void select_folder_node_and_request_contents_if_necessary(Folder_Id id) {
     request_folder_contents(id_as_string);
 }
 
-static void request_task_by_full_id(String &full_id) {
-    // TODO I'm not sure if that's all a good solution
-    // TODO might make sense to store a regular id and only build API id on request
-
-    u8* string_start = (u8*) full_id.start;
-    u8 result[UNBASE32_LEN(16)];
-
-    // TODO wasteful to decode all bytes but only use some
-    base32_decode(string_start, 16, result);
-
-    selected_folder_task_id = uchars_to_s32(result + 6);
-
-    platform_local_storage_set("last_selected_task", full_id);
-
-    api_request(Http_Get, task_request, "tasks/%.*s?fields=['inheritedCustomColumnIds']", full_id.length, full_id.start);
-    started_loading_task_at = tick;
-}
-
 void request_task_by_task_id(Task_Id task_id) {
-    u8* account_and_task_id = (u8*) talloc(sizeof(u8) * 16);
+    u8 output_account_and_task_id[16];
 
-    fill_id16('A', selected_account_id, 'T', task_id, account_and_task_id);
+    fill_id16('A', selected_account_id, 'T', task_id, output_account_and_task_id);
 
-    String id_as_string;
-    id_as_string.start = (char*) account_and_task_id;
-    id_as_string.length = 16;
+    selected_folder_task_id = task_id;
 
-    request_task_by_full_id(id_as_string);
+    api_request(Http_Get, task_request, "tasks/%.16s?fields=['inheritedCustomColumnIds']", output_account_and_task_id);
+    api_request(Http_Get, task_comments_request, "tasks/%.16s/comments", output_account_and_task_id);
+
+    started_loading_task_at = tick;
 
     task_view_open_requested = true;
 }
@@ -371,6 +406,10 @@ void set_task_status(Task_Id task_id, Custom_Status_Id status_id) {
 }
 
 void ImGui::FadeInOverlay(float alpha) {
+    if (alpha >= 0.99f) {
+        return;
+    }
+
     float rounding = ImGui::GetStyle().FrameRounding;
 
     ImVec2 top_left = ImGui::GetWindowPos();
@@ -428,7 +467,7 @@ static void draw_task_view_popup_if_necessary() {
 
     ImGui::PushStyleVar(ImGuiStyleVar_PopupRounding, 4.0f * platform_get_pixel_ratio());
 
-    if (ImGui::BeginPopupEx(task_view_id, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoSavedSettings)) {
+    if (ImGui::BeginPopupEx(task_view_id, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_ResizeFromAnySide)) {
         const u32 backdrop_color_no_alpha = argb_to_agbr(0x0027415a);
 
         u32 alpha = (u32) lroundf(lerp(task_view_opened_at, tick, 0xd8, 12));
@@ -446,7 +485,7 @@ static void draw_task_view_popup_if_necessary() {
             ImGui::ListBoxHeader("##task_content", ImVec2(-1, -1));
 
             if (task_is_loading) {
-                draw_loading_indicator(ImGui::GetCursorScreenPos(), MIN(started_loading_task_at, started_loading_users_at), { 24, 24 });
+                draw_window_loading_indicator();
             }
 
             ImGui::ListBoxFooter();
@@ -477,7 +516,18 @@ static void draw_ui() {
     bool loading_workflows = !custom_statuses_were_loaded;
 
     if (loading_contacts || loading_workflows) {
-        draw_loading_indicator(ImGui::GetIO().DisplaySize / 2.0f, 0);
+        ImVec2 screen_center = ImGui::GetIO().DisplaySize / 2.0f;
+        ImVec2 image_size{ (float) logo.width, (float) logo.height };
+
+        float spinner_side = image_size.y / 5.0f;
+
+        ImVec2 image_top_left = screen_center - (image_size / 2.0f);
+        ImVec2 spinner_top_left = image_top_left + ImVec2(image_size.x + 20.0f, image_size.y / 2.0f - spinner_side / 2.0f);
+
+        ImDrawList* draw_list = ImGui::GetWindowDrawList();
+
+        draw_list->AddImage((void*) (uintptr_t) logo.texture_id, image_top_left, image_top_left + image_size);
+        draw_loading_spinner(draw_list, spinner_top_left, spinner_side, 6, color_link);
 
         return;
     }
@@ -568,7 +618,6 @@ void loop() {
 void load_persisted_settings() {
     char* selected_account = platform_local_storage_get("selected_account");
     char* last_selected_folder = platform_local_storage_get("last_selected_folder");
-    char* last_selected_task = platform_local_storage_get("last_selected_task");
 
     if (selected_account) {
         char* number_end = NULL;
@@ -576,8 +625,11 @@ void load_persisted_settings() {
         selected_account_id = (s32) strtol(selected_account, &number_end, 10);
 
         if (selected_account_id != NO_ACCOUNT) {
+            folder_tree_init(ROOT_FOLDER);
+
             request_workflow_for_account(selected_account_id);
             request_suggestions_for_account(selected_account_id);
+            request_folder_children_for_folder_tree(ROOT_FOLDER);
         }
     }
 
@@ -589,14 +641,6 @@ void load_persisted_settings() {
         request_folder_contents(folder_id);
 
         had_last_selected_folder_so_doesnt_need_to_load_the_root_folder = true;
-    }
-
-    if (last_selected_task) {
-        String task_id;
-        task_id.start = last_selected_task;
-        task_id.length = strlen(last_selected_task);
-
-        request_task_by_full_id(task_id);
     }
 }
 
@@ -637,18 +681,14 @@ bool init() {
     setup_ui();
 
     api_request(Http_Get, accounts_request, "accounts?fields=['customFields']");
-    api_request(Http_Get, folder_tree_request, "folders?fields=['color']&deleted=false");
     api_request(Http_Get, contacts_request, "contacts");
 
     started_loading_users_at = tick;
-
-    folder_tree_init();
 
     load_persisted_settings();
 
     printf("Platform init: %s\n", result ? "true" : "false");
 
-    Memory_Image logo{};
     load_png_from_disk("resources/wrike_logo.png", logo);
     set_header_logo(logo);
 

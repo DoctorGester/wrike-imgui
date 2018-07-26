@@ -17,6 +17,26 @@ struct Folder_Color {
     }
 };
 
+struct Folder_Handle {
+    s32 value;
+
+    Folder_Handle(){};
+
+    explicit Folder_Handle(s32 v) : value(v) {};
+
+    explicit operator s32() const {
+        return value;
+    }
+
+    bool operator ==(const Folder_Handle& handle) const {
+        return value == handle.value;
+    }
+
+    bool operator !=(const Folder_Handle& handle) const {
+        return value != handle.value;
+    }
+};
+
 struct Folder {
     Folder_Id id;
     String name;
@@ -25,22 +45,27 @@ struct Folder {
 
 struct Folder_Tree_Node : Folder {
     u32 id_hash;
-    u16 num_children;
-    Relative_Pointer<Folder_Tree_Node*> children;
+    Folder_Handle children;
+    u32 num_children;
+    u32 finished_loading_children_at;
+    u32 num_expected_children;
+    bool children_loaded;
+    bool is_expanded;
 };
 
+const Folder_Handle NULL_FOLDER_HANDLE(-1);
+
 void draw_folder_tree(float column_width);
-void folder_tree_init();
-void process_folder_tree_request(char* json, jsmntok_t* tokens, u32 num_tokens);
+void folder_tree_init(Folder_Id root_node_id);
+void process_folder_tree_request(Folder_Id folder, char* json, jsmntok_t* tokens, u32 num_tokens);
 void process_suggested_folders_data(char* json, u32 data_size, jsmntok_t*&token);
 void process_starred_folders_data(char* json, u32 data_size, jsmntok_t*& token);
+void process_multiple_folders_data(char* json, u32 data_size, jsmntok_t*& token);
 
 void folder_tree_search(const char* query, List<Folder_Tree_Node*>* result);
 
 Folder_Tree_Node* find_folder_tree_node_by_id(Folder_Id id, u32 id_hash = 0);
 
-extern Folder_Tree_Node* root_node;
-extern Folder_Tree_Node* all_nodes;
-extern u32 total_nodes;
+extern List<Folder_Tree_Node> all_nodes;
 
 extern List<Folder> suggested_folders;

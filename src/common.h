@@ -21,6 +21,8 @@ typedef long long s64;
 typedef int s32;
 typedef short s16;
 
+typedef s32 Request_Id;
+
 // TODO strong typedefs?
 // TODO hash could be optionally contained within the ID
 typedef s32 Account_Id;
@@ -89,6 +91,7 @@ bool load_png_from_disk(const char* path, Memory_Image& out);
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
 #define ARRAY_SIZE(array) (sizeof(array) / sizeof(array[0]))
+#define LIST_LAST(list) (list.length ? list[list.length - 1] : list[0])
 
 #define GL_CHECKED(command)\
     command;\

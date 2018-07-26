@@ -2,8 +2,11 @@
 #include <cassert>
 #include <cstring>
 #include <cstdlib>
+#include <html_entities.h>
 #include "rich_text.h"
 #include "temporary_storage.h"
+
+const s32 NO_VALUE = -1;
 
 enum Rich_Text_Token_Type {
     Rich_Text_Token_Type_Tag,
@@ -14,8 +17,8 @@ enum Rich_Text_Token_Type {
 
 struct Rich_Text_Token {
     Rich_Text_Token_Type type;
-    char* start;
-    char* end = NULL;
+    s32 start;
+    s32 end;
     u32 num_attributes = 0;
     bool singular_attribute = true;
 };
@@ -54,10 +57,11 @@ u32 array_add(Array<T>* array, T value) {
 #define foreach(variable, array) \
     for(auto (variable) = (array).values, end = (array).values + (array).length; (variable) < end; (variable)++)
 
-static Rich_Text_Token make_token(Rich_Text_Token_Type token_type, char* start) {
+static Rich_Text_Token make_token(Rich_Text_Token_Type token_type, u32 start) {
     Rich_Text_Token token{};
     token.type = token_type;
     token.start = start;
+    token.end = NO_VALUE;
     token.num_attributes = 0;
 
     return token;
@@ -66,10 +70,8 @@ static Rich_Text_Token make_token(Rich_Text_Token_Type token_type, char* start) 
 // TODO it's terrible, a rewrite in something like re2c is absolutely required!
 static void parse_text_into_tokens(String& text, Array<Rich_Text_Token>& tokens) {
     Rich_Text_Token current_token{};
-    current_token.start = text.start;
+    current_token.start = 0;
     current_token.type = Rich_Text_Token_Type_Text;
-
-    const s32 NO_VALUE = -1;
 
     s32 current_tag = NO_VALUE;
     s32 current_attribute = NO_VALUE;
@@ -81,27 +83,26 @@ static void parse_text_into_tokens(String& text, Array<Rich_Text_Token>& tokens)
     bool in_quoted_string = false;
 
     for (u32 index = 0; index < text.length; index++) {
-        char* current_pointer = (index + text.start);
-        char current = *current_pointer;
+        char current = *(index + text.start);
 
         Rich_Text_Token* tag = tokens.values + current_tag;
         Rich_Text_Token* attribute = tokens.values + current_attribute;
         Rich_Text_Token* value = tokens.values + current_value;
 
         if (current_tag != NO_VALUE) {
-            bool self_closing_tag = (current == '/' && index < text.length - 1 && *(current_pointer + 1) == '>');
+            bool self_closing_tag = (current == '/' && index < text.length - 1 && *(index + text.start + 1) == '>');
 
             if (current == '>' || self_closing_tag) {
-                if (!tag->end) {
-                    tag->end = current_pointer;
+                if (tag->end == NO_VALUE) {
+                    tag->end = index;
                 }
 
-                if (current_attribute != NO_VALUE && !attribute->end) {
-                    attribute->end = current_pointer;
+                if (current_attribute != NO_VALUE && attribute->end == NO_VALUE) {
+                    attribute->end = index;
                 }
 
-                if (current_value != NO_VALUE && !value->end) {
-                    value->end = current_pointer;
+                if (current_value != NO_VALUE && value->end == NO_VALUE) {
+                    value->end = index;
                 }
 
                 current_tag = NO_VALUE;
@@ -111,14 +112,14 @@ static void parse_text_into_tokens(String& text, Array<Rich_Text_Token>& tokens)
                 in_attribute_name = false;
                 in_attribute_value = false;
                 in_quoted_string = false;
-                current_token = make_token(Rich_Text_Token_Type_Text, current_pointer + 1);
+                current_token = make_token(Rich_Text_Token_Type_Text, index + 1);
 
                 if (self_closing_tag) {
                     current_token.start++;
                     index++;
                 }
             } else if (current == '=' && current_attribute != NO_VALUE && !post_attribute_equals) {
-                attribute->end = current_pointer;
+                attribute->end = index;
                 attribute->singular_attribute = false;
 
                 in_attribute_name = false;
@@ -127,12 +128,12 @@ static void parse_text_into_tokens(String& text, Array<Rich_Text_Token>& tokens)
                 if (in_tag_name) {
                     if (current == ' ') {
                         in_tag_name = false;
-                        tag->end = current_pointer;
+                        tag->end = index;
                     }
                 } else {
                     if (in_attribute_name) {
                         if (current == ' ') {
-                            attribute->end = current_pointer;
+                            attribute->end = index;
                             in_attribute_name = false;
                         }
                     } else {
@@ -142,26 +143,26 @@ static void parse_text_into_tokens(String& text, Array<Rich_Text_Token>& tokens)
                                     if (current == '"') {
                                         in_attribute_value = false;
                                         post_attribute_equals = false;
-                                        value->end = current_pointer;
+                                        value->end = index;
                                         in_quoted_string = false;
                                     }
                                 } else {
                                     if (current == ' ') {
                                         in_attribute_value = false;
                                         post_attribute_equals = false;
-                                        value->end = current_pointer;
+                                        value->end = index;
                                     } else if (current == '"') {
-                                        value->start = current_pointer + 1;
+                                        value->start = index + 1;
                                         in_quoted_string = true;
                                     }
                                 }
                             } else {
                                 in_attribute_value = true;
-                                current_token = make_token(Rich_Text_Token_Type_Value, current_pointer);
+                                current_token = make_token(Rich_Text_Token_Type_Value, index);
                                 current_value = array_add(&tokens, current_token);
                             }
                         } else {
-                            current_token = make_token(Rich_Text_Token_Type_Attribute, current_pointer);
+                            current_token = make_token(Rich_Text_Token_Type_Attribute, index);
 
                             in_attribute_name = true;
 
@@ -173,13 +174,13 @@ static void parse_text_into_tokens(String& text, Array<Rich_Text_Token>& tokens)
             }
         } else {
             if (current == '<') {
-                if (current_pointer - current_token.start > 0) {
-                    current_token.end = current_pointer;
+                if (index - current_token.start > 0) {
+                    current_token.end = index;
 
                     array_add(&tokens, current_token);
                 }
 
-                current_token = make_token(Rich_Text_Token_Type_Tag, current_pointer + 1);
+                current_token = make_token(Rich_Text_Token_Type_Tag, index + 1);
 
                 in_tag_name = true;
 
@@ -188,21 +189,19 @@ static void parse_text_into_tokens(String& text, Array<Rich_Text_Token>& tokens)
         }
     }
 
-    char* text_end = (text.start + text.length);
-
-    if (text_end - current_token.start > 0) {
-        current_token.end = text_end;
+    if (text.length - current_token.start > 0) {
+        current_token.end = text.length;
 
         array_add(&tokens, current_token);
     }
 }
 
-bool token_eq(Rich_Text_Token* token, const char* text) {
-    u32 length = MAX(token->end - token->start, strlen(text));
-    return strncmp(token->start, text, length) == 0;
+bool token_eq(String text, Rich_Text_Token* token, const char* compare_with) {
+    u32 length = MAX(token->end - token->start, strlen(compare_with));
+    return strncmp(text.start + token->start, compare_with, length) == 0;
 }
 
-void parse_text_into_rich_string_recursively(Array<Rich_Text_Token>& tokens, Rich_Text_Style style, u32& index, Array<Rich_Text_String>* output) {
+void parse_text_into_rich_string_recursively(String text, Array<Rich_Text_Token>& tokens, Rich_Text_Style style, u32& index, Array<Rich_Text_String>* output) {
     for (; index < tokens.length; index++) {
         Rich_Text_Token& token = tokens.values[index];
 
@@ -210,8 +209,8 @@ void parse_text_into_rich_string_recursively(Array<Rich_Text_Token>& tokens, Ric
             case Rich_Text_Token_Type_Text: {
                 Rich_Text_String new_string;
 
-                new_string.text.start = token.start;
-                new_string.text.length = token.end - token.start;
+                new_string.start = (u32) token.start;
+                new_string.end = (u32) token.end;
                 new_string.style = style;
 
                 array_add(output, new_string);
@@ -220,7 +219,7 @@ void parse_text_into_rich_string_recursively(Array<Rich_Text_Token>& tokens, Ric
             }
 
             case Rich_Text_Token_Type_Tag: {
-                if (*token.start == '/') {
+                if (*(text.start + token.start) == '/') {
                     return;
                 }
 
@@ -237,27 +236,27 @@ void parse_text_into_rich_string_recursively(Array<Rich_Text_Token>& tokens, Ric
 
                 Tag_Type tag_type = Tag_Type_Other;
 
-                if (token_eq(&token, "strong")) {
+                if (token_eq(text, &token, "strong")) {
                     new_style.flags |= Rich_Text_Flags_Bold;
                     tag_type = Tag_Type_Any;
-                } else if (token_eq(&token, "em")) {
+                } else if (token_eq(text, &token, "em")) {
                     new_style.flags |= Rich_Text_Flags_Italic;
                     tag_type = Tag_Type_Any;
-                } else if (token_eq(&token, "br")) {
+                } else if (token_eq(text, &token, "br")) {
                     Rich_Text_String empty_string{};
                     array_add(output, empty_string);
 
                     continue;
-                } else if (token_eq(&token, "img")) {
+                } else if (token_eq(text, &token, "img")) {
                     tag_type = Tag_Type_Img;
-                } else if (token_eq(&token, "span")) {
+                } else if (token_eq(text, &token, "span")) {
                     tag_type = Tag_Type_Span;
-                } else if (token_eq(&token, "a")) {
+                } else if (token_eq(text, &token, "a")) {
                     tag_type = Tag_Type_A;
-                } else if (token_eq(&token, "ul")) {
+                } else if (token_eq(text, &token, "ul")) {
                     tag_type = Tag_Type_Any;
                     new_style.list_depth++;
-                } else if (token_eq(&token, "li")) {
+                } else if (token_eq(text, &token, "li")) {
                     tag_type = Tag_Type_List_Item;
                 }
 
@@ -271,18 +270,19 @@ void parse_text_into_rich_string_recursively(Array<Rich_Text_Token>& tokens, Ric
 
                     switch (tag_type) {
                         case Tag_Type_A: {
-                            if (token_eq(attribute, "href")) {
+                            if (token_eq(text, attribute, "href")) {
                                 assert(value);
 
-                                new_style.link.start = value->start;
-                                new_style.link.length = value->end - value->start;
+                                new_style.flags |= Rich_Text_Flags_Link;
+                                new_style.link_start = (u32) value->start;
+                                new_style.link_end = (u32) value->end;
                             }
 
                             break;
                         }
 
                         case Tag_Type_Img: {
-                            if (token_eq(attribute, "src")) {
+                            if (token_eq(text, attribute, "src")) {
                                 assert(value);
 
                                 // TODO image processing
@@ -293,10 +293,10 @@ void parse_text_into_rich_string_recursively(Array<Rich_Text_Token>& tokens, Ric
 
                         case Tag_Type_Span: {
                             // TODO we need to parse internal css there and extract background-color, bleh!
-                            if (token_eq(attribute, "style")) {
+                            if (token_eq(text, attribute, "style")) {
                                 assert(value);
 
-                                for (char* c = value->start; c <= value->end; c++) {
+                                for (char* c = text.start + value->start; c <= text.start + value->end; c++) {
                                     if (*c == '#') {
                                         char* start_ptr = c + 1;
                                         char* end_ptr = start_ptr + 6;
@@ -327,7 +327,7 @@ void parse_text_into_rich_string_recursively(Array<Rich_Text_Token>& tokens, Ric
                     continue;
                 }
 
-                parse_text_into_rich_string_recursively(tokens, new_style, ++index, output);
+                parse_text_into_rich_string_recursively(text, tokens, new_style, ++index, output);
 
                 if (tag_type == Tag_Type_List_Item) {
                     Rich_Text_String empty_string{};
@@ -335,7 +335,7 @@ void parse_text_into_rich_string_recursively(Array<Rich_Text_Token>& tokens, Ric
                 }
 
                 if (tag_type == Tag_Type_Other) {
-                    printf("Unrecognized tag: %.*s\n", token.end - token.start, token.start);
+                    printf("Unrecognized tag: %.*s\n", token.end - token.start, token.start + text.start);
                 }
 
                 assert(tokens.values[index].type == Rich_Text_Token_Type_Tag);
@@ -363,8 +363,8 @@ void destructively_strip_html_comments(String& text) {
         if (comment_start) {
             if (text_end - current >= 3 && strncmp("-->", current, 3) == 0) {
                 char* post_comment_close_tag = current + 3;
-                u32 remaining_text_length = text_end - post_comment_close_tag;
-                u32 comment_length = post_comment_close_tag - comment_start;
+                u64 remaining_text_length = text_end - post_comment_close_tag;
+                u64 comment_length = post_comment_close_tag - comment_start;
 
                 // Important to use memmove, the memory regions overlap!
                 memmove(comment_start, post_comment_close_tag, remaining_text_length);
@@ -380,11 +380,10 @@ void destructively_strip_html_comments(String& text) {
         }
     }
 
-    text.length = text_end - text.start;
+    text.length = (u32) (text_end - text.start);
 }
 
-
-void parse_rich_text(String& text, Rich_Text_String*& output, u32& output_size) {
+static List<Rich_Text_String> parse_string_into_rich_text_string_list(String text) {
     Array<Rich_Text_Token> tokens{};
     parse_text_into_tokens(text, tokens);
 
@@ -395,30 +394,109 @@ void parse_rich_text(String& text, Rich_Text_String*& output, u32& output_size) 
             text_tokens++;
         }
 
-        if (token->type == Rich_Text_Token_Type_Tag && token_eq(token, "br")) {
+        if (token->type == Rich_Text_Token_Type_Tag && token_eq(text, token, "br")) {
             text_tokens++;
         }
 
-        if (token->type == Rich_Text_Token_Type_Tag && token_eq(token, "li")) {
+        if (token->type == Rich_Text_Token_Type_Tag && token_eq(text, token, "li")) {
             text_tokens++;
         }
     }
 
-    // TODO that's a memory leak right there.
-    // TODO a proper solution would be to use output and output_size and REALLOC them
     Array<Rich_Text_String> result_strings{};
-    result_strings.values = (Rich_Text_String*) MALLOC(sizeof(Rich_Text_String) * text_tokens);
+    result_strings.values = (Rich_Text_String*) talloc(sizeof(Rich_Text_String) * text_tokens);
     result_strings.watermark = text_tokens;
 
     u32 index = 0;
     Rich_Text_Style empty_style{};
 
-    parse_text_into_rich_string_recursively(tokens, empty_style, index, &result_strings);
+    parse_text_into_rich_string_recursively(text, tokens, empty_style, index, &result_strings);
 
 //    foreach(str, result_strings) {
 //        printf("%i :: %.*s\n", str->style.background_color, str->text.length, str->text.start);
 //    }
 
-    output = result_strings.values;
-    output_size = text_tokens;
+    List<Rich_Text_String> output;
+    output.data = result_strings.values;
+    output.length = text_tokens;
+
+    return output;
+}
+
+Rich_Text parse_string_into_temporary_rich_text(String text) {
+    // We copy to strip comments from description
+    // In fact we could just do that in the original string, since stripping comments
+    //  never adds characters, only removes them, but this is 'cleaner'
+    text = tprintf("%.*s", text.length, text.start);
+
+    destructively_strip_html_comments(text);
+
+    List<Rich_Text_String> temporary_strings = parse_string_into_rich_text_string_list(text);
+
+    Rich_Text out{};
+    out.rich = temporary_strings;
+
+    u32 total_text_length = 0;
+
+    for (u32 index = 0; index < temporary_strings.length; index++) {
+        Rich_Text_String& string = temporary_strings[index];
+
+        total_text_length += (string.end - string.start);
+
+        if (string.style.flags & Rich_Text_Flags_Link) {
+            total_text_length += string.style.link_end - string.style.link_start;
+        }
+    }
+
+    out.raw.start = (char*) talloc(total_text_length);
+    out.raw.length = total_text_length;
+
+    u32 text_cursor = 0;
+
+    // Copying all text into one memory chunk while also decoding html entities
+    {
+        for (u32 index = 0; index < temporary_strings.length; index++) {
+            Rich_Text_String& string = temporary_strings[index];
+
+            size_t new_length = 0;
+
+            if (string.end - string.start > 0) {
+                new_length = decode_html_entities_utf8(
+                        out.raw.start + text_cursor,
+                        text.start + string.start,
+                        text.start + string.end
+                );
+            }
+
+            string.start = text_cursor;
+            string.end = (u32) (text_cursor + new_length);
+
+            text_cursor += new_length;
+        }
+    }
+
+    // Appending link urls to the very end
+    {
+        for (u32 index = 0; index < temporary_strings.length; index++) {
+            Rich_Text_String& string = temporary_strings[index];
+
+            if (string.style.flags & Rich_Text_Flags_Link) {
+                u32 link_length = string.style.link_end - string.style.link_start;
+
+                memcpy(out.raw.start + text_cursor,
+                       text.start + string.style.link_start,
+                       link_length
+                );
+
+                string.style.link_start = text_cursor;
+                string.style.link_end = text_cursor + link_length;
+
+                text_cursor += link_length;
+            }
+        }
+    }
+
+    out.raw.length = text_cursor;
+
+    return out;
 }

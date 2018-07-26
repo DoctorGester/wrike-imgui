@@ -32,20 +32,10 @@ struct HSL {
     float l;
 };
 
-struct Horizontal_Layout {
-    ImVec2 top_left;
-    ImVec2 cursor;
-    float row_height;
-    float scale;
-};
-
-struct Wrapping_Horizontal_Layout : Horizontal_Layout {
-    float wrap_width;
-    bool has_drawn_at_least_one_element;
-};
-
 static Memory_Image checkmark{};
 static List<User*> filtered_users{};
+static Lazy_Array<Rich_Text_String, 64> comment_strings{};
+static Lazy_Array<char, 512> comment_chars{};
 
 static const float status_picker_row_height = 50.0f;
 static const float assignee_avatar_side = 32.0f;
@@ -109,7 +99,7 @@ static float hue_to_rgb(float v1, float v2, float vH) {
     return v1;
 }
 
-struct RGB hsl_to_rgb(struct HSL hsl) {
+RGB hsl_to_rgb(HSL hsl) {
     RGB rgb;
 
     if (hsl.s == 0) {
@@ -151,57 +141,6 @@ static char* string_contains_substring_ignore_case(String string, char* query_lo
     string_buffer[string.length] = 0;
 
     return string_in_substring(string_buffer, query_lowercase, string.length);
-}
-
-static Horizontal_Layout horizontal_layout(ImVec2 top_left, float row_height) {
-    Horizontal_Layout layout;
-    layout.scale = platform_get_pixel_ratio();
-    layout.cursor = top_left;
-    layout.top_left = top_left;
-    layout.row_height = row_height;
-
-    return layout;
-}
-
-static Wrapping_Horizontal_Layout wrapping_horizontal_layout(ImVec2 top_left, float row_height, float wrap_width) {
-    Wrapping_Horizontal_Layout layout;
-    layout.scale = platform_get_pixel_ratio();
-    layout.cursor = top_left;
-    layout.top_left = top_left;
-    layout.row_height = row_height;
-    layout.wrap_width = wrap_width;
-    layout.has_drawn_at_least_one_element = false;
-
-    return layout;
-}
-
-static bool layout_check_wrap(Wrapping_Horizontal_Layout& layout, ImVec2 item_size) {
-    bool would_like_to_wrap = layout.cursor.x + item_size.x > layout.top_left.x + layout.wrap_width;
-
-    return layout.has_drawn_at_least_one_element && would_like_to_wrap;
-}
-
-static void layout_wrap(Wrapping_Horizontal_Layout& layout) {
-    layout.cursor.x = layout.top_left.x;
-    layout.cursor.y += layout.row_height;
-}
-
-static bool layout_check_and_wrap(Wrapping_Horizontal_Layout& layout, ImVec2 item_size) {
-    if (layout_check_wrap(layout, item_size)) {
-        layout_wrap(layout);
-
-        return true;
-    }
-
-    return false;
-}
-
-static void layout_advance(Horizontal_Layout& layout, float value) {
-    layout.cursor.x += value;
-}
-
-static ImVec2 layout_center_vertically(Horizontal_Layout& layout, float known_height) {
-    return { layout.cursor.x, layout.cursor.y + layout.row_height / 2.0f - known_height / 2.0f };
 }
 
 static void update_user_search(char* query) {
@@ -547,10 +486,10 @@ static void draw_folder_picker_contents(bool set_focus) {
             ImGui::PopID();
         }
 
-        ImGuiListClipper clipper(total_nodes);
+        ImGuiListClipper clipper(all_nodes.length);
 
         while (clipper.Step()) {
-            for (Folder_Tree_Node* it = all_nodes + clipper.DisplayStart; it != all_nodes + clipper.DisplayEnd; it++) {
+            for (Folder_Tree_Node* it = all_nodes.data + clipper.DisplayStart; it != all_nodes.data + clipper.DisplayEnd; it++) {
                 ImGui::PushID(it);
 
                 if (draw_folder_picker_folder_selection_button(draw_list, it->name, it->color, selection_button_size, padding)) {
@@ -1288,32 +1227,28 @@ static float draw_custom_fields(ImVec2 top_left, float wrap_width) {
     return bottom_y - layout.top_left.y;
 }
 
-static float draw_task_description(ImVec2 top_left, float wrap_width) {
-    Rich_Text_String* text_start = current_task.description;
-    Rich_Text_String* text_end = text_start + current_task.description_strings - 1;
+static ImVec2 draw_rich_text(ImDrawList* draw_list, ImVec2 top_left, Rich_Text& text, float wrap_width, bool just_calculate_size) {
+    Rich_Text_String* rich_text_start = text.rich.data;
+    Rich_Text_String* rich_text_end = rich_text_start + text.rich.length - 1;
 
-    ImVec2 cursor = top_left;
+    Vertical_Layout layout = vertical_layout(top_left);
 
-    float scale = platform_get_pixel_ratio();
+    for (Rich_Text_String* paragraph_end = rich_text_start, *paragraph_start = paragraph_end; paragraph_end <= rich_text_end; paragraph_end++) {
+        u32 length = paragraph_end->end - paragraph_end->start;
 
-    ImDrawList* draw_list = ImGui::GetWindowDrawList();
+        bool is_newline = length == 0;
+        bool should_flush_text = is_newline || paragraph_end == rich_text_end;
 
-    for (Rich_Text_String* paragraph_end = text_start, *paragraph_start = paragraph_end; paragraph_end <= text_end; paragraph_end++) {
-        bool is_newline = paragraph_end->text.length == 0;
-        bool should_flush_text = is_newline || paragraph_end == text_end;
-
-        char* string_start = paragraph_start->text.start;
-        char* string_end = paragraph_end->text.start + paragraph_end->text.length;
-
-        if (is_newline && (string_end - string_start) == 0) {
-            cursor.x = top_left.x;
-            cursor.y += 24.0f * scale;
+        if (is_newline && (paragraph_end->end - paragraph_start->start) == 0) {
+            layout.cursor.x = layout.top_left.x;
+            layout_advance(layout, 24.0f * layout.scale);
 
             paragraph_start = paragraph_end + 1;
             continue;
         }
 
-        if (should_flush_text && paragraph_end - paragraph_start) {
+        // TODO figure out why the commented part was there
+        if (should_flush_text/* && paragraph_end - paragraph_start*/) {
 #if 0
             const char* check_mark = "\u2713";
                 const char* check_box = "\u25A1";
@@ -1328,30 +1263,42 @@ static float draw_task_description(ImVec2 top_left, float wrap_width) {
                     }
                 }
 #endif
+            char* text_start = text.raw.start + paragraph_start->start;
+            char* text_end   = text.raw.start + paragraph_end->end;
 
-            float indent = paragraph_start->style.list_depth * 20.0f;
+            const ImVec2 text_size = ImGui::CalcTextSize(text_start, text_end, false, wrap_width);
+
+            float indent = paragraph_start->style.list_depth * 20.0f * layout.scale;
 
             if (indent) {
-                cursor.x += indent * scale;
+                layout.cursor.x += indent;
             }
 
-            float text_height = add_rich_text(
-                    draw_list,
-                    cursor,
-                    paragraph_start,
-                    paragraph_end,
-                    wrap_width,
-                    1.0f
-            );
+            Rich_Text paragraph;
+            paragraph.raw = text.raw;
+            paragraph.rich.data = paragraph_start;
+            paragraph.rich.length = (u32) (paragraph_end - paragraph_start);
 
-            cursor.x = top_left.x;
-            cursor.y += text_height;
+            if (!just_calculate_size) {
+                add_rich_text(
+                        draw_list,
+                        layout.cursor,
+                        paragraph,
+                        wrap_width,
+                        1.0f
+                );
+            }
+
+            layout.cursor.x = top_left.x;
+
+            layout_push_max_width(layout, text_size.x);
+            layout_advance(layout, text_size.y);
 
             paragraph_start = paragraph_end + 1;
         }
     }
 
-    return cursor.y - top_left.y;
+    return { layout.maximum_width, layout.cursor.y - layout.top_left.y };
 }
 
 static void draw_default_status_picker(ImVec2 top_left, float& out_width) {
@@ -1435,6 +1382,68 @@ static void draw_status_and_assignees_row(ImVec2 top_left, float wrap_width) {
     draw_add_assignee_button_and_contact_picker(layout);
 }
 
+static void draw_task_comments() {
+    Vertical_Layout layout = vertical_layout(ImGui::GetCursorScreenPos());
+
+    List<Task_Comment> comments = current_task.comments;
+
+    ImDrawList* draw_list = ImGui::GetWindowDrawList();
+
+    ImVec2 text_padding = ImVec2(12.0f, 8.0f) * layout.scale;
+    float content_padding = 24.0f * layout.scale;
+    float avatar_side = assignee_avatar_side * layout.scale;
+    float space_between_avatar_and_entry = 8.0f * layout.scale;
+    float comment_wrap_width = ImGui::GetContentRegionAvailWidth();
+    float space_between_name_and_comment_text = 8.0f * layout.scale;
+
+    comment_wrap_width -= content_padding;
+    comment_wrap_width -= avatar_side;
+    comment_wrap_width -= space_between_avatar_and_entry;
+    comment_wrap_width -= text_padding.x;
+    // Comment goes here
+    comment_wrap_width -= text_padding.x;
+    comment_wrap_width -= content_padding;
+
+    const u32 comment_background = 0xfff4f4f4;
+
+    layout.cursor += ImVec2(content_padding, 0);
+
+    for (Task_Comment* it = comments.data; it != comments.data + comments.length; it++) {
+        User* user = find_user_by_id(it->author);
+
+        if (!user) {
+            // TODO that should work
+            continue;
+        }
+
+        String user_name = full_user_name_to_temporary_string(user);
+
+        ImVec2 comment_box_top_left = layout.cursor
+                                      + ImVec2(avatar_side, 0)
+                                      + ImVec2(space_between_avatar_and_entry, 0);
+
+        ImVec2 name_size = ImGui::CalcTextSize(user_name.start, user_name.start + user_name.length);
+        ImVec2 text_size = draw_rich_text(draw_list, comment_box_top_left, it->text, comment_wrap_width, true);
+
+        float content_width = MAX(text_size.x, name_size.x);
+        float content_height = name_size.y + space_between_name_and_comment_text + text_size.y;
+
+        ImVec2 comment_box_size = text_padding + ImVec2(content_width, content_height) + text_padding;
+        ImVec2 name_top_left = comment_box_top_left + text_padding;
+        ImVec2 text_top_left = name_top_left + ImVec2(0, name_size.y) + ImVec2(0, space_between_name_and_comment_text);
+
+        draw_circular_user_avatar(draw_list, user, layout.cursor, assignee_avatar_side * layout.scale);
+
+        draw_list->AddRectFilled(comment_box_top_left, comment_box_top_left + comment_box_size, comment_background, 4.0f);
+        draw_list->AddText(name_top_left, color_black_text_on_white, user_name.start, user_name.start + user_name.length);
+        draw_rich_text(draw_list, text_top_left, it->text, comment_wrap_width, false);
+
+        layout_advance(layout, comment_box_size.y + 12.0f * layout.scale);
+    }
+
+    layout_push_item_size(layout);
+}
+
 void draw_task_contents() {
     // TODO temporary code, resource loading should be moved out somewhere
     if (!checkmark.width) {
@@ -1491,14 +1500,20 @@ void draw_task_contents() {
 
     cursor_y += 48.0f * scale;
 
-    if (current_task.description_strings > 0) {
+    if (current_task.description.rich.length > 0) {
         float text_padding_x = 32.0f * scale;
 
         ImVec2 description_top_left(top_left.x + text_padding_x, cursor_y);
 
-        cursor_y += draw_task_description(description_top_left, content_wrap_width - text_padding_x * 2.0f);
+        ImVec2 text_size = draw_rich_text(draw_list, description_top_left, current_task.description, content_wrap_width - text_padding_x * 2.0f, false);
+
+        cursor_y += text_size.y;
         cursor_y += 8.0f * scale;
     }
+
+    ImGui::Dummy({ 0, cursor_y - top_left.y });
+
+    draw_task_comments();
 
     bool should_draw_shadow = ImGui::GetScrollY() > 0.01f;
 
@@ -1512,14 +1527,49 @@ void draw_task_contents() {
         draw_list->AddRectFilledMultiColor(shadow_top_left, shadow_bottom_right, shadow_start, shadow_start, shadow_end, shadow_end);
     }
 
-    ImGui::Dummy({ 0, cursor_y - top_left.y });
-
     ImGui::EndChild();
 
     float alpha = lerp(MAX(finished_loading_task_at, finished_loading_users_at), tick, 1.0f, 8);
     ImGui::FadeInOverlay(alpha);
 
     ImGui::EndChildFrame();
+}
+
+static void find_and_request_missing_folders_if_necessary() {
+    List<Folder_Id> missing_folder_data{};
+
+    auto count_missing_folders = [] (List<Folder_Id> folders) {
+        u32 result = 0;
+
+        for (Folder_Id* it = folders.data; it != folders.data + folders.length; it++) {
+            if (!find_folder_tree_node_by_id(*it, hash_id(*it))) {
+                result++;
+            }
+        }
+
+        return result;
+    };
+
+    auto fill_missing_folders = [&] (List<Folder_Id> folders) {
+        for (Folder_Id* it = folders.data; it != folders.data + folders.length; it++) {
+            Folder_Id folder_id = *it;
+
+            if (!find_folder_tree_node_by_id(folder_id, hash_id(folder_id))) {
+                missing_folder_data.data[missing_folder_data.length++] = folder_id;
+            }
+        }
+    };
+
+    u32 total_count = count_missing_folders(current_task.parents) + count_missing_folders(current_task.super_parents);
+
+    if (total_count > 0) {
+        missing_folder_data.data = (Folder_Id*) talloc(sizeof(Folder_Id) * total_count);
+
+        fill_missing_folders(current_task.parents);
+        fill_missing_folders(current_task.super_parents);
+
+        request_multiple_folders(missing_folder_data);
+    }
 }
 
 typedef void (*Id_Processor)(char* json, jsmntok_t* token, s32& id);
@@ -1567,6 +1617,92 @@ void process_task_custom_field_value(Custom_Field_Value* custom_field_value, cha
             token--;
         }
     }
+}
+
+void process_task_comments_data(char* json, u32 data_size, jsmntok_t*& token) {
+    List<Task_Comment>* comments = &current_task.comments;
+
+    if (comments->length < data_size) {
+        comments->data = (Task_Comment*) REALLOC(comments->data, sizeof(Task_Comment) * data_size);
+    }
+
+    comments->length = 0;
+
+    lazy_array_soft_reset(comment_strings);
+    lazy_array_soft_reset(comment_chars);
+
+    for (u32 array_index = 0; array_index < data_size; array_index++) {
+        jsmntok_t* object_token = token++;
+
+        assert(object_token->type == JSMN_OBJECT);
+
+        Task_Comment* comment = &comments->data[comments->length++];
+
+        for (u32 propety_index = 0; propety_index < object_token->size; propety_index++, token++) {
+            jsmntok_t* property_token = token++;
+
+            assert(property_token->type == JSMN_STRING);
+
+            jsmntok_t* next_token = token;
+
+            if (json_string_equals(json, property_token, "text")) {
+                String comment_text{};
+
+                json_token_to_string(json, next_token, comment_text);
+
+                temporary_storage_mark();
+
+                Rich_Text temporary_text = parse_string_into_temporary_rich_text(comment_text);
+                Rich_Text_String* persisted_strings = lazy_array_reserve_n_values(comment_strings, temporary_text.rich.length);
+                char* persisted_chars = lazy_array_reserve_n_values(comment_chars, temporary_text.raw.length);
+
+                // We'll fix up the data pointers later
+                memcpy(persisted_chars, temporary_text.raw.start, temporary_text.raw.length);
+                memcpy(persisted_strings, temporary_text.rich.data, temporary_text.rich.length * sizeof(Rich_Text_String));
+
+                comment->text.rich.length = temporary_text.rich.length;
+                comment->text.raw.length = temporary_text.raw.length;
+
+                temporary_storage_reset();
+            } else if (json_string_equals(json, property_token, "authorId")) {
+                json_token_to_id8(json, next_token, comment->author);
+            } else {
+                eat_json(token);
+                token--;
+            }
+        }
+    }
+
+    // Data pointer fix-up
+    Rich_Text_String* current_string = comment_strings.data;
+    char* current_char = comment_chars.data;
+
+    for (Task_Comment* it = comments->data; it != comments->data + comments->length; it++) {
+        Rich_Text& text = it->text;
+
+        text.raw.start = current_char;
+        text.rich.data = current_string;
+
+        current_char += text.raw.length;
+        current_string += text.rich.length;
+    }
+}
+
+void parse_and_update_task_description(String description) {
+    Rich_Text temporary_text = parse_string_into_temporary_rich_text(description);
+    Rich_Text& persistent_text = current_task.description;
+
+    persistent_text.raw.start = (char*) REALLOC(persistent_text.raw.start, temporary_text.raw.length);
+    persistent_text.raw.length = temporary_text.raw.length;
+
+    memcpy(persistent_text.raw.start, temporary_text.raw.start, temporary_text.raw.length);
+
+    u32 rich_memory = sizeof(Rich_Text_String) * temporary_text.rich.length;
+
+    persistent_text.rich.data = (Rich_Text_String*) REALLOC(persistent_text.rich.data, rich_memory);
+    persistent_text.rich.length = temporary_text.rich.length;
+
+    memcpy(persistent_text.rich.data, temporary_text.rich.data, rich_memory);
 }
 
 void process_task_data(char* json, u32 data_size, jsmntok_t*& token) {
@@ -1645,57 +1781,6 @@ void process_task_data(char* json, u32 data_size, jsmntok_t*& token) {
 #undef IS_PROPERTY
 #undef TOKEN_TO_STRING
 
-    if (current_task.description) {
-        FREE(current_task.description);
-    }
-
-    current_task.description_strings = 0;
-
-    // We copy to strip comments from description
-    // In fact we could just do that in the original string, since stripping comments
-    //  never adds characters, only removes them, but this is 'cleaner'
-    String temporary_description_string;
-
-    {
-        char* temporary_description = (char*) talloc(description.length);
-
-        temporary_description_string.start = temporary_description;
-        temporary_description_string.length = description.length;
-
-        memcpy(temporary_description, description.start, description.length);
-    }
-
-    destructively_strip_html_comments(temporary_description_string);
-
-    parse_rich_text(temporary_description_string, current_task.description, current_task.description_strings);
-
-    u32 total_text_length = 0;
-
-    for (u32 index = 0; index < current_task.description_strings; index++) {
-        total_text_length += current_task.description[index].text.length;
-    }
-
-    String& description_text = current_task.description_text;
-    description_text.start = (char*) REALLOC(description_text.start, total_text_length);
-    description_text.length = total_text_length;
-
-    char* current_location = description_text.start;
-
-    for (u32 index = 0; index < current_task.description_strings; index++) {
-        Rich_Text_String& rich_text_string = current_task.description[index];
-        String& text = rich_text_string.text;
-
-        if (rich_text_string.text.length > 0) {
-            size_t new_length = decode_html_entities_utf8(current_location, text.start, text.start + text.length);
-
-            text.start = current_location;
-            text.length = new_length;
-
-            current_location += new_length;
-        } else {
-            text.start = current_location;
-        }
-    }
-
-    printf("Parsed description with a total length of %i\n", total_text_length);
+    parse_and_update_task_description(description);
+    find_and_request_missing_folders_if_necessary();
 }

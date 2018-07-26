@@ -34,6 +34,9 @@ struct Folder_Task {
     Relative_Pointer<Custom_Field_Value> custom_field_values;
     u32 num_custom_field_values;
 
+    Relative_Pointer<Folder_Id> parent_folder_ids;
+    u32 num_parent_folder_ids;
+
     Relative_Pointer<Task_Id> parent_task_ids;
     u32 num_parent_task_ids;
 
@@ -42,6 +45,7 @@ struct Folder_Task {
 };
 
 struct Folder_Header {
+    Folder_Id id;
     String name;
     Custom_Field_Id* custom_columns;
     u32 num_custom_columns;
@@ -427,42 +431,6 @@ bool draw_open_task_button(Table_Paint_Context& context, ImVec2 cell_top_left, f
     return button_state.pressed;
 }
 
-bool draw_expand_arrow_button(Table_Paint_Context& context, bool is_expanded, ImVec2 cell_top_left, float nesting_level_padding) {
-    const static u32 expand_arrow_color = 0xff848484;
-    const static u32 expand_arrow_hovered = argb_to_agbr(0xff73a6ff);
-
-    ImVec2 arrow_point = cell_top_left + ImVec2(context.scale * 20.0f + nesting_level_padding, context.row_height / 2.0f);
-    float arrow_half_height = ImGui::GetFontSize() / 4.0f;
-    float arrow_width = arrow_half_height;
-
-    ImVec2 top_left{ arrow_point.x - arrow_width * 3.5f, cell_top_left.y };
-    ImVec2 button_size{ arrow_width * 7.0f, context.row_height };
-
-    Button_State button_state = button("task_expand_arrow", top_left, button_size);
-
-    if (button_state.clipped) {
-        return button_state.pressed;
-    }
-
-    u32 color = button_state.hovered ? expand_arrow_hovered : expand_arrow_color;
-
-    if (!is_expanded) {
-        ImVec2 arrow_top_left = arrow_point - ImVec2(arrow_width,  arrow_half_height);
-        ImVec2 arrow_bottom_right = arrow_point - ImVec2(arrow_width, -arrow_half_height);
-
-        context.draw_list->AddLine(arrow_point, arrow_top_left, color);
-        context.draw_list->AddLine(arrow_point, arrow_bottom_right, color);
-    } else {
-        ImVec2 arrow_right = arrow_point + ImVec2(arrow_width / 2.0f, 0.0f);
-        ImVec2 arrow_bottom_point = arrow_right - ImVec2(arrow_width, -arrow_half_height);
-
-        context.draw_list->AddLine(arrow_right - ImVec2(arrow_width * 2.0f, 0.0f), arrow_bottom_point, color);
-        context.draw_list->AddLine(arrow_right, arrow_bottom_point, color);
-    }
-
-    return button_state.pressed;
-}
-
 void draw_table_cell_for_task(Table_Paint_Context& context, u32 column, float column_width, Flattened_Folder_Task* flattened_task, ImVec2 cell_top_left) {
     ImVec2 padding(context.scale * 8.0f, context.text_padding_y);
     Sorted_Folder_Task* sorted_task = flattened_task->sorted_task;
@@ -473,7 +441,9 @@ void draw_table_cell_for_task(Table_Paint_Context& context, u32 column, float co
             float nesting_level_padding = flattened_task->nesting_level * 20.0f * context.scale;
 
             if (flattened_task->num_visible_sub_tasks) {
-                if (draw_expand_arrow_button(context, sorted_task->is_expanded, cell_top_left, nesting_level_padding)) {
+                ImVec2 arrow_point = cell_top_left + ImVec2(context.scale * 20.0f + nesting_level_padding, context.row_height / 2.0f);
+
+                if (draw_expand_arrow_button(context.draw_list, arrow_point, context.row_height, sorted_task->is_expanded)) {
                     sorted_task->is_expanded = !sorted_task->is_expanded;
                     /* TODO We don't need to rebuild the whole tree there
                      * TODO     this is just inserting/removing subtask tree after the current task and could be done
@@ -587,17 +557,19 @@ Task_List_Sort_Field get_column_sort_field(u32 column) {
 void draw_folder_header(Table_Paint_Context& context, float content_width) {
     ImVec2 top_left = ImGui::GetCursorScreenPos();
 
-    float toolbar_height = 32.0f * context.scale;
+    float toolbar_height = 24.0f * context.scale;
     float folder_header_height = 56.0f * context.scale;
 
     ImGui::Dummy({ 0, folder_header_height + toolbar_height});
 
     ImGui::PushFont(font_28px);
 
-    ImVec2 folder_header_padding = ImVec2(32.0f, folder_header_height / 2.0f - ImGui::GetFontSize() / 2.0f);
+    ImVec2 folder_header_padding = ImVec2(16.0f * context.scale, folder_header_height / 2.0f - ImGui::GetFontSize() / 2.0f);
 
-    context.draw_list->AddText(top_left + folder_header_padding, color_black_text_on_white,
-                       current_folder.name.start, current_folder.name.start + current_folder.name.length);
+    if (current_folder.name.start) {
+        context.draw_list->AddText(top_left + folder_header_padding, color_black_text_on_white,
+                                   current_folder.name.start, current_folder.name.start + current_folder.name.length);
+    }
 
     ImGui::PopFont();
 
@@ -691,7 +663,7 @@ void draw_task_list() {
 
         const u32 grid_color = 0xffebebeb;
         const float scale = platform_get_pixel_ratio();
-        const float row_height = 32.0f * scale;
+        const float row_height = 24.0f * scale;
 
         Table_Paint_Context paint_context;
         paint_context.scale = scale;
@@ -769,7 +741,7 @@ void draw_task_list() {
             column_left_x += column_width;
         }
 
-        for (u32 row = 0; row < flattened_sorted_folder_task_tree.length; row++) {
+        for (u32 row = first_visible_row; row < last_visible_row; row++) {
             float row_line_y = row_height * (row + 1);
 
             draw_list->AddLine(window_top_left + ImVec2(0, row_line_y), window_top_left + ImVec2(column_left_x, row_line_y), grid_color, 1.25f);
@@ -803,7 +775,7 @@ void draw_task_list() {
                 loading_start_time = MIN(started_loading_users_at, loading_start_time);
                 loading_start_time = MIN(started_loading_statuses_at, loading_start_time);
 
-        draw_loading_indicator(ImGui::GetCursorScreenPos(), loading_start_time, { 24, 24 });
+        draw_window_loading_indicator();
     }
 
     ImGui::EndChildFrame();
@@ -816,6 +788,7 @@ static void process_folder_contents_data_object(char* json, jsmntok_t*& token) {
 
     Folder_Task* folder_task = &folder_tasks[folder_tasks.length];
     folder_task->num_parent_task_ids = 0;
+    folder_task->num_parent_folder_ids = 0;
     folder_task->num_custom_field_values = 0;
     folder_task->num_assignees = 0;
 
@@ -852,6 +825,20 @@ static void process_folder_contents_data_object(char* json, jsmntok_t*& token) {
 
             for (u32 field_index = 0; field_index < next_token->size; field_index++, token++) {
                 json_token_to_id8(json, token, folder_task->assignees[folder_task->num_assignees++]);
+            }
+
+            token--;
+        } else if (json_string_equals(json, property_token, "parentIds")) {
+            assert(next_token->type == JSMN_ARRAY);
+
+            token++;
+
+            if (next_token->size > 0) {
+                folder_task->parent_folder_ids = lazy_array_reserve_n_values_relative_pointer(parent_task_ids, next_token->size);
+            }
+
+            for (u32 field_index = 0; field_index < next_token->size; field_index++, token++) {
+                json_token_to_right_part_of_id16(json, token, folder_task->parent_folder_ids[folder_task->num_parent_folder_ids++]);
             }
 
             token--;
@@ -932,34 +919,37 @@ void process_folder_header_data(char* json, u32 data_size, jsmntok_t*& token) {
     }
 }
 
-static void associate_parent_tasks_with_sub_tasks() {
+static void associate_parent_tasks_with_sub_tasks(Folder_Id top_parent_id) {
     u32 total_sub_tasks = 0;
+
+    // Step 0: determine and populate top level tasks
+    for (u32 task_index = 0; task_index < folder_tasks.length; task_index++) {
+        Sorted_Folder_Task* folder_task = &sorted_folder_tasks[task_index];
+        Folder_Task* source_task = folder_task->source_task;
+
+        for (u32 id_index = 0; id_index < source_task->num_parent_folder_ids; id_index++) {
+            Folder_Id parent_id = source_task->parent_folder_ids[id_index];
+
+            if (parent_id == top_parent_id) {
+                Sorted_Folder_Task** pointer_to_task = lazy_array_reserve_n_values(top_level_tasks, 1);
+                *pointer_to_task = folder_task;
+            }
+        }
+    }
 
     // Step 1: count sub tasks for each parent, while also deciding which parents should go into the root
     for (u32 task_index = 0; task_index < folder_tasks.length; task_index++) {
         Sorted_Folder_Task* folder_task = &sorted_folder_tasks[task_index];
         Folder_Task* source_task = folder_task->source_task;
 
-        bool found_at_least_one_parent = false;
+        for (u32 id_index = 0; id_index < source_task->num_parent_task_ids; id_index++) {
+            Task_Id parent_id = source_task->parent_task_ids[id_index];
+            Sorted_Folder_Task* parent_or_null = id_hash_map_get(&id_to_sorted_folder_task, parent_id, hash_id(parent_id));
 
-        if (source_task->num_parent_task_ids) {
-            for (u32 id_index = 0; id_index < source_task->num_parent_task_ids; id_index++) {
-                Task_Id parent_id = source_task->parent_task_ids[id_index];
-
-                Sorted_Folder_Task* parent_or_null = id_hash_map_get(&id_to_sorted_folder_task, parent_id, hash_id(parent_id));
-
-                if (parent_or_null) {
-                    found_at_least_one_parent = true;
-
-                    parent_or_null->num_sub_tasks++;
-                    total_sub_tasks++;
-                }
+            if (parent_or_null) {
+                parent_or_null->num_sub_tasks++;
+                total_sub_tasks++;
             }
-        }
-
-        if (!found_at_least_one_parent) {
-            Sorted_Folder_Task** pointer_to_task = lazy_array_reserve_n_values(top_level_tasks, 1);
-            *pointer_to_task = folder_task;
         }
     }
 
@@ -984,15 +974,13 @@ static void associate_parent_tasks_with_sub_tasks() {
         Sorted_Folder_Task* folder_task = &sorted_folder_tasks[task_index];
         Folder_Task* source_task = folder_task->source_task;
 
-        if (source_task->num_parent_task_ids) {
-            for (u32 id_index = 0; id_index < source_task->num_parent_task_ids; id_index++) {
-                Task_Id parent_id = source_task->parent_task_ids[id_index];
+        for (u32 id_index = 0; id_index < source_task->num_parent_task_ids; id_index++) {
+            Task_Id parent_id = source_task->parent_task_ids[id_index];
 
-                Sorted_Folder_Task* parent_or_null = id_hash_map_get(&id_to_sorted_folder_task, parent_id, hash_id(parent_id));
+            Sorted_Folder_Task* parent_or_null = id_hash_map_get(&id_to_sorted_folder_task, parent_id, hash_id(parent_id));
 
-                if (parent_or_null) {
-                    parent_or_null->sub_tasks[parent_or_null->num_sub_tasks++] = folder_task;
-                }
+            if (parent_or_null) {
+                parent_or_null->sub_tasks[parent_or_null->num_sub_tasks++] = folder_task;
             }
         }
     }
@@ -1021,9 +1009,13 @@ void process_folder_contents_data(char* json, u32 data_size, jsmntok_t*& token) 
         process_folder_contents_data_object(json, token);
     }
 
-    associate_parent_tasks_with_sub_tasks();
+    associate_parent_tasks_with_sub_tasks(current_folder.id);
 
     has_been_sorted_after_loading = false;
+}
+
+void set_current_folder_id(Folder_Id id) {
+    current_folder.id = id;
 }
 
 void process_current_folder_as_logical() {

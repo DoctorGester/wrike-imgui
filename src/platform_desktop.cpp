@@ -20,6 +20,7 @@ struct Running_Request {
     char* data_read = NULL;
     u32 data_length = 0;
     u64 started_at = 0;
+    void* data = NULL;
 };
 
 static SDL_Window* application_window = NULL;
@@ -228,7 +229,7 @@ static void process_completed_requests() {
 
                 switch (request->request_type) {
                     case Request_Type_API: {
-                        api_request_success(request->request_id, request->data_read, request->data_length);
+                        api_request_success(request->request_id, request->data_read, request->data_length, request->data);
 
                         break;
                     }
@@ -242,7 +243,7 @@ static void process_completed_requests() {
 
                 u64 delta = SDL_GetPerformanceCounter() - start_process_request;
 
-                printf("Request processed in %fms\n", delta * 1000.0 / SDL_GetPerformanceFrequency());
+                printf("Request #%i processed in %.3fms\n", request->request_id, delta * 1000.0 / SDL_GetPerformanceFrequency());
             } else {
                 printf("%.*s\n", request->data_length, request->data_read);
             }
@@ -392,7 +393,7 @@ int curl_thread_request(void* data) {
 
         float time = (float) (((double) SDL_GetPerformanceCounter() - request->started_at) / SDL_GetPerformanceFrequency());
 
-        printf("GET %s completed with %i, time: %fs\n", request->debug_url, http_status_code, time);
+        printf("GET %s #%i completed with %i, time: %fs\n", request->debug_url, request->request_id, http_status_code, time);
 
         double total, name, conn, app, pre, start;
         curl_easy_getinfo(curl, CURLINFO_TOTAL_TIME, &total);
@@ -432,8 +433,8 @@ static void push_request(Running_Request* request) {
     SDL_UnlockMutex(requests_process_mutex);
 }
 
-void platform_load_remote_image(Request_Id& request_id, char* full_url) {
-    printf("Requested image load for %li/%s\n", request_id, full_url);
+void platform_load_remote_image(Request_Id request_id, char* full_url) {
+    printf("Requested image load for %i/%s\n", request_id, full_url);
 
     u32 url_length = strlen(full_url);
 
@@ -457,8 +458,8 @@ void platform_load_remote_image(Request_Id& request_id, char* full_url) {
     SDL_CreateThread(curl_thread_request, "CURLThread", curl_easy);
 }
 
-void platform_api_request(Request_Id& request_id, char* url, Http_Method method) {
-    printf("Requested api get for %li/%s\n", request_id, url);
+void platform_api_request(Request_Id request_id, char* url, Http_Method method, void* data) {
+    printf("Requested api get for %i/%s\n", request_id, url);
 
     const char* url_prefix = "https://www.wrike.com/api/v3/";
     const u32 buffer_length = strlen(url_prefix) + strlen(url) + 1;
@@ -477,6 +478,7 @@ void platform_api_request(Request_Id& request_id, char* url, Http_Method method)
     new_request->request_id = request_id;
     new_request->debug_url = (char*) MALLOC(buffer_length);
     new_request->started_at = SDL_GetPerformanceCounter();
+    new_request->data = data;
     memcpy(new_request->debug_url, buffer, buffer_length);
 
     CURL* curl_easy = curl_easy_init();
