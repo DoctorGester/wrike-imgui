@@ -383,8 +383,7 @@ void destructively_strip_html_comments(String& text) {
     text.length = (u32) (text_end - text.start);
 }
 
-
-static List<Rich_Text_String> parse_rich_text_into_temporary_memory(String text) {
+static List<Rich_Text_String> parse_string_into_rich_text_string_list(String text) {
     Array<Rich_Text_Token> tokens{};
     parse_text_into_tokens(text, tokens);
 
@@ -432,7 +431,7 @@ Rich_Text parse_string_into_temporary_rich_text(String text) {
 
     destructively_strip_html_comments(text);
 
-    List<Rich_Text_String> temporary_strings = parse_rich_text_into_temporary_memory(text);
+    List<Rich_Text_String> temporary_strings = parse_string_into_rich_text_string_list(text);
 
     Rich_Text out{};
     out.rich = temporary_strings;
