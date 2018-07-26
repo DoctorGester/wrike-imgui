@@ -1408,6 +1408,9 @@ static void draw_task_comments() {
 
     layout.cursor += ImVec2(content_padding, 0);
 
+    float visible_top = ImGui::GetCurrentWindow()->ContentsRegionRect.Min.y + ImGui::GetScrollY();
+    float visible_bottom = visible_top + ImGui::GetWindowHeight();
+
     for (Task_Comment* it = comments.data; it != comments.data + comments.length; it++) {
         User* user = find_user_by_id(it->author);
 
@@ -1429,14 +1432,40 @@ static void draw_task_comments() {
         float content_height = name_size.y + space_between_name_and_comment_text + text_size.y;
 
         ImVec2 comment_box_size = text_padding + ImVec2(content_width, content_height) + text_padding;
-        ImVec2 name_top_left = comment_box_top_left + text_padding;
-        ImVec2 text_top_left = name_top_left + ImVec2(0, name_size.y) + ImVec2(0, space_between_name_and_comment_text);
 
-        draw_circular_user_avatar(draw_list, user, layout.cursor, assignee_avatar_side * layout.scale);
+        float comment_top = comment_box_top_left.y;
+        float comment_bottom = comment_box_top_left.y + comment_box_size.y;
 
-        draw_list->AddRectFilled(comment_box_top_left, comment_box_top_left + comment_box_size, comment_background, 4.0f);
-        draw_list->AddText(name_top_left, color_black_text_on_white, user_name.start, user_name.start + user_name.length);
-        draw_rich_text(draw_list, text_top_left, it->text, comment_wrap_width, false);
+        /*
+         * ~~~~~~~~~~~ #1 comment top
+         *
+         * ----------- visible top
+         *
+         * ~~~~~~~~~~~ #1 comment bottom
+         *
+         *   ************* #2 comment top
+         *
+         * ----------- visible bottom
+         *
+         *   ************* #2 comment bottom
+         */
+        // x < y here signifies "x higher than y"
+        bool top_is_inside = visible_top < comment_top && comment_top < visible_bottom;
+        bool bottom_is_inside = visible_top < comment_bottom && comment_bottom < visible_bottom;
+        bool wraps_both_boundaries = comment_top < visible_top && visible_bottom < comment_bottom;
+
+        bool should_display = top_is_inside || wraps_both_boundaries || bottom_is_inside;
+
+        if (should_display) {
+            ImVec2 name_top_left = comment_box_top_left + text_padding;
+            ImVec2 text_top_left = name_top_left + ImVec2(0, name_size.y) + ImVec2(0, space_between_name_and_comment_text);
+
+            draw_circular_user_avatar(draw_list, user, layout.cursor, assignee_avatar_side * layout.scale);
+
+            draw_list->AddRectFilled(comment_box_top_left, comment_box_top_left + comment_box_size, comment_background, 4.0f);
+            draw_list->AddText(name_top_left, color_black_text_on_white, user_name.start, user_name.start + user_name.length);
+            draw_rich_text(draw_list, text_top_left, it->text, comment_wrap_width, false);
+        }
 
         layout_advance(layout, comment_box_size.y + 12.0f * layout.scale);
     }
