@@ -2,6 +2,7 @@
 #include <cassert>
 #include <cstring>
 #include <cstdlib>
+#include <html_entities.h>
 #include "rich_text.h"
 #include "temporary_storage.h"
 
@@ -383,7 +384,7 @@ void destructively_strip_html_comments(String& text) {
 }
 
 
-List<Rich_Text_String> parse_rich_text_into_temporary_memory(String text) {
+static List<Rich_Text_String> parse_rich_text_into_temporary_memory(String text) {
     Array<Rich_Text_Token> tokens{};
     parse_text_into_tokens(text, tokens);
 
@@ -421,4 +422,82 @@ List<Rich_Text_String> parse_rich_text_into_temporary_memory(String text) {
     output.length = text_tokens;
 
     return output;
+}
+
+Rich_Text parse_string_into_temporary_rich_text(String text) {
+    // We copy to strip comments from description
+    // In fact we could just do that in the original string, since stripping comments
+    //  never adds characters, only removes them, but this is 'cleaner'
+    text = tprintf("%.*s", text.length, text.start);
+
+    destructively_strip_html_comments(text);
+
+    List<Rich_Text_String> temporary_strings = parse_rich_text_into_temporary_memory(text);
+
+    Rich_Text out{};
+    out.rich = temporary_strings;
+
+    u32 total_text_length = 0;
+
+    for (u32 index = 0; index < temporary_strings.length; index++) {
+        Rich_Text_String& string = temporary_strings[index];
+
+        total_text_length += (string.end - string.start);
+
+        if (string.style.flags & Rich_Text_Flags_Link) {
+            total_text_length += string.style.link_end - string.style.link_start;
+        }
+    }
+
+    out.raw.start = (char*) talloc(total_text_length);
+    out.raw.length = total_text_length;
+
+    u32 text_cursor = 0;
+
+    // Copying all text into one memory chunk while also decoding html entities
+    {
+        for (u32 index = 0; index < temporary_strings.length; index++) {
+            Rich_Text_String& string = temporary_strings[index];
+
+            size_t new_length = 0;
+
+            if (string.end - string.start > 0) {
+                new_length = decode_html_entities_utf8(
+                        out.raw.start + text_cursor,
+                        text.start + string.start,
+                        text.start + string.end
+                );
+            }
+
+            string.start = text_cursor;
+            string.end = (u32) (text_cursor + new_length);
+
+            text_cursor += new_length;
+        }
+    }
+
+    // Appending link urls to the very end
+    {
+        for (u32 index = 0; index < temporary_strings.length; index++) {
+            Rich_Text_String& string = temporary_strings[index];
+
+            if (string.style.flags & Rich_Text_Flags_Link) {
+                u32 link_length = string.style.link_end - string.style.link_start;
+
+                memcpy(out.raw.start + text_cursor,
+                       text.start + string.style.link_start,
+                       link_length
+                );
+
+                string.style.link_start = text_cursor;
+                string.style.link_end = text_cursor + link_length;
+
+                text_cursor += link_length;
+            }
+        }
+    }
+
+    out.raw.length = text_cursor;
+
+    return out;
 }

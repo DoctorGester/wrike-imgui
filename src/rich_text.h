@@ -29,5 +29,5 @@ struct Rich_Text {
     String raw{};
 };
 
-List<Rich_Text_String> parse_rich_text_into_temporary_memory(String text);
+Rich_Text parse_string_into_temporary_rich_text(String text);
 void destructively_strip_html_comments(String& source);
