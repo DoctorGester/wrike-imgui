@@ -253,6 +253,7 @@ void parse_text_into_rich_string_recursively(String text, List<Rich_Text_Token>&
                     tag_type = Tag_Type_Span;
                 } else if (token_eq(text, &token, "a")) {
                     tag_type = Tag_Type_A;
+                    new_style.flags |= Rich_Text_Flags_Link;
                 } else if (token_eq(text, &token, "ul")) {
                     tag_type = Tag_Type_Any;
                     new_style.list_depth++;
@@ -273,7 +274,6 @@ void parse_text_into_rich_string_recursively(String text, List<Rich_Text_Token>&
                             if (token_eq(text, attribute, "href")) {
                                 assert(value);
 
-                                new_style.flags |= Rich_Text_Flags_Link;
                                 new_style.link_start = (u32) value->start;
                                 new_style.link_end = (u32) value->end;
                             }
