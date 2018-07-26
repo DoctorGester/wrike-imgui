@@ -1572,27 +1572,17 @@ static void find_and_request_missing_folders_if_necessary() {
     }
 }
 
-Rich_Text parse_string_into_temporary_rich_text(String raw_text) {
+Rich_Text parse_string_into_temporary_rich_text(String text) {
     // We copy to strip comments from description
     // In fact we could just do that in the original string, since stripping comments
     //  never adds characters, only removes them, but this is 'cleaner'
-    String temporary_raw_string;
+    text = tprintf("%.*s", text.length, text.start);
 
-    {
-        char* temporary_description = (char*) talloc(raw_text.length);
+    destructively_strip_html_comments(text);
 
-        temporary_raw_string.start = temporary_description;
-        temporary_raw_string.length = raw_text.length;
-
-        memcpy(temporary_description, raw_text.start, raw_text.length);
-    }
-
-    destructively_strip_html_comments(temporary_raw_string);
+    List<Rich_Text_String> temporary_strings = parse_rich_text_into_temporary_memory(text);
 
     Rich_Text out{};
-
-    List<Rich_Text_String> temporary_strings = parse_rich_text_into_temporary_memory(temporary_raw_string);
-
     out.rich = temporary_strings;
 
     u32 total_text_length = 0;
@@ -1622,8 +1612,8 @@ Rich_Text parse_string_into_temporary_rich_text(String raw_text) {
             if (string.end - string.start > 0) {
                 new_length = decode_html_entities_utf8(
                         out.raw.start + text_cursor,
-                        temporary_raw_string.start + string.start,
-                        temporary_raw_string.start + string.end
+                        text.start + string.start,
+                        text.start + string.end
                 );
             }
 
@@ -1634,7 +1624,6 @@ Rich_Text parse_string_into_temporary_rich_text(String raw_text) {
         }
     }
 
-
     // Appending link urls to the very end
     {
         for (u32 index = 0; index < temporary_strings.length; index++) {
@@ -1644,7 +1633,7 @@ Rich_Text parse_string_into_temporary_rich_text(String raw_text) {
                 u32 link_length = string.style.link_end - string.style.link_start;
 
                 memcpy(out.raw.start + text_cursor,
-                       temporary_raw_string.start + string.style.link_start,
+                       text.start + string.style.link_start,
                        link_length
                 );
 
