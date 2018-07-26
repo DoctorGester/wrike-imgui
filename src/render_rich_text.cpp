@@ -37,7 +37,7 @@ void render_rich_text(
     static const u32 default_color = 0xFF000000;
 
     Rich_Text_String* rich_text_begin = &text.rich[0];
-    Rich_Text_String* rich_text_end = &LIST_LAST(text.rich);
+    Rich_Text_String* rich_text_end = &ARRAY_LAST(text.rich);
 
     char* text_begin = text.raw.start + rich_text_begin->start;
     char* text_end   = text.raw.start + rich_text_end->end;
@@ -354,7 +354,7 @@ void add_rich_text(
         float wrap_width,
         float alpha
 ) {
-    if (text.rich[0].start == LIST_LAST(text.rich).end) {
+    if (text.rich[0].start == ARRAY_LAST(text.rich).end) {
         return;
     }
 

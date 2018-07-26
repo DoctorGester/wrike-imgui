@@ -62,10 +62,10 @@ void process_suggested_folders_data(char* json, u32 data_size, jsmntok_t*&token)
 void process_starred_folders_data(char* json, u32 data_size, jsmntok_t*& token);
 void process_multiple_folders_data(char* json, u32 data_size, jsmntok_t*& token);
 
-void folder_tree_search(const char* query, List<Folder_Tree_Node*>* result);
+void folder_tree_search(const char* query, Array<Folder_Tree_Node*>* result);
 
 Folder_Tree_Node* find_folder_tree_node_by_id(Folder_Id id, u32 id_hash = 0);
 
-extern List<Folder_Tree_Node> all_nodes;
+extern Array<Folder_Tree_Node> all_nodes;
 
-extern List<Folder> suggested_folders;
+extern Array<Folder> suggested_folders;

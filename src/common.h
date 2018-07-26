@@ -58,7 +58,7 @@ struct String {
 };
 
 template<typename T>
-struct List {
+struct Array {
     T* data = NULL;
     u32 length = 0;
 
@@ -91,7 +91,7 @@ bool load_png_from_disk(const char* path, Memory_Image& out);
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
 #define ARRAY_SIZE(array) (sizeof(array) / sizeof(array[0]))
-#define LIST_LAST(list) (list.length ? list[list.length - 1] : list[0])
+#define ARRAY_LAST(array) (array.length ? array[array.length - 1] : array[0])
 
 #define GL_CHECKED(command)\
     command;\
@@ -164,13 +164,13 @@ inline char* string_to_temporary_null_terminated_string(String string) {
 
 // This is NOT performant, do not use often
 template<typename T>
-void add_item_to_list(List<T>& list, T item) {
+void add_item_to_array(Array<T>& list, T item) {
     list.data = (T*) REALLOC(list.data, sizeof(T) * (list.length + 1));
     list[list.length++] = item;
 }
 
 template<typename T>
-void remove_item_from_list_keep_order(List<T>& list, T item) {
+void remove_item_from_array_keep_order(Array<T>& list, T item) {
     for (u32 index = 0; index < list.length; index++) {
         if (list[index] == item) {
             u32 remaining =  list.length - index;

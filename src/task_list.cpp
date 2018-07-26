@@ -57,7 +57,7 @@ struct Sorted_Folder_Task {
 
     Folder_Task* source_task;
     Custom_Status* cached_status;
-    Sorted_Folder_Task** sub_tasks; // TODO List<Sorted_Folder_Task*>
+    Sorted_Folder_Task** sub_tasks; // TODO Array<Sorted_Folder_Task*>
     u32 num_sub_tasks;
 
     bool is_expanded;
@@ -84,9 +84,9 @@ static const u32 custom_columns_start_index = 3;
 
 static Folder_Header current_folder{};
 
-static List<Folder_Task> folder_tasks{};
+static Array<Folder_Task> folder_tasks{};
 static Sorted_Folder_Task* sorted_folder_tasks = NULL;
-static List<Flattened_Folder_Task> flattened_sorted_folder_task_tree{};
+static Array<Flattened_Folder_Task> flattened_sorted_folder_task_tree{};
 static Lazy_Array<Sorted_Folder_Task*, 32> top_level_tasks{};
 
 static Id_Hash_Map<Task_Id, Sorted_Folder_Task*> id_to_sorted_folder_task{};

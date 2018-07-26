@@ -33,7 +33,7 @@ struct HSL {
 };
 
 static Memory_Image checkmark{};
-static List<User*> filtered_users{};
+static Array<User*> filtered_users{};
 static Lazy_Array<Rich_Text_String, 64> comment_strings{};
 static Lazy_Array<char, 512> comment_chars{};
 
@@ -434,7 +434,7 @@ static void draw_folder_picker_contents(bool set_focus) {
     static const u32 search_buffer_size = 512;
     static char search_buffer[search_buffer_size];
 
-    static List<Folder_Tree_Node*> search_result{};
+    static Array<Folder_Tree_Node*> search_result{};
 
     if (ImGui::InputText("##folder_picker_search", search_buffer, search_buffer_size)) {
         folder_tree_search(search_buffer, &search_result);
@@ -461,7 +461,7 @@ static void draw_folder_picker_contents(bool set_focus) {
                 ImGui::PushID(node);
 
                 if (draw_folder_picker_folder_selection_button(draw_list, node->name, node->color, selection_button_size, padding)) {
-                    add_item_to_list(current_task.parents, node->id);
+                    add_item_to_array(current_task.parents, node->id);
                     add_parent_folder(current_task.id, node->id);
 
                     ImGui::CloseCurrentPopup();
@@ -477,7 +477,7 @@ static void draw_folder_picker_contents(bool set_focus) {
             ImGui::PushID(it);
 
             if (draw_folder_picker_folder_selection_button(draw_list, it->name, it->color, selection_button_size, padding)) {
-                add_item_to_list(current_task.parents, it->id);
+                add_item_to_array(current_task.parents, it->id);
                 add_parent_folder(current_task.id, it->id);
 
                 ImGui::CloseCurrentPopup();
@@ -493,7 +493,7 @@ static void draw_folder_picker_contents(bool set_focus) {
                 ImGui::PushID(it);
 
                 if (draw_folder_picker_folder_selection_button(draw_list, it->name, it->color, selection_button_size, padding)) {
-                    add_item_to_list(current_task.parents, it->id);
+                    add_item_to_array(current_task.parents, it->id);
                     add_parent_folder(current_task.id, it->id);
 
                     ImGui::CloseCurrentPopup();
@@ -562,7 +562,7 @@ static void draw_folder_picker_button(Wrapping_Horizontal_Layout& layout) {
     }
 }
 
-static void draw_parent_folders(Wrapping_Horizontal_Layout& layout, List<Folder_Id> folders, bool ghost_tags) {
+static void draw_parent_folders(Wrapping_Horizontal_Layout& layout, Array<Folder_Id> folders, bool ghost_tags) {
     for (u32 parent_index = 0; parent_index < folders.length; parent_index++) {
         Folder_Id folder_id = folders[parent_index];
         Folder_Tree_Node* folder_tree_node = find_folder_tree_node_by_id(folder_id);
@@ -729,7 +729,7 @@ static void draw_add_assignee_button_and_contact_picker(Horizontal_Layout& layou
         if (strlen(search_buffer) == 0) {
             for (User* it = suggested_users.data; it != suggested_users.data + suggested_users.length; it++) {
                 if (draw_contact_picker_assignee_selection_button(draw_list, it, {button_width, button_side_px}, spacing)) {
-                    add_item_to_list(current_task.assignees, it->id);
+                    add_item_to_array(current_task.assignees, it->id);
                     add_assignee_to_task(current_task.id, it->id);
 
                     ImGui::CloseCurrentPopup();
@@ -742,7 +742,7 @@ static void draw_add_assignee_button_and_contact_picker(Horizontal_Layout& layou
         while (clipper.Step()) {
             for (User** it = filtered_users.data + clipper.DisplayStart; it != filtered_users.data + clipper.DisplayEnd; it++) {
                 if (draw_contact_picker_assignee_selection_button(draw_list, *it, { button_width, button_side_px }, spacing)) {
-                    add_item_to_list(current_task.assignees, (*it)->id);
+                    add_item_to_array(current_task.assignees, (*it)->id);
                     add_assignee_to_task(current_task.id, (*it)->id);
 
                     ImGui::CloseCurrentPopup();
@@ -921,7 +921,7 @@ static void draw_assignees(Horizontal_Layout& layout, float wrap_pos) {
      */
 
     if (assignee_to_remove_next_frame) {
-        remove_item_from_list_keep_order(current_task.assignees, assignee_to_remove_next_frame);
+        remove_item_from_array_keep_order(current_task.assignees, assignee_to_remove_next_frame);
         assignee_to_remove_next_frame = 0;
 
         // Bail out early so behavior matched the case when there were no assignees in the first place
@@ -930,7 +930,7 @@ static void draw_assignees(Horizontal_Layout& layout, float wrap_pos) {
         }
     }
 
-    List<Assignee> assignees;
+    Array<Assignee> assignees;
     assignees.data = (Assignee*) talloc(sizeof(Assignee) * current_task.assignees.length);
     assignees.length = 0;
 
@@ -1385,7 +1385,7 @@ static void draw_status_and_assignees_row(ImVec2 top_left, float wrap_width) {
 static void draw_task_comments() {
     Vertical_Layout layout = vertical_layout(ImGui::GetCursorScreenPos());
 
-    List<Task_Comment> comments = current_task.comments;
+    Array<Task_Comment> comments = current_task.comments;
 
     ImDrawList* draw_list = ImGui::GetWindowDrawList();
 
@@ -1536,9 +1536,9 @@ void draw_task_contents() {
 }
 
 static void find_and_request_missing_folders_if_necessary() {
-    List<Folder_Id> missing_folder_data{};
+    Array<Folder_Id> missing_folder_data{};
 
-    auto count_missing_folders = [] (List<Folder_Id> folders) {
+    auto count_missing_folders = [] (Array<Folder_Id> folders) {
         u32 result = 0;
 
         for (Folder_Id* it = folders.data; it != folders.data + folders.length; it++) {
@@ -1550,7 +1550,7 @@ static void find_and_request_missing_folders_if_necessary() {
         return result;
     };
 
-    auto fill_missing_folders = [&] (List<Folder_Id> folders) {
+    auto fill_missing_folders = [&] (Array<Folder_Id> folders) {
         for (Folder_Id* it = folders.data; it != folders.data + folders.length; it++) {
             Folder_Id folder_id = *it;
 
@@ -1575,24 +1575,24 @@ static void find_and_request_missing_folders_if_necessary() {
 typedef void (*Id_Processor)(char* json, jsmntok_t* token, s32& id);
 
 template <typename T>
-static void token_array_to_id_list(char* json,
-                                   jsmntok_t*& token,
-                                   List<T>& id_list,
-                                   Id_Processor id_processor) {
+static void token_array_to_id_array(char* json,
+                                    jsmntok_t*& token,
+                                    Array<T>& id_array,
+                                    Id_Processor id_processor) {
     assert(token->type == JSMN_ARRAY);
 
-    if (id_list.length < token->size) {
-        id_list.data = (T*) REALLOC(id_list.data, sizeof(T) * token->size);
+    if (id_array.length < token->size) {
+        id_array.data = (T*) REALLOC(id_array.data, sizeof(T) * token->size);
     }
 
-    id_list.length = 0;
+    id_array.length = 0;
 
     for (u32 array_index = 0, length = (u32) token->size; array_index < length; array_index++) {
         jsmntok_t* id_token = ++token;
 
         assert(id_token->type == JSMN_STRING);
 
-        id_processor(json, id_token, id_list[id_list.length++]);
+        id_processor(json, id_token, id_array[id_array.length++]);
     }
 }
 
@@ -1620,7 +1620,7 @@ void process_task_custom_field_value(Custom_Field_Value* custom_field_value, cha
 }
 
 void process_task_comments_data(char* json, u32 data_size, jsmntok_t*& token) {
-    List<Task_Comment>* comments = &current_task.comments;
+    Array<Task_Comment>* comments = &current_task.comments;
 
     if (comments->length < data_size) {
         comments->data = (Task_Comment*) REALLOC(comments->data, sizeof(Task_Comment) * data_size);
@@ -1742,15 +1742,15 @@ void process_task_data(char* json, u32 data_size, jsmntok_t*& token) {
         } else if (IS_PROPERTY("customStatusId")) {
             json_token_to_right_part_of_id16(json, next_token, current_task.status_id);
         } else if (IS_PROPERTY("responsibleIds")) {
-            token_array_to_id_list(json, token, current_task.assignees, json_token_to_id8);
+            token_array_to_id_array(json, token, current_task.assignees, json_token_to_id8);
         } else if (IS_PROPERTY("authorIds")) {
-            token_array_to_id_list(json, token, current_task.authors, json_token_to_id8);
+            token_array_to_id_array(json, token, current_task.authors, json_token_to_id8);
         } else if (IS_PROPERTY("parentIds")) {
-            token_array_to_id_list(json, token, current_task.parents, json_token_to_right_part_of_id16);
+            token_array_to_id_array(json, token, current_task.parents, json_token_to_right_part_of_id16);
         } else if (IS_PROPERTY("inheritedCustomColumnIds")) {
-            token_array_to_id_list(json, token, current_task.inherited_custom_fields, json_token_to_right_part_of_id16);
+            token_array_to_id_array(json, token, current_task.inherited_custom_fields, json_token_to_right_part_of_id16);
         } else if (IS_PROPERTY("superParentIds")) {
-            token_array_to_id_list(json, token, current_task.super_parents, json_token_to_right_part_of_id16);
+            token_array_to_id_array(json, token, current_task.super_parents, json_token_to_right_part_of_id16);
         } else if (IS_PROPERTY("customFields")) {
             assert(next_token->type == JSMN_ARRAY);
 

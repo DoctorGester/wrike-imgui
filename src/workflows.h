@@ -25,10 +25,10 @@ struct Custom_Status {
 struct Workflow {
     Workflow_Id id;
     String name;
-    List<Custom_Status> statuses;
+    Array<Custom_Status> statuses;
 };
 
-extern List<Workflow> workflows;
+extern Array<Workflow> workflows;
 
 void process_workflows_data(char* json, u32 data_size, jsmntok_t*&token);
 Custom_Status* find_custom_status_by_id(Custom_Status_Id id, u32 id_hash = 0);

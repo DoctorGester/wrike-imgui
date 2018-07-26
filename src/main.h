@@ -34,13 +34,13 @@ struct Task {
 
     Custom_Status_Id status_id;
 
-    List<Custom_Field_Value> custom_field_values{};
-    List<Custom_Field_Id> inherited_custom_fields{};
-    List<Folder_Id> parents{};
-    List<Folder_Id> super_parents{};
-    List<User_Id> authors{};
-    List<User_Id> assignees{};
-    List<Task_Comment> comments{};
+    Array<Custom_Field_Value> custom_field_values{};
+    Array<Custom_Field_Id> inherited_custom_fields{};
+    Array<Folder_Id> parents{};
+    Array<Folder_Id> super_parents{};
+    Array<User_Id> authors{};
+    Array<User_Id> assignees{};
+    Array<Task_Comment> comments{};
 };
 
 // TODO make this a define?
@@ -84,7 +84,7 @@ void remove_parent_folder(Task_Id task_id, Folder_Id folder_id);
 void set_task_status(Task_Id task_id, Custom_Status_Id status_id);
 void select_folder_node_and_request_contents_if_necessary(Folder_Id id);
 void request_folder_children_for_folder_tree(Folder_Id folder_id);
-void request_multiple_folders(List<Folder_Id> folders);
+void request_multiple_folders(Array<Folder_Id> folders);
 void request_task_comments(Task_Id task_id);
 
 // TODO those probably leak both on desktop and web

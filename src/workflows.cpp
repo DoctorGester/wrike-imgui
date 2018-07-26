@@ -3,9 +3,9 @@
 #include "id_hash_map.h"
 #include "workflows.h"
 
-List<Workflow> workflows{};
+Array<Workflow> workflows{};
 
-static List<Custom_Status> custom_statuses{};
+static Array<Custom_Status> custom_statuses{};
 static Id_Hash_Map<Custom_Status_Id, Custom_Status*> id_to_custom_status = {};
 
 static u32 color_name_to_color_argb(String &color_name) {

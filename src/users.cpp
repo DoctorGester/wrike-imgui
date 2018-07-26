@@ -2,14 +2,14 @@
 #include "json.h"
 #include "id_hash_map.h"
 
-List<User> users{};
-List<User> suggested_users{};
+Array<User> users{};
+Array<User> suggested_users{};
 
 User* this_user = NULL;
 
 static Id_Hash_Map<User_Id, User*> id_to_user_map{};
 
-static User* process_users_data_object(List<User>& target_users, char* json, jsmntok_t*&token) {
+static User* process_users_data_object(Array<User>& target_users, char* json, jsmntok_t*&token) {
     jsmntok_t* object_token = token++;
 
     assert(object_token->type == JSMN_OBJECT);

@@ -24,14 +24,14 @@ struct Rich_Text_Token {
 };
 
 template<typename T>
-struct Array {
+struct List {
     T* values = NULL;
     u32 length = 0;
     u32 watermark = 0;
 };
 
 template <typename T>
-void array_try_resize(Array<T>* array) {
+void list_try_resize(List<T>* array) {
     if (array->watermark == array->length) {
         u32 previous_watermark = array->watermark;
 
@@ -46,8 +46,8 @@ void array_try_resize(Array<T>* array) {
 }
 
 template<typename T>
-u32 array_add(Array<T>* array, T value) {
-    array_try_resize(array);
+u32 list_add(List<T>* array, T value) {
+    list_try_resize(array);
 
     array->values[array->length] = value;
 
@@ -68,7 +68,7 @@ static Rich_Text_Token make_token(Rich_Text_Token_Type token_type, u32 start) {
 }
 
 // TODO it's terrible, a rewrite in something like re2c is absolutely required!
-static void parse_text_into_tokens(String& text, Array<Rich_Text_Token>& tokens) {
+static void parse_text_into_tokens(String& text, List<Rich_Text_Token>& tokens) {
     Rich_Text_Token current_token{};
     current_token.start = 0;
     current_token.type = Rich_Text_Token_Type_Text;
@@ -159,7 +159,7 @@ static void parse_text_into_tokens(String& text, Array<Rich_Text_Token>& tokens)
                             } else {
                                 in_attribute_value = true;
                                 current_token = make_token(Rich_Text_Token_Type_Value, index);
-                                current_value = array_add(&tokens, current_token);
+                                current_value = list_add(&tokens, current_token);
                             }
                         } else {
                             current_token = make_token(Rich_Text_Token_Type_Attribute, index);
@@ -167,7 +167,7 @@ static void parse_text_into_tokens(String& text, Array<Rich_Text_Token>& tokens)
                             in_attribute_name = true;
 
                             tag->num_attributes++;
-                            current_attribute = array_add(&tokens, current_token);
+                            current_attribute = list_add(&tokens, current_token);
                         }
                     }
                 }
@@ -177,14 +177,14 @@ static void parse_text_into_tokens(String& text, Array<Rich_Text_Token>& tokens)
                 if (index - current_token.start > 0) {
                     current_token.end = index;
 
-                    array_add(&tokens, current_token);
+                    list_add(&tokens, current_token);
                 }
 
                 current_token = make_token(Rich_Text_Token_Type_Tag, index + 1);
 
                 in_tag_name = true;
 
-                current_tag = array_add(&tokens, current_token);
+                current_tag = list_add(&tokens, current_token);
             }
         }
     }
@@ -192,7 +192,7 @@ static void parse_text_into_tokens(String& text, Array<Rich_Text_Token>& tokens)
     if (text.length - current_token.start > 0) {
         current_token.end = text.length;
 
-        array_add(&tokens, current_token);
+        list_add(&tokens, current_token);
     }
 }
 
@@ -201,7 +201,7 @@ bool token_eq(String text, Rich_Text_Token* token, const char* compare_with) {
     return strncmp(text.start + token->start, compare_with, length) == 0;
 }
 
-void parse_text_into_rich_string_recursively(String text, Array<Rich_Text_Token>& tokens, Rich_Text_Style style, u32& index, Array<Rich_Text_String>* output) {
+void parse_text_into_rich_string_recursively(String text, List<Rich_Text_Token>& tokens, Rich_Text_Style style, u32& index, List<Rich_Text_String>* output) {
     for (; index < tokens.length; index++) {
         Rich_Text_Token& token = tokens.values[index];
 
@@ -213,7 +213,7 @@ void parse_text_into_rich_string_recursively(String text, Array<Rich_Text_Token>
                 new_string.end = (u32) token.end;
                 new_string.style = style;
 
-                array_add(output, new_string);
+                list_add(output, new_string);
 
                 break;
             }
@@ -244,7 +244,7 @@ void parse_text_into_rich_string_recursively(String text, Array<Rich_Text_Token>
                     tag_type = Tag_Type_Any;
                 } else if (token_eq(text, &token, "br")) {
                     Rich_Text_String empty_string{};
-                    array_add(output, empty_string);
+                    list_add(output, empty_string);
 
                     continue;
                 } else if (token_eq(text, &token, "img")) {
@@ -331,7 +331,7 @@ void parse_text_into_rich_string_recursively(String text, Array<Rich_Text_Token>
 
                 if (tag_type == Tag_Type_List_Item) {
                     Rich_Text_String empty_string{};
-                    array_add(output, empty_string);
+                    list_add(output, empty_string);
                 }
 
                 if (tag_type == Tag_Type_Other) {
@@ -383,8 +383,8 @@ void destructively_strip_html_comments(String& text) {
     text.length = (u32) (text_end - text.start);
 }
 
-static List<Rich_Text_String> parse_string_into_rich_text_string_list(String text) {
-    Array<Rich_Text_Token> tokens{};
+static Array<Rich_Text_String> parse_string_into_rich_text_string_array(String text) {
+    List<Rich_Text_Token> tokens{};
     parse_text_into_tokens(text, tokens);
 
     u32 text_tokens = 0;
@@ -403,7 +403,7 @@ static List<Rich_Text_String> parse_string_into_rich_text_string_list(String tex
         }
     }
 
-    Array<Rich_Text_String> result_strings{};
+    List<Rich_Text_String> result_strings{};
     result_strings.values = (Rich_Text_String*) talloc(sizeof(Rich_Text_String) * text_tokens);
     result_strings.watermark = text_tokens;
 
@@ -416,7 +416,7 @@ static List<Rich_Text_String> parse_string_into_rich_text_string_list(String tex
 //        printf("%i :: %.*s\n", str->style.background_color, str->text.length, str->text.start);
 //    }
 
-    List<Rich_Text_String> output;
+    Array<Rich_Text_String> output;
     output.data = result_strings.values;
     output.length = text_tokens;
 
@@ -431,7 +431,7 @@ Rich_Text parse_string_into_temporary_rich_text(String text) {
 
     destructively_strip_html_comments(text);
 
-    List<Rich_Text_String> temporary_strings = parse_string_into_rich_text_string_list(text);
+    Array<Rich_Text_String> temporary_strings = parse_string_into_rich_text_string_array(text);
 
     Rich_Text out{};
     out.rich = temporary_strings;

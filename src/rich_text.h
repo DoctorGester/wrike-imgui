@@ -25,7 +25,7 @@ struct Rich_Text_String {
 };
 
 struct Rich_Text {
-    List<Rich_Text_String> rich{};
+    Array<Rich_Text_String> rich{};
     String raw{};
 };
 

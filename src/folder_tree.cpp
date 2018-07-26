@@ -30,14 +30,14 @@ static Id_Hash_Map<Folder_Id, s32, -1> folder_id_to_node_map{};
 static char search_buffer[128];
 
 Folder_Handle root_node = NULL_FOLDER_HANDLE;
-List<Folder_Tree_Node> all_nodes{};
+Array<Folder_Tree_Node> all_nodes{};
 
-List<Folder> starred_folders{};
-List<Folder> suggested_folders{};
-List<Folder_Tree_Node*> folder_tree_search_result{};
+Array<Folder> starred_folders{};
+Array<Folder> suggested_folders{};
+Array<Folder_Tree_Node*> folder_tree_search_result{};
 
-inline List<Folder_Handle> get_node_children(Folder_Tree_Node* node) {
-    List<Folder_Handle> result;
+inline Array<Folder_Handle> get_node_children(Folder_Tree_Node* node) {
+    Array<Folder_Handle> result;
     result.length = node->num_children;
     result.data = child_nodes.data + (s32) node->children;
 
@@ -141,7 +141,7 @@ static void draw_child_node_skeletons(Folder_Tree_Node* tree_node, Vertical_Layo
 }
 
 static void draw_folder_tree_node_recursively(Folder_Tree_Node* tree_node, Vertical_Layout& layout, u32 nesting_level, u32 finished_loading_children_at) {
-    List<Folder_Handle> children = get_node_children(tree_node);
+    Array<Folder_Handle> children = get_node_children(tree_node);
 
     ImDrawList* draw_list = ImGui::GetWindowDrawList();
     float width = ImGui::GetContentRegionAvailWidth();
@@ -542,7 +542,7 @@ static void process_folder_tree_data_object(char* json, jsmntok_t*& token) {
     new_node->num_expected_children = num_children;
 }
 
-void folder_tree_search(const char* query, List<Folder_Tree_Node*>* result) {
+void folder_tree_search(const char* query, Array<Folder_Tree_Node*>* result) {
 
 }
 
@@ -560,7 +560,7 @@ static void match_tree_parent_child_pairs() {
         if (child_node != NULL_FOLDER_HANDLE) {
             found_pairs++;
 
-            List<Folder_Handle> children = get_node_children(parent_node);
+            Array<Folder_Handle> children = get_node_children(parent_node);
             children[children.length] = child_node;
 
             parent_node->num_children++;

@@ -164,7 +164,7 @@ void request_folder_children_for_folder_tree(Folder_Id folder_id) {
     platform_api_request(FOLDER_TREE_CHILDREN_REQUEST, url.start, Http_Get, (void*) (intptr_t) folder_id);
 }
 
-void request_multiple_folders(List<Folder_Id> folders) {
+void request_multiple_folders(Array<Folder_Id> folders) {
     assert(folders.length > 0);
 
     String url = tprintf("folders/");

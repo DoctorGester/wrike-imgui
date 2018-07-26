@@ -16,8 +16,8 @@ struct User {
     u32 avatar_loaded_at;
 };
 
-extern List<User> users;
-extern List<User> suggested_users;
+extern Array<User> users;
+extern Array<User> suggested_users;
 
 extern User* this_user;
 
