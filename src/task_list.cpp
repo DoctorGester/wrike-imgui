@@ -34,6 +34,9 @@ struct Folder_Task {
     Relative_Pointer<Custom_Field_Value> custom_field_values;
     u32 num_custom_field_values;
 
+    Relative_Pointer<Folder_Id> parent_folder_ids;
+    u32 num_parent_folder_ids;
+
     Relative_Pointer<Task_Id> parent_task_ids;
     u32 num_parent_task_ids;
 
@@ -42,6 +45,7 @@ struct Folder_Task {
 };
 
 struct Folder_Header {
+    Folder_Id id;
     String name;
     Custom_Field_Id* custom_columns;
     u32 num_custom_columns;
@@ -784,6 +788,7 @@ static void process_folder_contents_data_object(char* json, jsmntok_t*& token) {
 
     Folder_Task* folder_task = &folder_tasks[folder_tasks.length];
     folder_task->num_parent_task_ids = 0;
+    folder_task->num_parent_folder_ids = 0;
     folder_task->num_custom_field_values = 0;
     folder_task->num_assignees = 0;
 
@@ -820,6 +825,20 @@ static void process_folder_contents_data_object(char* json, jsmntok_t*& token) {
 
             for (u32 field_index = 0; field_index < next_token->size; field_index++, token++) {
                 json_token_to_id8(json, token, folder_task->assignees[folder_task->num_assignees++]);
+            }
+
+            token--;
+        } else if (json_string_equals(json, property_token, "parentIds")) {
+            assert(next_token->type == JSMN_ARRAY);
+
+            token++;
+
+            if (next_token->size > 0) {
+                folder_task->parent_folder_ids = lazy_array_reserve_n_values_relative_pointer(parent_task_ids, next_token->size);
+            }
+
+            for (u32 field_index = 0; field_index < next_token->size; field_index++, token++) {
+                json_token_to_right_part_of_id16(json, token, folder_task->parent_folder_ids[folder_task->num_parent_folder_ids++]);
             }
 
             token--;
@@ -900,34 +919,37 @@ void process_folder_header_data(char* json, u32 data_size, jsmntok_t*& token) {
     }
 }
 
-static void associate_parent_tasks_with_sub_tasks() {
+static void associate_parent_tasks_with_sub_tasks(Folder_Id top_parent_id) {
     u32 total_sub_tasks = 0;
+
+    // Step 0: determine and populate top level tasks
+    for (u32 task_index = 0; task_index < folder_tasks.length; task_index++) {
+        Sorted_Folder_Task* folder_task = &sorted_folder_tasks[task_index];
+        Folder_Task* source_task = folder_task->source_task;
+
+        for (u32 id_index = 0; id_index < source_task->num_parent_folder_ids; id_index++) {
+            Folder_Id parent_id = source_task->parent_folder_ids[id_index];
+
+            if (parent_id == top_parent_id) {
+                Sorted_Folder_Task** pointer_to_task = lazy_array_reserve_n_values(top_level_tasks, 1);
+                *pointer_to_task = folder_task;
+            }
+        }
+    }
 
     // Step 1: count sub tasks for each parent, while also deciding which parents should go into the root
     for (u32 task_index = 0; task_index < folder_tasks.length; task_index++) {
         Sorted_Folder_Task* folder_task = &sorted_folder_tasks[task_index];
         Folder_Task* source_task = folder_task->source_task;
 
-        bool found_at_least_one_parent = false;
+        for (u32 id_index = 0; id_index < source_task->num_parent_task_ids; id_index++) {
+            Task_Id parent_id = source_task->parent_task_ids[id_index];
+            Sorted_Folder_Task* parent_or_null = id_hash_map_get(&id_to_sorted_folder_task, parent_id, hash_id(parent_id));
 
-        if (source_task->num_parent_task_ids) {
-            for (u32 id_index = 0; id_index < source_task->num_parent_task_ids; id_index++) {
-                Task_Id parent_id = source_task->parent_task_ids[id_index];
-
-                Sorted_Folder_Task* parent_or_null = id_hash_map_get(&id_to_sorted_folder_task, parent_id, hash_id(parent_id));
-
-                if (parent_or_null) {
-                    found_at_least_one_parent = true;
-
-                    parent_or_null->num_sub_tasks++;
-                    total_sub_tasks++;
-                }
+            if (parent_or_null) {
+                parent_or_null->num_sub_tasks++;
+                total_sub_tasks++;
             }
-        }
-
-        if (!found_at_least_one_parent) {
-            Sorted_Folder_Task** pointer_to_task = lazy_array_reserve_n_values(top_level_tasks, 1);
-            *pointer_to_task = folder_task;
         }
     }
 
@@ -952,15 +974,13 @@ static void associate_parent_tasks_with_sub_tasks() {
         Sorted_Folder_Task* folder_task = &sorted_folder_tasks[task_index];
         Folder_Task* source_task = folder_task->source_task;
 
-        if (source_task->num_parent_task_ids) {
-            for (u32 id_index = 0; id_index < source_task->num_parent_task_ids; id_index++) {
-                Task_Id parent_id = source_task->parent_task_ids[id_index];
+        for (u32 id_index = 0; id_index < source_task->num_parent_task_ids; id_index++) {
+            Task_Id parent_id = source_task->parent_task_ids[id_index];
 
-                Sorted_Folder_Task* parent_or_null = id_hash_map_get(&id_to_sorted_folder_task, parent_id, hash_id(parent_id));
+            Sorted_Folder_Task* parent_or_null = id_hash_map_get(&id_to_sorted_folder_task, parent_id, hash_id(parent_id));
 
-                if (parent_or_null) {
-                    parent_or_null->sub_tasks[parent_or_null->num_sub_tasks++] = folder_task;
-                }
+            if (parent_or_null) {
+                parent_or_null->sub_tasks[parent_or_null->num_sub_tasks++] = folder_task;
             }
         }
     }
@@ -989,9 +1009,13 @@ void process_folder_contents_data(char* json, u32 data_size, jsmntok_t*& token) 
         process_folder_contents_data_object(json, token);
     }
 
-    associate_parent_tasks_with_sub_tasks();
+    associate_parent_tasks_with_sub_tasks(current_folder.id);
 
     has_been_sorted_after_loading = false;
+}
+
+void set_current_folder_id(Folder_Id id) {
+    current_folder.id = id;
 }
 
 void process_current_folder_as_logical() {

@@ -312,7 +312,9 @@ void request_folder_contents(String &folder_id) {
 
     s32 id = uchars_to_s32(result + 6);
 
-    api_request(Http_Get, folder_contents_request, "folders/%.*s/tasks%s", (int) folder_id.length, folder_id.start, "?fields=['customFields','superTaskIds','responsibleIds']&subTasks=true");
+    set_current_folder_id(id);
+
+    api_request(Http_Get, folder_contents_request, "folders/%.*s/tasks%s", (int) folder_id.length, folder_id.start, "?fields=['customFields','superTaskIds','parentIds','responsibleIds']&subTasks=true");
 
     if (id >= 0) {
         api_request(Http_Get, folder_header_request, "folders/%.*s%s", (int) folder_id.length, folder_id.start, "?fields=['customColumnIds']");
