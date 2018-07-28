@@ -222,6 +222,7 @@ static void setup_io() {
     io.KeyMap[ImGuiKey_End] = 35;
     io.KeyMap[ImGuiKey_Delete] = 46;
     io.KeyMap[ImGuiKey_Backspace] = 8;
+    io.KeyMap[ImGuiKey_Space] = 32;
     io.KeyMap[ImGuiKey_Enter] = 13;
     io.KeyMap[ImGuiKey_Escape] = 27;
     io.KeyMap[ImGuiKey_A] = 65;
