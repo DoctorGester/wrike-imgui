@@ -149,7 +149,7 @@ void render_rich_text(
         link_text.start = text.raw.start + link_string->start;
         link_text.length = link_string->end - link_string->start;
 
-        Button_State state = button((void*) link_url.start, string_top_left, link_size);
+        Button_State state = button((void*) link_text.start, string_top_left, link_size);
 
         if (state.pressed) {
             platform_open_url(link_url.length ? link_url : link_text);

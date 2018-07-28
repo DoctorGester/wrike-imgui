@@ -351,15 +351,10 @@ void parse_text_into_rich_string_recursively(String text, List<Rich_Text_Token>&
 }
 
 void destructively_strip_html_comments(String& text) {
-    if (text.length == 0) {
-        return;
-    }
-
     char* comment_start = NULL;
     char* text_end = text.start + text.length;
-    char* current;
 
-    for (current = text.start; current < text_end; current++) {
+    for (char* current = text.start; current < text_end; current++) {
         if (comment_start) {
             if (text_end - current >= 3 && strncmp("-->", current, 3) == 0) {
                 char* post_comment_close_tag = current + 3;
@@ -378,6 +373,26 @@ void destructively_strip_html_comments(String& text) {
                 comment_start = current;
             }
         }
+    }
+
+    text.length = (u32) (text_end - text.start);
+}
+
+void destructively_replace_escaped_quotes_with_just_quotes(String& text) {
+    char previous_character = '\0';
+    char* text_end = text.start + text.length;
+
+    for (char* current = text.start; current < text_end; current++) {
+        char this_character = *current;
+
+        if (previous_character == '\\' && this_character == '\"') {
+            memmove(current - 1, current, text_end - current);
+
+            current--;
+            text_end--;
+        }
+
+        previous_character = *current;
     }
 
     text.length = (u32) (text_end - text.start);
@@ -430,6 +445,7 @@ Rich_Text parse_string_into_temporary_rich_text(String text) {
     text = tprintf("%.*s", text.length, text.start);
 
     destructively_strip_html_comments(text);
+    destructively_replace_escaped_quotes_with_just_quotes(text);
 
     Array<Rich_Text_String> temporary_strings = parse_string_into_rich_text_string_array(text);
 
