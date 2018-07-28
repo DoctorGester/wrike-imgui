@@ -499,7 +499,7 @@ void platform_api_request(Request_Id request_id, char* url, Http_Method method, 
 }
 
 // TODO super duper temporary coderino
-void platform_local_storage_set(const char* key, String &value) {
+void platform_local_storage_set(const char* key, String value) {
     FILE* file_handle = fopen(key, "w");
 
     if (!file_handle) {

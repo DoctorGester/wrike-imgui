@@ -311,7 +311,7 @@ void platform_api_request(Request_Id request_id, char* url, Http_Method method, 
     EM_ASM({ api_get(Pointer_stringify($0), $1, Pointer_stringify($2), $3) }, &url[0], request_id, method_as_string, data);
 }
 
-void platform_local_storage_set(const char* key, String &value) {
+void platform_local_storage_set(const char* key, String value) {
     EM_ASM({ local_storage_set(Pointer_stringify($0), Pointer_stringify($1, $2)) },
            key,
            value.start,

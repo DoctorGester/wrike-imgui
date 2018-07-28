@@ -33,6 +33,13 @@ typedef s32 Custom_Status_Id;
 typedef s32 Workflow_Id;
 typedef s32 User_Id;
 
+enum string_to_int_error {
+    STR2INT_SUCCESS,
+    STR2INT_OVERFLOW,
+    STR2INT_UNDERFLOW,
+    STR2INT_INCONVERTIBLE
+};
+
 static const u32 hash_seed = 3637;
 
 u32 argb_to_agbr(u32 argb);
@@ -189,3 +196,4 @@ void remove_item_from_array_keep_order(Array<T>& list, T item) {
 s32 hackenstein(const char* a, const char* b, u32 a_length, u32 b_length);
 s32 string_atoi(String* string);
 s8* string_in_substring(const s8* big, const s8* small, size_t slen);
+string_to_int_error string_to_int(s32 *out, char *s, u32 base);

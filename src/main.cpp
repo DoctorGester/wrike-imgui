@@ -45,7 +45,6 @@ Request_Id starred_folders_request = NO_REQUEST;
 const Account_Id NO_ACCOUNT = -1;
 const Folder_Id ROOT_FOLDER = -1;
 
-bool had_last_selected_folder_so_doesnt_need_to_load_the_root_folder = false;
 bool custom_statuses_were_loaded = false;
 
 static bool draw_memory_debug = false;
@@ -149,9 +148,7 @@ static void select_account() {
 
     selected_account_id = accounts[0].id;
 
-    String account_id_string = tprintf("%i", accounts[0].id);
-
-    platform_local_storage_set("selected_account", account_id_string);
+    platform_local_storage_set("selected_account", tprintf("%i", accounts[0].id));
 }
 
 void request_folder_children_for_folder_tree(Folder_Id folder_id) {
@@ -208,6 +205,32 @@ static void request_suggestions_for_account(Account_Id account_id) {
     api_request(Http_Get, suggested_contacts_request, "internal/accounts/%.*s/contacts?suggestType=Responsibles", (u32) ARRAY_SIZE(output_account_id), output_account_id);
 }
 
+static void request_data_for_selected_account() {
+    folder_tree_init(ROOT_FOLDER);
+
+    request_suggestions_for_account(selected_account_id);
+    request_workflow_for_account(selected_account_id);
+    request_folder_children_for_folder_tree(ROOT_FOLDER);
+
+    char* last_selected_folder = platform_local_storage_get("last_selected_folder");
+
+    bool has_requested_a_folder = false;
+
+    if (last_selected_folder) {
+        Folder_Id folder_id;
+
+        if (string_to_int(&folder_id, last_selected_folder, 10) == STR2INT_SUCCESS) {
+            select_and_request_folder_by_id(folder_id);
+
+            has_requested_a_folder = true;
+        }
+    }
+
+    if (!has_requested_a_folder) {
+        select_and_request_folder_by_id(ROOT_FOLDER);
+    }
+}
+
 extern "C"
 EXPORT
 void api_request_success(Request_Id request_id, char* content, u32 content_length, void* data) {
@@ -258,11 +281,7 @@ void api_request_success(Request_Id request_id, char* content, u32 content_lengt
 
         if (selected_account_id == NO_ACCOUNT) {
             select_account();
-            request_suggestions_for_account(selected_account_id);
-            request_workflow_for_account(selected_account_id);
-
-            folder_tree_init(ROOT_FOLDER);
-            request_folder_children_for_folder_tree(ROOT_FOLDER);
+            request_data_for_selected_account();
         }
     } else if (request_id == workflows_request) {
         workflows_request = NO_REQUEST;
@@ -303,40 +322,25 @@ void image_load_success(Request_Id request_id, u8* pixel_data, u32 width, u32 he
     }
 }
 
-void request_folder_contents(String &folder_id) {
-    platform_local_storage_set("last_selected_folder", folder_id);
-
-    // TODO dirty temporary code, we need to request by regular id instead of passing a string
-    u8* token_start = (u8*) folder_id.start;
-    u8 result[UNBASE32_LEN(16)];
-    base32_decode(token_start, 16, result);
-
-    s32 id = uchars_to_s32(result + 6);
+void select_and_request_folder_by_id(Folder_Id id) {
+    u8 output_account_and_folder_id[16];
+    u32 id_length = (int) ARRAY_SIZE(output_account_and_folder_id);
+    fill_id16('A', selected_account_id, 'G', id, output_account_and_folder_id);
 
     set_current_folder_id(id);
+    platform_local_storage_set("last_selected_folder", tprintf("%i", id));
 
-    api_request(Http_Get, folder_contents_request, "folders/%.*s/tasks%s", (int) folder_id.length, folder_id.start, "?fields=['customFields','superTaskIds','parentIds','responsibleIds']&subTasks=true");
+    api_request(Http_Get, folder_contents_request, "folders/%.*s/tasks%s", id_length, output_account_and_folder_id,
+                "?fields=['customFields','superTaskIds','parentIds','responsibleIds']&subTasks=true");
 
     if (id >= 0) {
-        api_request(Http_Get, folder_header_request, "folders/%.*s%s", (int) folder_id.length, folder_id.start, "?fields=['customColumnIds']");
+        api_request(Http_Get, folder_header_request, "folders/%.*s%s", id_length, output_account_and_folder_id, "?fields=['customColumnIds']");
     } else {
         folder_header_request = NO_REQUEST;
         process_current_folder_as_logical();
     }
 
     started_loading_folder_contents_at = tick;
-}
-
-void select_folder_node_and_request_contents_if_necessary(Folder_Id id) {
-    u8* account_and_folder_id = (u8*) talloc(sizeof(u8) * 16);
-
-    fill_id16('A', selected_account_id, 'G', id, account_and_folder_id);
-
-    String id_as_string;
-    id_as_string.start = (char*) account_and_folder_id;
-    id_as_string.length = 16;
-
-    request_folder_contents(id_as_string);
 }
 
 void request_task_by_task_id(Task_Id task_id) {
@@ -618,30 +622,13 @@ void loop() {
 
 void load_persisted_settings() {
     char* selected_account = platform_local_storage_get("selected_account");
-    char* last_selected_folder = platform_local_storage_get("last_selected_folder");
 
     if (selected_account) {
-        char* number_end = NULL;
-
-        selected_account_id = (s32) strtol(selected_account, &number_end, 10);
-
-        if (selected_account_id != NO_ACCOUNT) {
-            folder_tree_init(ROOT_FOLDER);
-
-            request_workflow_for_account(selected_account_id);
-            request_suggestions_for_account(selected_account_id);
-            request_folder_children_for_folder_tree(ROOT_FOLDER);
+        if (string_to_int(&selected_account_id, selected_account, 10) == STR2INT_SUCCESS) {
+            if (selected_account_id != NO_ACCOUNT) {
+                request_data_for_selected_account();
+            }
         }
-    }
-
-    if (last_selected_folder) {
-        String folder_id;
-        folder_id.start = last_selected_folder;
-        folder_id.length = strlen(last_selected_folder);
-
-        request_folder_contents(folder_id);
-
-        had_last_selected_folder_so_doesnt_need_to_load_the_root_folder = true;
     }
 }
 

@@ -109,7 +109,7 @@ static void folder_tree_node_element(ImDrawList* draw_list, ImVec2 element_top_l
     ImVec2 arrow_point = element_top_left + ImVec2(26.0f * scale + content_offset, element_size.y / 2.0f);
 
     if (draw_folder_tree_folder_element(draw_list, element_top_left, element_size, content_offset, alpha, node)) {
-        select_folder_node_and_request_contents_if_necessary(node->id);
+        select_and_request_folder_by_id(node->id);
     }
 
     if (node->num_expected_children && draw_expand_arrow_button(draw_list, arrow_point, element_size.y, node->is_expanded)) {
@@ -342,7 +342,7 @@ static void draw_starred_folders() {
         ImGui::PushID(it);
 
         if (draw_folder_tree_folder_element(draw_list, layout.cursor, element_size, 0, 0xff, it)) {
-            select_folder_node_and_request_contents_if_necessary(it->id);
+            select_and_request_folder_by_id(it->id);
         }
 
         ImGui::PopID();
@@ -388,7 +388,7 @@ void draw_folder_tree(float column_width) {
 
             ImGui::PushID(node->id);
             if (ImGui::Selectable(name)) {
-                select_folder_node_and_request_contents_if_necessary(node->id);
+                select_and_request_folder_by_id(node->id);
             }
             ImGui::PopID();
         }

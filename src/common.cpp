@@ -10,6 +10,7 @@
 #include "tracing.h"
 #include "platform.h"
 #include <string.h>
+#include <cerrno>
 
 u32 argb_to_agbr(u32 argb) {
     u32 a = argb & 0xFF000000;
@@ -330,4 +331,21 @@ PRINTLIKE(1, 4) void tprintf(const char* format, char** start, char** end, ...) 
     vsnprintf(*start, length + 1, format, args);
 
     va_end(args);
+}
+
+string_to_int_error string_to_int(s32 *out, char *s, u32 base) {
+    char *end;
+    if (s[0] == '\0' || isspace(s[0]))
+        return STR2INT_INCONVERTIBLE;
+    errno = 0;
+    long l = strtol(s, &end, base);
+    /* Both checks are needed because INT_MAX == LONG_MAX is possible. */
+    if (l > INT_MAX || (errno == ERANGE && l == LONG_MAX))
+        return STR2INT_OVERFLOW;
+    if (l < INT_MIN || (errno == ERANGE && l == LONG_MIN))
+        return STR2INT_UNDERFLOW;
+    if (*end != '\0')
+        return STR2INT_INCONVERTIBLE;
+    *out = l;
+    return STR2INT_SUCCESS;
 }

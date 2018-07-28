@@ -569,7 +569,7 @@ static void draw_parent_folders(Wrapping_Horizontal_Layout& layout, Array<Folder
 
         if (folder_tree_node) {
             if (draw_parent_folder_ticker(layout, folder_tree_node, ghost_tags, folder_id != layout.has_drawn_at_least_one_element)) {
-                select_folder_node_and_request_contents_if_necessary(folder_tree_node->id);
+                select_and_request_folder_by_id(folder_tree_node->id);
             }
 
             layout.has_drawn_at_least_one_element = true;

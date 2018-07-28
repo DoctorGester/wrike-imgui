@@ -68,7 +68,6 @@ extern u32 finished_loading_statuses_at;
 extern u32 started_loading_users_at;
 extern u32 finished_loading_users_at;
 
-extern bool had_last_selected_folder_so_doesnt_need_to_load_the_root_folder;
 extern bool custom_statuses_were_loaded;
 
 extern u32 tick;
@@ -82,7 +81,7 @@ void add_parent_folder(Task_Id task_id, Folder_Id folder_id);
 void remove_assignee_from_task(Task_Id task_id, User_Id user_id);
 void remove_parent_folder(Task_Id task_id, Folder_Id folder_id);
 void set_task_status(Task_Id task_id, Custom_Status_Id status_id);
-void select_folder_node_and_request_contents_if_necessary(Folder_Id id);
+void select_and_request_folder_by_id(Folder_Id id);
 void request_folder_children_for_folder_tree(Folder_Id folder_id);
 void request_multiple_folders(Array<Folder_Id> folders);
 void request_task_comments(Task_Id task_id);

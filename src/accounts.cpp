@@ -68,8 +68,6 @@ void process_accounts_data(char* json, u32 data_size, jsmntok_t*&token) {
 
     accounts_count = 0;
 
-    bool has_already_requested_a_folder = had_last_selected_folder_so_doesnt_need_to_load_the_root_folder;
-
     for (u32 array_index = 0; array_index < data_size; array_index++) {
         jsmntok_t* object_token = token++;
 
@@ -86,18 +84,6 @@ void process_accounts_data(char* json, u32 data_size, jsmntok_t*&token) {
 
             if (json_string_equals(json, property_token, "id")) {
                 json_token_to_id8(json, next_token, account->id);
-            } else if (!has_already_requested_a_folder && json_string_equals(json, property_token, "rootFolderId")) {
-                void request_folder_contents(String &folder_id);
-
-                String folder_id;
-                json_token_to_string(json, next_token, folder_id);
-
-                s32 id = 0;
-                json_token_to_right_part_of_id16(json, next_token, id);
-
-                request_folder_contents(folder_id);
-
-                has_already_requested_a_folder = true;
             } else if (json_string_equals(json, property_token, "customFields")) {
                 assert(next_token->type == JSMN_ARRAY);
 
