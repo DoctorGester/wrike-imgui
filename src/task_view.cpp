@@ -610,20 +610,15 @@ static bool draw_contact_picker_assignee_selection_button(ImDrawList* draw_list,
 
     draw_circular_user_avatar(draw_list, user, top_left, size.y);
 
-    s32 buffer_length = snprintf(NULL, 0, "%.*s %.*s", user->first_name.length, user->first_name.start, user->last_name.length, user->last_name.start);
+    String name = full_user_name_to_temporary_string(user);
 
-    s8* name_start = (s8*) talloc((u32) buffer_length + 1);
-    s8* name_end = name_start + buffer_length;
-
-    snprintf(name_start, buffer_length + 1, "%.*s %.*s", user->first_name.length, user->first_name.start, user->last_name.length, user->last_name.start);
-
-    ImVec2 text_size = ImGui::CalcTextSize(name_start, name_end);
+    ImVec2 text_size = ImGui::CalcTextSize(name.start, name.start + name.length);
     ImVec2 text_top_left = top_left +
                            ImVec2(size.y, 0.0f) +
                            ImVec2(spacing, 0.0f) +
                            ImVec2(0.0f, size.y / 2.0f - text_size.y / 2.0f);
 
-    draw_list->AddText(text_top_left, 0xff000000, name_start, name_start + strlen(name_start));
+    draw_list->AddText(text_top_left, 0xff000000, name.start, name.start + name.length);
 
     ImGui::PopID();
 
