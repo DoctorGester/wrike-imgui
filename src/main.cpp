@@ -240,7 +240,7 @@ void api_request_success(Request_Id request_id, char* content, u32 content_lengt
     json_with_tokens.tokens = parse_json_into_tokens(content, content_length, json_with_tokens.num_tokens);
 
     if (request_id == FOLDER_TREE_CHILDREN_REQUEST) {
-        process_folder_tree_request((Folder_Id) (intptr_t) data, content, json_with_tokens.tokens, json_with_tokens.num_tokens);
+        process_folder_tree_children_request((Folder_Id) (intptr_t) data, content, json_with_tokens.tokens, json_with_tokens.num_tokens);
     } else if (request_id == starred_folders_request) {
         starred_folders_request = NO_REQUEST;
 
