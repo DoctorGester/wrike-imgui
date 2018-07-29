@@ -80,6 +80,8 @@ struct Table_Paint_Context {
     float text_padding_y;
 };
 
+typedef int (Comparator)(const void*, const void*);
+
 static const u32 custom_columns_start_index = 3;
 
 static Folder_Header current_folder{};
@@ -151,85 +153,14 @@ static inline int compare_tasks_custom_fields(Folder_Task* a, Folder_Task* b, Cu
     }
 }
 
-static inline int compare_folder_tasks_based_on_current_sort(Sorted_Folder_Task* as, Sorted_Folder_Task* bs) {
-    Folder_Task* a = as->source_task;
-    Folder_Task* b = bs->source_task;
-
-    // TODO instead of switching in each call we could just move those into separate functions
-    switch (sort_field) {
-        case Task_List_Sort_Field_Title: {
-            return strncmp(a->title.start, b->title.start, MIN(a->title.length, b->title.length)) * sort_direction;
-        }
-
-        case Task_List_Sort_Field_Assignee: {
-            if (!a->num_assignees) {
-                return 1;
-            }
-
-            if (!b->num_assignees) {
-                return -1;
-            }
-
-            // TODO all of this could be cached into a Sorted_Task including full name
-            User_Id a_first_assignee = a->assignees[0];
-            User_Id b_first_assignee = b->assignees[0];
-
-            User* a_assignee = find_user_by_id(a_first_assignee);
-
-            if (!a_assignee) {
-                return 1;
-            }
-
-            User* b_assignee = find_user_by_id(b_first_assignee);
-
-            if (!b_assignee) {
-                return -1;
-            }
-
-            temporary_storage_mark();
-
-            String a_name = full_user_name_to_temporary_string(a_assignee);
-            String b_name = full_user_name_to_temporary_string(b_assignee);
-
-            s32 comparison_result = strncmp(a_name.start, b_name.start, MIN(a_name.length, b_name.length)) * sort_direction;
-
-            temporary_storage_reset();
-
-            return comparison_result;
-        }
-
-        case Task_List_Sort_Field_Status: {
-            Custom_Status* a_status = as->cached_status;
-            Custom_Status* b_status = bs->cached_status;
-
-            // TODO do status comparison based on status type?
-
-            s32 natural_index_comparison_result = a_status->natural_index - b_status->natural_index;
-
-            if (!natural_index_comparison_result) {
-                return (a_status->id - b_status->id) * sort_direction;
-            }
-
-            return natural_index_comparison_result * sort_direction;
-        }
-
-        case Task_List_Sort_Field_Custom_Field: {
-            return compare_tasks_custom_fields(a, b, sort_custom_field->type) * sort_direction;
-        }
-
-        case Task_List_Sort_Field_None: {
-            assert(!"Invalid sort field");
-        }
-    }
-
-    return 0;
-}
-
-static int compare_folder_tasks_based_on_current_sort_and_their_ids(const void* ap, const void* bp) {
+static int compare_folder_tasks_based_on_title(const void* ap, const void* bp) {
     Sorted_Folder_Task* as = *(Sorted_Folder_Task**) ap;
     Sorted_Folder_Task* bs = *(Sorted_Folder_Task**) bp;
 
-    int result = compare_folder_tasks_based_on_current_sort(as, bs);
+    Folder_Task* a = as->source_task;
+    Folder_Task* b = bs->source_task;
+
+    int result = strncmp(a->title.start, b->title.start, MIN(a->title.length, b->title.length)) * sort_direction;
 
     if (result == 0) {
         return (int) (as->source_task->id - bs->source_task->id);
@@ -238,8 +169,123 @@ static int compare_folder_tasks_based_on_current_sort_and_their_ids(const void* 
     return result;
 }
 
+static int compare_folder_tasks_based_on_assignees(const void* ap, const void* bp) {
+    Sorted_Folder_Task* as = *(Sorted_Folder_Task**) ap;
+    Sorted_Folder_Task* bs = *(Sorted_Folder_Task**) bp;
+
+    Folder_Task* a = as->source_task;
+    Folder_Task* b = bs->source_task;
+
+    if (!a->num_assignees) {
+        return 1;
+    }
+
+    if (!b->num_assignees) {
+        return -1;
+    }
+
+    // TODO all of this could be cached into a Sorted_Task including full name
+    User_Id a_first_assignee = a->assignees[0];
+    User_Id b_first_assignee = b->assignees[0];
+
+    User* a_assignee = find_user_by_id(a_first_assignee);
+
+    if (!a_assignee) {
+        return 1;
+    }
+
+    User* b_assignee = find_user_by_id(b_first_assignee);
+
+    if (!b_assignee) {
+        return -1;
+    }
+
+    temporary_storage_mark();
+
+    String a_name = full_user_name_to_temporary_string(a_assignee);
+    String b_name = full_user_name_to_temporary_string(b_assignee);
+
+    s32 result = strncmp(a_name.start, b_name.start, MIN(a_name.length, b_name.length)) * sort_direction;
+
+    temporary_storage_reset();
+
+    if (result == 0) {
+        return (int) (as->source_task->id - bs->source_task->id);
+    }
+
+    return result;
+}
+
+static int compare_folder_tasks_based_on_status(const void* ap, const void* bp) {
+    Sorted_Folder_Task* as = *(Sorted_Folder_Task**) ap;
+    Sorted_Folder_Task* bs = *(Sorted_Folder_Task**) bp;
+
+    Folder_Task* a = as->source_task;
+    Folder_Task* b = bs->source_task;
+
+    Custom_Status* a_status = as->cached_status;
+    Custom_Status* b_status = bs->cached_status;
+
+    // TODO do status comparison based on status type?
+
+    s32 result = a_status->natural_index - b_status->natural_index;
+
+    if (!result) {
+        result = (a_status->id - b_status->id) * sort_direction;
+    }
+
+    if (!result) {
+        return (int) (as->source_task->id - bs->source_task->id);
+    }
+
+    return result;
+}
+
+static int compare_folder_tasks_based_on_custom_field(const void* ap, const void* bp) {
+    Sorted_Folder_Task* as = *(Sorted_Folder_Task**) ap;
+    Sorted_Folder_Task* bs = *(Sorted_Folder_Task**) bp;
+
+    Folder_Task* a = as->source_task;
+    Folder_Task* b = bs->source_task;
+
+    // TODO inline that?
+    s32 result = compare_tasks_custom_fields(a, b, sort_custom_field->type) * sort_direction;
+
+    if (!result) {
+        return (int) (as->source_task->id - bs->source_task->id);
+    }
+
+    return result;
+}
+
+static inline Comparator* get_comparator_by_current_sort_type() {
+    switch (sort_field) {
+        case Task_List_Sort_Field_Title: {
+            return compare_folder_tasks_based_on_title;
+        }
+
+        case Task_List_Sort_Field_Assignee: {
+            return compare_folder_tasks_based_on_assignees;
+        }
+
+        case Task_List_Sort_Field_Status: {
+            return compare_folder_tasks_based_on_status;
+        }
+
+        case Task_List_Sort_Field_Custom_Field: {
+            return compare_folder_tasks_based_on_custom_field;
+        }
+
+        default: {}
+    }
+
+    assert(!"Invalid sort field");
+
+    return NULL;
+}
+
 static void sort_tasks_hierarchically(Sorted_Folder_Task** tasks, u32 length) {
-    qsort(tasks, length, sizeof(Sorted_Folder_Task*), compare_folder_tasks_based_on_current_sort_and_their_ids);
+    qsort(tasks, length, sizeof(Sorted_Folder_Task*), get_comparator_by_current_sort_type());
 
     for (u32 task_index = 0; task_index < length; task_index++) {
         Sorted_Folder_Task* task = tasks[task_index];
@@ -290,11 +336,11 @@ static void rebuild_flattened_task_subtree(Flattened_Folder_Task* starting_at) {
 }
 
 static void sort_sub_tasks_of_task(Sorted_Folder_Task* task) {
-    qsort(task->sub_tasks, task->num_sub_tasks, sizeof(Sorted_Folder_Task*), compare_folder_tasks_based_on_current_sort_and_their_ids);
+    qsort(task->sub_tasks, task->num_sub_tasks, sizeof(Sorted_Folder_Task*), get_comparator_by_current_sort_type());
 }
 
 static void sort_top_level_tasks_and_rebuild_flattened_tree() {
-    qsort(top_level_tasks.data, top_level_tasks.length, sizeof(Sorted_Folder_Task*), compare_folder_tasks_based_on_current_sort_and_their_ids);
+    qsort(top_level_tasks.data, top_level_tasks.length, sizeof(Sorted_Folder_Task*), get_comparator_by_current_sort_type());
 
     rebuild_flattened_task_tree();
 }
