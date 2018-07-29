@@ -57,6 +57,7 @@ struct Sorted_Folder_Task {
 
     Folder_Task* source_task;
     Custom_Status* cached_status;
+    User* cached_first_assignee;
     Sorted_Folder_Task** sub_tasks; // TODO Array<Sorted_Folder_Task*>
     u32 num_sub_tasks;
 
@@ -173,28 +174,13 @@ static int compare_folder_tasks_based_on_assignees(const void* ap, const void* b
     Sorted_Folder_Task* as = *(Sorted_Folder_Task**) ap;
     Sorted_Folder_Task* bs = *(Sorted_Folder_Task**) bp;
 
-    Folder_Task* a = as->source_task;
-    Folder_Task* b = bs->source_task;
-
-    if (!a->num_assignees) {
-        return 1;
-    }
-
-    if (!b->num_assignees) {
-        return -1;
-    }
-
-    // TODO all of this could be cached into a Sorted_Task including full name
-    User_Id a_first_assignee = a->assignees[0];
-    User_Id b_first_assignee = b->assignees[0];
-
-    User* a_assignee = find_user_by_id(a_first_assignee);
+    User* a_assignee = as->cached_first_assignee;
 
     if (!a_assignee) {
         return 1;
     }
 
-    User* b_assignee = find_user_by_id(b_first_assignee);
+    User* b_assignee = bs->cached_first_assignee;
 
     if (!b_assignee) {
         return -1;
@@ -219,9 +205,6 @@ static int compare_folder_tasks_based_on_assignees(const void* ap, const void* b
 static int compare_folder_tasks_based_on_status(const void* ap, const void* bp) {
     Sorted_Folder_Task* as = *(Sorted_Folder_Task**) ap;
     Sorted_Folder_Task* bs = *(Sorted_Folder_Task**) bp;
-
-    Folder_Task* a = as->source_task;
-    Folder_Task* b = bs->source_task;
 
     Custom_Status* a_status = as->cached_status;
     Custom_Status* b_status = bs->cached_status;
@@ -352,6 +335,12 @@ static void update_cached_data_for_sorted_tasks() {
         Folder_Task* source = sorted_folder_task->source_task;
 
         sorted_folder_task->cached_status = find_custom_status_by_id(source->custom_status_id, source->custom_status_id_hash);
+
+        if (source->num_assignees) {
+            sorted_folder_task->cached_first_assignee = find_user_by_id(source->assignees[0]);
+        } else {
+            sorted_folder_task->cached_first_assignee = NULL;
+        }
     }
 }
 

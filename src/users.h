@@ -30,8 +30,15 @@ User* find_user_by_avatar_request_id(Request_Id avatar_request_id);
 bool check_and_request_user_avatar_if_necessary(User* user);
 
 inline String full_user_name_to_temporary_string(User* user) {
-    return tprintf("%.*s %.*s",
-                   user->first_name.length, user->first_name.start,
-                   user->last_name.length, user->last_name.start
-    );
+    // This function used tprintf("%.*s %.*s", ...) earlier, but turns out snprintf is ridiculously slow
+    String result;
+    result.length = user->first_name.length + user->last_name.length + 1;
+    result.start = (char*) talloc(result.length);
+
+    memcpy(result.start, user->first_name.start, user->first_name.length);
+    memcpy(result.start + user->first_name.length + 1, user->last_name.start, user->last_name.length);
+
+    result.start[user->first_name.length] = ' ';
+
+    return result;
 }
