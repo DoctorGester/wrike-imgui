@@ -1539,16 +1539,8 @@ void draw_task_contents() {
 
     draw_task_comments();
 
-    bool should_draw_shadow = ImGui::GetScrollY() > 0.01f;
-
-    if (should_draw_shadow) {
-        ImVec2 shadow_top_left = top_left + ImVec2(0, ImGui::GetScrollY());
-        ImVec2 shadow_bottom_right = shadow_top_left + ImVec2(full_width, 4.0f * scale);
-
-        const u32 shadow_start = 0x33000000;
-        const u32 shadow_end = 0x00000000;
-
-        draw_list->AddRectFilledMultiColor(shadow_top_left, shadow_bottom_right, shadow_start, shadow_start, shadow_end, shadow_end);
+    if (ImGui::GetScrollY() > 0.01f) {
+        draw_scroll_shadow(draw_list, top_left, full_width, scale);
     }
 
     ImGui::EndChild();

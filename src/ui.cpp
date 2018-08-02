@@ -171,6 +171,16 @@ bool draw_expand_arrow_button(ImDrawList* draw_list, ImVec2 arrow_point, float h
     return button_state.pressed;
 }
 
+void draw_scroll_shadow(ImDrawList* draw_list, ImVec2 top_left, float content_width, float scale) {
+    ImVec2 shadow_top_left = top_left + ImVec2(0, ImGui::GetScrollY());
+    ImVec2 shadow_bottom_right = shadow_top_left + ImVec2(content_width, 4.0f * scale);
+
+    const u32 shadow_start = 0x33000000;
+    const u32 shadow_end = 0x00000000;
+
+    draw_list->AddRectFilledMultiColor(shadow_top_left, shadow_bottom_right, shadow_start, shadow_start, shadow_end, shadow_end);
+}
+
 static void button(ImGuiID id, ImVec2 top_left, ImVec2 size, Button_State& state) {
     ImRect bounds(top_left, top_left + size);
 
