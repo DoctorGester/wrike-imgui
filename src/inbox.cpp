@@ -257,7 +257,10 @@ void draw_inbox() {
 
         if (draw_inbox_entry(draw_list, layout.cursor, { content_width, element_height }, it, author, it > notifications.data)) {
             request_task_by_task_id(it->task);
-            mark_notification_as_read(it->id);
+
+            if (it->unread) {
+                mark_notification_as_read(it->id);
+            }
         }
 
         layout_advance(layout, element_height);
