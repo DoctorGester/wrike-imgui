@@ -91,6 +91,7 @@ void select_and_request_folder_by_id(Folder_Id id);
 void request_folder_children_for_folder_tree(Folder_Id folder_id);
 void request_multiple_folders(Array<Folder_Id> folders);
 void request_task_comments(Task_Id task_id);
+void mark_notification_as_read(Inbox_Notification_Id notification_id);
 
 // TODO those probably leak both on desktop and web
 extern "C" char* handle_clipboard_copy();

@@ -41,7 +41,7 @@ struct Inbox_Notification {
 };
 
 static u32 unread_notifications = 0;
-static Array<Inbox_Notification> notifications{};
+static Lazy_Array<Inbox_Notification, 8> notifications{};
 
 static void process_inbox_notification(Inbox_Notification* notification, char* json, jsmntok_t*& token) {
     jsmntok_t* object_token = token++;
@@ -219,6 +219,17 @@ static bool draw_inbox_entry(ImDrawList* draw_list, ImVec2 top_left, ImVec2 item
     return state.pressed;
 }
 
+static Inbox_Notification* find_notification_by_id(Inbox_Notification_Id id) {
+    // We'll just hope there isn't ever that much data for this to matter
+    for (Inbox_Notification* it = notifications.data; it != notifications.data + notifications.length; it++) {
+        if (it->id == id) {
+            return it;
+        }
+    }
+
+    return NULL;
+}
+
 void draw_inbox() {
     ImGui::BeginChildFrame(ImGui::GetID("inbox"), ImVec2(-1, -1));
 
@@ -246,6 +257,7 @@ void draw_inbox() {
 
         if (draw_inbox_entry(draw_list, layout.cursor, { content_width, element_height }, it, author, it > notifications.data)) {
             request_task_by_task_id(it->task);
+            mark_notification_as_read(it->id);
         }
 
         layout_advance(layout, element_height);
@@ -264,19 +276,25 @@ void draw_inbox() {
 }
 
 void process_inbox_data(char* json, u32 data_size, jsmntok_t*& token) {
-    if (notifications.length < data_size) {
-        notifications.data = (Inbox_Notification*) REALLOC(notifications.data, sizeof(Inbox_Notification) * data_size);
+    for (u32 array_index = 0; array_index < data_size; array_index++) {
+        Inbox_Notification new_notification{};
+        process_inbox_notification(&new_notification, json, token);
+
+        Inbox_Notification* old_notification = find_notification_by_id(new_notification.id);
+
+        if (old_notification) {
+            *old_notification = new_notification;
+        } else {
+            Inbox_Notification* allocated_notification = lazy_array_reserve_n_values(notifications, 1);
+
+            *allocated_notification = new_notification;
+        }
     }
 
-    notifications.length = 0;
     unread_notifications = 0;
 
-    for (u32 array_index = 0; array_index < data_size; array_index++) {
-        Inbox_Notification* notification = &notifications[notifications.length++];
-
-        process_inbox_notification(notification, json, token);
-
-        if (notification->unread) {
+    for (Inbox_Notification* it = notifications.data; it != notifications.data + notifications.length; it++) {
+        if (it->unread) {
             unread_notifications++;
         }
     }
