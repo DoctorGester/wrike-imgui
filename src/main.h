@@ -14,6 +14,11 @@ void api_request_success(Request_Id request_id, char* content, u32 content_lengt
 extern "C"
 void image_load_success(Request_Id request_id, u8* pixel_data, u32 width, u32 height);
 
+enum View {
+    View_Task_List,
+    View_Inbox
+};
+
 struct Custom_Field_Value {
     Custom_Field_Id field_id;
     String value;
@@ -72,6 +77,7 @@ extern bool custom_statuses_were_loaded;
 
 extern u32 tick;
 
+extern View current_view;
 extern Task current_task;
 extern Task_Id selected_folder_task_id;
 

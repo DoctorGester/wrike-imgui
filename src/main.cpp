@@ -25,6 +25,7 @@
 #include "workflows.h"
 #include "header.h"
 #include "ui.h"
+#include "inbox.h"
 
 const Request_Id NO_REQUEST = -1;
 const Request_Id FOLDER_TREE_CHILDREN_REQUEST = -2; // TODO BIG HAQ
@@ -34,6 +35,7 @@ Request_Id folder_contents_request = NO_REQUEST;
 Request_Id folders_request = NO_REQUEST;
 Request_Id task_request = NO_REQUEST;
 Request_Id task_comments_request = NO_REQUEST;
+Request_Id inbox_request = NO_REQUEST;
 Request_Id contacts_request = NO_REQUEST;
 Request_Id accounts_request = NO_REQUEST;
 Request_Id workflows_request = NO_REQUEST;
@@ -58,6 +60,8 @@ static Account_Id selected_account_id = NO_ACCOUNT;
 
 static Memory_Image logo{};
 
+View current_view = View_Task_List;
+
 Task_Id selected_folder_task_id = 0;
 
 Task current_task{};
@@ -71,6 +75,7 @@ static char* folder_header_json_content = NULL;
 static char* suggested_folders_json_content = NULL; // TODO looks like a lot of waste
 static char* suggested_users_json_content = NULL; // TODO also there
 static char* starred_folders_json_content = NULL;
+static char* inbox_json_content = NULL;
 
 u32 tick = 0;
 
@@ -295,6 +300,9 @@ void api_request_success(Request_Id request_id, char* content, u32 content_lengt
     } else if (request_id == suggested_contacts_request) {
         suggested_contacts_request = NO_REQUEST;
         process_json_content(suggested_users_json_content, process_suggested_users_data, json_with_tokens);
+    } else if (request_id == inbox_request) {
+        inbox_request = NO_REQUEST;
+        process_json_content(inbox_json_content, process_inbox_data, json_with_tokens);
     } else if (request_id == modify_task_request) {
         modify_task_request = NO_REQUEST;
 
@@ -328,6 +336,8 @@ void select_and_request_folder_by_id(Folder_Id id) {
     fill_id16('A', selected_account_id, 'G', id, output_account_and_folder_id);
 
     set_current_folder_id(id);
+    current_view = View_Task_List;
+
     platform_local_storage_set("last_selected_folder", tprintf("%i", id));
 
     api_request(Http_Get, folder_contents_request, "folders/%.*s/tasks%s", id_length, output_account_and_folder_id,
@@ -502,6 +512,21 @@ static void draw_task_view_popup_if_necessary() {
     ImGui::PopStyleVar();
 }
 
+static void draw_loading_screen() {
+    ImVec2 screen_center = ImGui::GetIO().DisplaySize / 2.0f;
+    ImVec2 image_size{ (float) logo.width, (float) logo.height };
+
+    float spinner_side = image_size.y / 5.0f;
+
+    ImVec2 image_top_left = screen_center - (image_size / 2.0f);
+    ImVec2 spinner_top_left = image_top_left + ImVec2(image_size.x + 20.0f, image_size.y / 2.0f - spinner_side / 2.0f);
+
+    ImDrawList* draw_list = ImGui::GetWindowDrawList();
+
+    draw_list->AddImage((void*) (uintptr_t) logo.texture_id, image_top_left, image_top_left + image_size);
+    draw_loading_spinner(draw_list, spinner_top_left, spinner_side, 6, color_link);
+}
+
 static void draw_ui() {
     // TODO temporary code, desktop only
     static const u32 d_key_in_sdl = 7;
@@ -521,18 +546,7 @@ static void draw_ui() {
     bool loading_workflows = !custom_statuses_were_loaded;
 
     if (loading_contacts || loading_workflows) {
-        ImVec2 screen_center = ImGui::GetIO().DisplaySize / 2.0f;
-        ImVec2 image_size{ (float) logo.width, (float) logo.height };
-
-        float spinner_side = image_size.y / 5.0f;
-
-        ImVec2 image_top_left = screen_center - (image_size / 2.0f);
-        ImVec2 spinner_top_left = image_top_left + ImVec2(image_size.x + 20.0f, image_size.y / 2.0f - spinner_side / 2.0f);
-
-        ImDrawList* draw_list = ImGui::GetWindowDrawList();
-
-        draw_list->AddImage((void*) (uintptr_t) logo.texture_id, image_top_left, image_top_left + image_size);
-        draw_loading_spinner(draw_list, spinner_top_left, spinner_side, 6, color_link);
+        draw_loading_screen();
 
         return;
     }
@@ -547,7 +561,18 @@ static void draw_ui() {
         ImGui::SameLine();
     }
 
-    draw_task_list();
+    switch (current_view) {
+        case View_Task_List: {
+            draw_task_list();
+            break;
+        }
+
+        case View_Inbox: {
+            draw_inbox();
+            break;
+        }
+    }
+
     draw_task_view_popup_if_necessary();
 }
 
@@ -670,6 +695,7 @@ bool init() {
 
     api_request(Http_Get, accounts_request, "accounts?fields=['customFields']");
     api_request(Http_Get, contacts_request, "contacts");
+    api_request(Http_Get, inbox_request, "internal/notifications?notificationTypes=['Assign','Mention','Status']");
 
     started_loading_users_at = tick;
 

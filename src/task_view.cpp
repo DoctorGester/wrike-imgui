@@ -1410,7 +1410,7 @@ static void draw_task_comments() {
         User* user = find_user_by_id(it->author);
 
         if (!user) {
-            // TODO that should work
+            // TODO @DataIntegrity should work
             continue;
         }
 

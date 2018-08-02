@@ -32,6 +32,8 @@ typedef s32 Custom_Field_Id;
 typedef s32 Custom_Status_Id;
 typedef s32 Workflow_Id;
 typedef s32 User_Id;
+typedef s32 Comment_Id;
+typedef s32 Inbox_Notification_Id;
 
 enum string_to_int_error {
     STR2INT_SUCCESS,
