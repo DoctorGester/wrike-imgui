@@ -191,7 +191,7 @@ void request_multiple_folders(Array<Folder_Id> folders) {
     api_request(Http_Get, folders_request, "%s", url.start);
 }
 
-static void request_workflow_for_account(Account_Id account_id) {
+static void request_workflows_for_account(Account_Id account_id) {
     u8 output_account_id[8];
 
     fill_id8('A', account_id, output_account_id);
@@ -211,13 +211,7 @@ static void request_suggestions_for_account(Account_Id account_id) {
     api_request(Http_Get, suggested_contacts_request, "internal/accounts/%.*s/contacts?suggestType=Responsibles", (u32) ARRAY_SIZE(output_account_id), output_account_id);
 }
 
-static void request_data_for_selected_account() {
-    folder_tree_init(ROOT_FOLDER);
-
-    request_suggestions_for_account(selected_account_id);
-    request_workflow_for_account(selected_account_id);
-    request_folder_children_for_folder_tree(ROOT_FOLDER);
-
+static void request_last_selected_folder_if_present() {
     char* last_selected_folder = platform_local_storage_get("last_selected_folder");
 
     bool has_requested_a_folder = false;
@@ -235,6 +229,24 @@ static void request_data_for_selected_account() {
     if (!has_requested_a_folder) {
         select_and_request_folder_by_id(ROOT_FOLDER);
     }
+}
+
+static void request_inbox() {
+    api_request(Http_Get, inbox_request, "internal/notifications?notificationTypes=['Assign','Mention','Status']");
+}
+
+static void request_data_for_selected_account() {
+    folder_tree_init(ROOT_FOLDER);
+
+    // TODO The order here is very important for the initial load because chrome only allows maximum
+    // TODO     of 6 connections to a single origin, which is why we are loading suggestions and inbox las.
+    // TODO This could be partially fixed by merging requests which always go out together
+    // TODO     but that would require work on platform_desktop side
+    request_workflows_for_account(selected_account_id);
+    request_folder_children_for_folder_tree(ROOT_FOLDER);
+    request_last_selected_folder_if_present();
+    request_inbox();
+    request_suggestions_for_account(selected_account_id);
 }
 
 extern "C"
@@ -700,6 +712,12 @@ static void imgui_free_wrapper(void* ptr, void* user_data) {
 EXPORT
 bool init() {
     init_temporary_storage();
+
+    api_request(Http_Get, accounts_request, "accounts?fields=['customFields']");
+    api_request(Http_Get, contacts_request, "contacts");
+
+    load_persisted_settings();
+
     create_imgui_context();
 
     ImGui::SetAllocatorFunctions(imgui_malloc_wrapper, imgui_free_wrapper);
@@ -708,13 +726,7 @@ bool init() {
 
     setup_ui();
 
-    api_request(Http_Get, accounts_request, "accounts?fields=['customFields']");
-    api_request(Http_Get, contacts_request, "contacts");
-    api_request(Http_Get, inbox_request, "internal/notifications?notificationTypes=['Assign','Mention','Status']");
-
     started_loading_users_at = tick;
-
-    load_persisted_settings();
 
     printf("Platform init: %s\n", result ? "true" : "false");
 
