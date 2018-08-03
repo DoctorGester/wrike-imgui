@@ -141,7 +141,7 @@ void* realloc_and_log(const char* file, const char* function, u32 line, void* re
             }
         }
 
-        printf("WARNING: Reallocation of an unmanaged pointer %p with size %lu at %s %s:%i\n", realloc_what, new_size, function, file, line);
+        printf("WARNING: Reallocation of an unmanaged pointer %p with size %zu at %s %s:%i\n", realloc_what, new_size, function, file, line);
 
         return pointer;
     } else {
