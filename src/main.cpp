@@ -233,17 +233,12 @@ static void request_last_selected_folder_if_present() {
     }
 }
 
-static void request_inbox() {
-    api_request(Http_Get, inbox_request, "internal/notifications?notificationTypes=['Assign','Mention','Status']");
-}
-
 static void request_data_for_selected_account() {
     folder_tree_init(ROOT_FOLDER);
 
     request_workflows_for_account(selected_account_id);
     request_folder_children_for_folder_tree(ROOT_FOLDER);
     request_last_selected_folder_if_present();
-    request_inbox();
     request_suggestions_for_account(selected_account_id);
 }
 
@@ -715,6 +710,7 @@ bool init() {
 
     api_request(Http_Get, accounts_request, "accounts?fields=['customFields']");
     api_request(Http_Get, contacts_request, "contacts");
+    api_request(Http_Get, inbox_request, "internal/notifications?notificationTypes=['Assign','Mention','Status']");
 
     load_persisted_settings();
 
