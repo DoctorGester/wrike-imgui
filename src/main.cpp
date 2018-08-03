@@ -240,10 +240,6 @@ static void request_inbox() {
 static void request_data_for_selected_account() {
     folder_tree_init(ROOT_FOLDER);
 
-    // TODO The order here is very important for the initial load because chrome only allows maximum
-    // TODO     of 6 connections to a single origin, which is why we are loading suggestions and inbox las.
-    // TODO This could be partially fixed by merging requests which always go out together
-    // TODO     but that would require work on platform_desktop side
     request_workflows_for_account(selected_account_id);
     request_folder_children_for_folder_tree(ROOT_FOLDER);
     request_last_selected_folder_if_present();
