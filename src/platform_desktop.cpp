@@ -139,6 +139,14 @@ static bool process_sdl_events(SDL_Event* event) {
     return false;
 }
 
+static char* get_private_token() {
+    if (!private_token) {
+        private_token = file_to_string("private.key");
+    }
+
+    return private_token;
+}
+
 static bool poll_events_and_check_exit_event() {
     SDL_Event event;
 
@@ -279,8 +287,6 @@ bool platform_init() {
 
     // TODO bad API, we shouldn't be making external calls in platform impl, move those out
     renderer_init(vertex_shader_source, fragment_shader_source);
-
-    private_token = file_to_string("private.key");
 
     return true;
 }
@@ -469,7 +475,7 @@ void platform_api_request(Request_Id request_id, char* url, Http_Method method, 
     // TODO cleanup those
     curl_slist* header_chunk = NULL;
     header_chunk = curl_slist_append(header_chunk, "Accept: application/json");
-    header_chunk = curl_slist_append(header_chunk, private_token);
+    header_chunk = curl_slist_append(header_chunk, get_private_token());
 
     // TODO optimize
     Running_Request* new_request = (Running_Request*) CALLOC(1, sizeof(Running_Request));
