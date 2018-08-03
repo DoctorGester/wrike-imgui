@@ -25,7 +25,7 @@ app.get("/wrike/*", (req, res) => {
 	req.pipe(new_request).pipe(res);
 });
 
-app.get("/api/*", (req, res) => {
+app.all("/api/*", (req, res) => {
     const new_request = request("https://www.wrike.com" + req.originalUrl, {
         auth: {
             bearer: private_key
