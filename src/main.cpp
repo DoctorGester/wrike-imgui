@@ -80,6 +80,8 @@ static char* inbox_json_content = NULL;
 
 u32 tick = 0;
 
+u32 started_showing_main_ui_at = 0;
+
 u32 started_loading_folder_contents_at = 0;
 u32 finished_loading_folder_contents_at = 0;
 u32 finished_loading_folder_header_at = 0;
@@ -576,6 +578,8 @@ static void draw_ui() {
         draw_loading_screen();
 
         return;
+    } else if (started_showing_main_ui_at == 0) {
+        started_showing_main_ui_at = tick;
     }
 
     bool draw_side_menu_this_frame = draw_side_menu;

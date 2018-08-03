@@ -60,6 +60,8 @@ extern Request_Id contacts_request;
 extern Request_Id accounts_request;
 extern Request_Id workflows_request;
 
+extern u32 started_showing_main_ui_at;
+
 extern u32 started_loading_folder_contents_at;
 extern u32 finished_loading_folder_contents_at;
 extern u32 finished_loading_folder_header_at;

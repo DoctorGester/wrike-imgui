@@ -800,6 +800,7 @@ void draw_task_list() {
                 loading_end_time = MAX(finished_loading_folder_header_at, loading_end_time);
                 loading_end_time = MAX(finished_loading_users_at, loading_end_time);
                 loading_end_time = MAX(finished_loading_statuses_at, loading_end_time);
+                loading_end_time = MAX(started_showing_main_ui_at, loading_end_time);
 
         float alpha = lerp(loading_end_time, tick, 1.0f, 8);
 
