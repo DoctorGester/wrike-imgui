@@ -267,21 +267,6 @@ static inline Comparator* get_comparator_by_current_sort_type() {
     return NULL;
 }
 
-static void sort_tasks_hierarchically(Sorted_Folder_Task** tasks, u32 length) {
-    qsort(tasks, length, sizeof(Sorted_Folder_Task*), get_comparator_by_current_sort_type());
-
-    for (u32 task_index = 0; task_index < length; task_index++) {
-        Sorted_Folder_Task* task = tasks[task_index];
-        u32 num_sub_tasks = task->num_sub_tasks;
-
-        if (num_sub_tasks > 1) {
-            for (u32 sub_task_index = 0; sub_task_index < num_sub_tasks; sub_task_index++) {
-                sort_tasks_hierarchically(task->sub_tasks, num_sub_tasks);
-            }
-        }
-    }
-}
-
 static u32 rebuild_flattened_task_tree_hierarchically(Sorted_Folder_Task* task, bool is_parent_expanded, u32 level, Flattened_Folder_Task** current_task) {
     if (show_only_active_tasks && task->cached_status->group != Status_Group_Active) {
         return 0;
