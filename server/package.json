@@ -10,8 +10,12 @@
   "license": "ISC",
   "dependencies": {
     "express": "^4.16.3",
+    "express-session": "^1.15.6",
     "hi-base32": "^0.5.0",
+    "memorystore": "^1.6.0",
     "request": "^2.87.0",
+    "request-promise-native": "^1.0.5",
+    "session-file-store": "^1.2.0",
     "spdy": "^3.4.7"
   }
 }
