@@ -2,6 +2,7 @@ const request = require("request");
 const rp = require("request-promise-native");
 const express = require("express");
 const session = require("express-session");
+const body_parser = require("body-parser");
 const path = require("path");
 const process = require("process");
 const http2 = require("spdy");
@@ -58,6 +59,7 @@ if (app.get("env") === "development") {
     app.use(session(updated_params));
 }
 
+app.use(body_parser.json());
 app.use(express.static("out"));
 
 app.get("/login", (req, res) => {
@@ -125,28 +127,49 @@ app.get("/wrike/*", (req, res) => {
 	req.pipe(new_request).pipe(res);
 });
 
-const api_request = (host, uri, token, refresh_token) => {
+let refresh_token_promise;
+
+const do_refresh_token = (host, refresh_token, session) => {
+    if (!refresh_token_promise) {
+        console.log("Access token is being refreshed");
+
+        refresh_token_promise = rp.post(`https://${host}/oauth2/token`).form({
+            client_id: app_config.client_id,
+            client_secret: app_config.client_secret,
+            grant_type: "refresh_token",
+            refresh_token: refresh_token
+        }).then(response => {
+            const new_token = JSON.parse(response);
+            session.wrike.access_token = new_token.access_token;
+
+            refresh_token_promise = undefined;
+
+            return new_token;
+        });
+    }
+
+    return refresh_token_promise;
+};
+
+const api_request = (host, uri, token, refresh_token, session) => {
     const request_params = {
+        uri: `https://${host}${uri}`,
         auth: {
             bearer: token
         }
     };
 
-    return rp(`https://${host}${uri}`, request_params)
+    return rp(request_params)
         .catch(error => {
             if (error.statusCode === 401) {
-                return rp.post(`https://${host}/oauth2/token`).form({
-                    client_id: app_config.client_id,
-                    client_secret: app_config.client_secret,
-                    grant_type: "refresh_token",
-                    refresh_token: refresh_token
-                }).then(response => {
-                    const new_token = JSON.parse(response.data);
+                console.log(`Caught 401 in ${uri}`);
 
-                    req.session.wrike = new_token;
-
-                    return api_request(new_token.host, uri, new_token.access_token, new_token.refresh_token);
-                })
+                return do_refresh_token(host, refresh_token, session).then(new_token => {
+                    console.log(`Got new token for ${uri}`);
+                    return api_request(host, uri, new_token.access_token, new_token.refresh_token, session);
+                });
+            } else {
+                throw error;
             }
         });
 };
@@ -154,15 +177,18 @@ const api_request = (host, uri, token, refresh_token) => {
 app.all("/api/*", (req, res) => {
     const wrike = req.session.wrike;
 
-    const new_request = request(`https://${wrike.host}${req.originalUrl}`, {
-        auth: {
-            bearer: wrike.access_token
-        }
-    }).on("error", (err) => {
-        console.error(err);
-    });
-
-    req.pipe(new_request).pipe(res);
+    api_request(wrike.host, req.originalUrl, wrike.access_token, wrike.refresh_token, req.session)
+        .then(response => {
+            res
+                .type('application/json')
+                .send(response);
+        })
+        .catch(error => {
+            res
+                .status(error.statusCode)
+                .type('application/json')
+                .send(error.body);
+        });
 });
 
 http2.createServer(options, app).listen(3637, host, () => console.log("Server started"));
