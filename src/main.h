@@ -57,7 +57,7 @@ extern Request_Id folder_header_request;
 extern Request_Id folder_contents_request;
 extern Request_Id task_request;
 extern Request_Id contacts_request;
-extern Request_Id accounts_request;
+extern Request_Id account_request;
 extern Request_Id workflows_request;
 
 extern u32 started_showing_main_ui_at;

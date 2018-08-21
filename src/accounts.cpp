@@ -6,8 +6,7 @@
 static Custom_Field* custom_fields = NULL;
 static u32 custom_fields_count = 0;
 
-Account* accounts = NULL;
-u32 accounts_count = 0;
+Account account;
 
 static Id_Hash_Map<Custom_Field_Id, Custom_Field*> id_to_custom_field = {};
 
@@ -62,18 +61,10 @@ Custom_Field* find_custom_field_by_id(Custom_Field_Id id, u32 id_hash) {
 }
 
 void process_accounts_data(char* json, u32 data_size, jsmntok_t*&token) {
-    if (accounts_count < data_size) {
-        accounts = (Account*) REALLOC(accounts, sizeof(Account) * data_size);
-    }
-
-    accounts_count = 0;
-
     for (u32 array_index = 0; array_index < data_size; array_index++) {
         jsmntok_t* object_token = token++;
 
         assert(object_token->type == JSMN_OBJECT);
-
-        Account* account = &accounts[accounts_count++];
 
         for (u32 propety_index = 0; propety_index < object_token->size; propety_index++, token++) {
             jsmntok_t* property_token = token++;
@@ -83,13 +74,12 @@ void process_accounts_data(char* json, u32 data_size, jsmntok_t*&token) {
             jsmntok_t* next_token = token;
 
             if (json_string_equals(json, property_token, "id")) {
-                json_token_to_id8(json, next_token, account->id);
+                json_token_to_id8(json, next_token, account.id);
             } else if (json_string_equals(json, property_token, "customFields")) {
                 assert(next_token->type == JSMN_ARRAY);
 
                 token++;
 
-                // TODO broken with more than 1 account!
                 custom_fields = (Custom_Field*) MALLOC(sizeof(Custom_Field) * next_token->size);
                 id_hash_map_init(&id_to_custom_field);
 

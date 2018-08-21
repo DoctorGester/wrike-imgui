@@ -38,7 +38,7 @@ Request_Id task_request = NO_REQUEST;
 Request_Id task_comments_request = NO_REQUEST;
 Request_Id inbox_request = NO_REQUEST;
 Request_Id contacts_request = NO_REQUEST;
-Request_Id accounts_request = NO_REQUEST;
+Request_Id account_request = NO_REQUEST;
 Request_Id workflows_request = NO_REQUEST;
 Request_Id modify_task_request = NO_REQUEST;
 Request_Id suggested_folders_request = NO_REQUEST;
@@ -56,8 +56,6 @@ static bool draw_side_menu = true;
 static bool task_view_open_requested = false;
 
 static float folder_tree_column_width = 300.0f;
-
-static Account_Id selected_account_id = NO_ACCOUNT;
 
 static Memory_Image logo{};
 
@@ -151,18 +149,10 @@ static void process_json_content(char*& json_reference, Data_Process_Callback ca
     process_json_data_segment(json_with_tokens.json, json_with_tokens.tokens, json_with_tokens.num_tokens, callback);
 }
 
-static void select_account() {
-    assert(accounts_count);
-
-    selected_account_id = accounts[0].id;
-
-    platform_local_storage_set("selected_account", tprintf("%i", accounts[0].id));
-}
-
 void request_folder_children_for_folder_tree(Folder_Id folder_id) {
     u8 output_folder_and_account_id[16];
 
-    fill_id16('A', selected_account_id, 'G', folder_id, output_folder_and_account_id);
+    fill_id16('A', account.id, 'G', folder_id, output_folder_and_account_id);
 
     String url = tprintf("folders/%.16s/folders?descendants=false&fields=['color']", output_folder_and_account_id);
 
@@ -179,7 +169,7 @@ void request_multiple_folders(Array<Folder_Id> folders) {
 
         u8 output_folder_and_account_id[16];
 
-        fill_id16('A', selected_account_id, 'G', folder_id, output_folder_and_account_id);
+        fill_id16('A', account.id, 'G', folder_id, output_folder_and_account_id);
 
         if (it == folders.data) {
             url = tprintf("%.*s%.16s", url.length, url.start, output_folder_and_account_id);
@@ -191,26 +181,6 @@ void request_multiple_folders(Array<Folder_Id> folders) {
     url = tprintf("%.*s%s", url.length, url.start, "?fields=['color']");
 
     api_request(Http_Get, folders_request, "%s", url.start);
-}
-
-static void request_workflows_for_account(Account_Id account_id) {
-    u8 output_account_id[8];
-
-    fill_id8('A', account_id, output_account_id);
-
-    api_request(Http_Get, workflows_request, "accounts/%.*s/workflows", (u32) ARRAY_SIZE(output_account_id), output_account_id);
-
-    started_loading_statuses_at = tick;
-}
-
-static void request_suggestions_for_account(Account_Id account_id) {
-    u8 output_account_id[8];
-
-    fill_id8('A', account_id, output_account_id);
-
-    api_request(Http_Get, starred_folders_request, "accounts/%.*s/folders?starred&fields=['color']", (u32) ARRAY_SIZE(output_account_id), output_account_id);
-    api_request(Http_Get, suggested_folders_request, "accounts/%.*s/folders?suggestedParents&fields=['color']", (u32) ARRAY_SIZE(output_account_id), output_account_id);
-    api_request(Http_Get, suggested_contacts_request, "internal/accounts/%.*s/contacts?suggestType=Responsibles", (u32) ARRAY_SIZE(output_account_id), output_account_id);
 }
 
 static void request_last_selected_folder_if_present() {
@@ -233,13 +203,19 @@ static void request_last_selected_folder_if_present() {
     }
 }
 
-static void request_data_for_selected_account() {
+static void request_account_data() {
     folder_tree_init(ROOT_FOLDER);
 
-    request_workflows_for_account(selected_account_id);
+    api_request(Http_Get, workflows_request, "workflows");
+
     request_folder_children_for_folder_tree(ROOT_FOLDER);
     request_last_selected_folder_if_present();
-    request_suggestions_for_account(selected_account_id);
+
+    api_request(Http_Get, starred_folders_request, "folders?starred&fields=['color']");
+    api_request(Http_Get, suggested_folders_request, "folders?suggestedParents&fields=['color']");
+    api_request(Http_Get, suggested_contacts_request, "internal/contacts?suggestType=Responsibles");
+
+    started_loading_statuses_at = tick;
 }
 
 extern "C"
@@ -291,13 +267,14 @@ void api_request_success(Request_Id request_id, char* content, u32 content_lengt
         contacts_request = NO_REQUEST;
         process_json_content(users_json_content, process_users_data, json_with_tokens);
         finished_loading_users_at = tick;
-    } else if (request_id == accounts_request) {
-        accounts_request = NO_REQUEST;
+    } else if (request_id == account_request) {
+        account_request = NO_REQUEST;
         process_json_content(accounts_json_content, process_accounts_data, json_with_tokens);
 
-        if (selected_account_id == NO_ACCOUNT) {
-            select_account();
-            request_data_for_selected_account();
+        if (account.id == NO_ACCOUNT) {
+            platform_local_storage_set("selected_account", tprintf("%i", account.id));
+
+            request_account_data();
         }
     } else if (request_id == workflows_request) {
         workflows_request = NO_REQUEST;
@@ -344,7 +321,7 @@ void image_load_success(Request_Id request_id, u8* pixel_data, u32 width, u32 he
 void select_and_request_folder_by_id(Folder_Id id) {
     u8 output_account_and_folder_id[16];
     u32 id_length = (int) ARRAY_SIZE(output_account_and_folder_id);
-    fill_id16('A', selected_account_id, 'G', id, output_account_and_folder_id);
+    fill_id16('A', account.id, 'G', id, output_account_and_folder_id);
 
     set_current_folder_id(id);
     current_view = View_Task_List;
@@ -367,7 +344,7 @@ void select_and_request_folder_by_id(Folder_Id id) {
 void request_task_by_task_id(Task_Id task_id) {
     u8 output_account_and_task_id[16];
 
-    fill_id16('A', selected_account_id, 'T', task_id, output_account_and_task_id);
+    fill_id16('A', account.id, 'T', task_id, output_account_and_task_id);
 
     selected_folder_task_id = task_id;
 
@@ -383,8 +360,8 @@ void modify_task_e16(Task_Id task_id, const u8 entity_prefix, s32 entity_id, con
     u8 output_account_and_task_id[16];
     u8 output_entity_id[16];
 
-    fill_id16('A', selected_account_id, 'T', task_id, output_account_and_task_id);
-    fill_id16('A', selected_account_id, entity_prefix, entity_id, output_entity_id);
+    fill_id16('A', account.id, 'T', task_id, output_account_and_task_id);
+    fill_id16('A', account.id, entity_prefix, entity_id, output_entity_id);
 
     const char* pattern = array ? "tasks/%.*s?%s=[\"%.*s\"]" : "tasks/%.*s?%s=%.*s";
 
@@ -399,7 +376,7 @@ void modify_task_e8(Task_Id task_id, const u8 entity_prefix, s32 entity_id, cons
     u8 output_account_and_task_id[16];
     u8 output_entity_id[8];
 
-    fill_id16('A', selected_account_id, 'T', task_id, output_account_and_task_id);
+    fill_id16('A', account.id, 'T', task_id, output_account_and_task_id);
     fill_id8(entity_prefix, entity_id, output_entity_id);
 
     const char* pattern = array ? "tasks/%.*s?%s=[\"%.*s\"]" : "tasks/%.*s?%s=%.*s";
@@ -433,7 +410,7 @@ void set_task_status(Task_Id task_id, Custom_Status_Id status_id) {
 
 void mark_notification_as_read(Inbox_Notification_Id notification_id) {
     u8 output_account_and_notification_id[16];
-    fill_id16('A', selected_account_id, 'N', notification_id, output_account_and_notification_id);
+    fill_id16('A', account.id, 'N', notification_id, output_account_and_notification_id);
 
     String url = tprintf("internal/notifications/%.16s?unread=false", output_account_and_notification_id);
 
@@ -668,12 +645,12 @@ void loop() {
 }
 
 void load_persisted_settings() {
-    char* selected_account = platform_local_storage_get("selected_account");
+    char* account_id_string = platform_local_storage_get("account_id");
 
-    if (selected_account) {
-        if (string_to_int(&selected_account_id, selected_account, 10) == STR2INT_SUCCESS) {
-            if (selected_account_id != NO_ACCOUNT) {
-                request_data_for_selected_account();
+    if (account_id_string) {
+        if (string_to_int(&account.id, account_id_string, 10) == STR2INT_SUCCESS) {
+            if (account.id != NO_ACCOUNT) {
+                request_account_data();
             }
         }
     }
@@ -708,7 +685,7 @@ EXPORT
 bool init() {
     init_temporary_storage();
 
-    api_request(Http_Get, accounts_request, "accounts?fields=['customFields']");
+    api_request(Http_Get, account_request, "account?fields=['customFields']");
     api_request(Http_Get, contacts_request, "contacts");
     api_request(Http_Get, inbox_request, "internal/notifications?notificationTypes=['Assign','Mention','Status']");
 

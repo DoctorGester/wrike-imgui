@@ -27,8 +27,7 @@ struct Account {
     Account_Id id;
 };
 
-extern Account* accounts;
-extern u32 accounts_count;
+extern Account account;
 
 void process_accounts_data(char* json, u32 data_size, jsmntok_t*&token);
 Custom_Field* find_custom_field_by_id(Custom_Field_Id id, u32 id_hash = 0);
