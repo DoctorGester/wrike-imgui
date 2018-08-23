@@ -45,7 +45,6 @@ Request_Id suggested_folders_request = NO_REQUEST;
 Request_Id suggested_contacts_request = NO_REQUEST;
 Request_Id starred_folders_request = NO_REQUEST;
 
-const Account_Id NO_ACCOUNT = -1;
 const Folder_Id ROOT_FOLDER = -1;
 
 bool custom_statuses_were_loaded = false;
@@ -88,10 +87,7 @@ u32 started_loading_task_at = 0;
 u32 finished_loading_task_at = 0;
 u32 finished_loading_task_comments_at = 0;
 
-u32 started_loading_statuses_at = 0;
 u32 finished_loading_statuses_at = 0;
-
-u32 started_loading_users_at = 0;
 u32 finished_loading_users_at = 0;
 
 u32 task_view_opened_at = 0;
@@ -206,16 +202,8 @@ static void request_last_selected_folder_if_present() {
 static void request_account_data() {
     folder_tree_init(ROOT_FOLDER);
 
-    api_request(Http_Get, workflows_request, "workflows");
-
     request_folder_children_for_folder_tree(ROOT_FOLDER);
     request_last_selected_folder_if_present();
-
-    api_request(Http_Get, starred_folders_request, "folders?starred&fields=['color']");
-    api_request(Http_Get, suggested_folders_request, "folders?suggestedParents&fields=['color']");
-    api_request(Http_Get, suggested_contacts_request, "internal/contacts?suggestType=Responsibles");
-
-    started_loading_statuses_at = tick;
 }
 
 extern "C"
@@ -268,10 +256,12 @@ void api_request_success(Request_Id request_id, char* content, u32 content_lengt
         process_json_content(users_json_content, process_users_data, json_with_tokens);
         finished_loading_users_at = tick;
     } else if (request_id == account_request) {
+        bool account_was_not_saved = account.id == NO_ACCOUNT;
+
         account_request = NO_REQUEST;
         process_json_content(accounts_json_content, process_accounts_data, json_with_tokens);
 
-        if (account.id == NO_ACCOUNT) {
+        if (account_was_not_saved) {
             platform_local_storage_set("selected_account", tprintf("%i", account.id));
 
             request_account_data();
@@ -688,6 +678,10 @@ bool init() {
     api_request(Http_Get, account_request, "account?fields=['customFields']");
     api_request(Http_Get, contacts_request, "contacts");
     api_request(Http_Get, inbox_request, "internal/notifications?notificationTypes=['Assign','Mention','Status']");
+    api_request(Http_Get, workflows_request, "workflows");
+    api_request(Http_Get, starred_folders_request, "folders?starred&fields=['color']");
+    api_request(Http_Get, suggested_folders_request, "folders?suggestedParents&fields=['color']");
+    api_request(Http_Get, suggested_contacts_request, "internal/contacts?suggestType=Responsibles");
 
     load_persisted_settings();
 
@@ -698,8 +692,6 @@ bool init() {
     bool result = platform_init();
 
     setup_ui();
-
-    started_loading_users_at = tick;
 
     printf("Platform init: %s\n", result ? "true" : "false");
 

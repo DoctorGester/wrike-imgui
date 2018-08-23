@@ -791,10 +791,7 @@ void draw_task_list() {
 
         ImGui::FadeInOverlay(alpha);
     } else {
-        u32
-                loading_start_time = MIN(started_loading_folder_contents_at, started_loading_statuses_at);
-                loading_start_time = MIN(started_loading_users_at, loading_start_time);
-                loading_start_time = MIN(started_loading_statuses_at, loading_start_time);
+        u32 loading_start_time = started_loading_folder_contents_at;
 
         draw_window_loading_indicator();
     }

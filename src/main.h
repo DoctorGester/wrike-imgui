@@ -68,11 +68,7 @@ extern u32 finished_loading_folder_header_at;
 
 extern u32 started_loading_task_at;
 extern u32 finished_loading_task_at;
-
-extern u32 started_loading_statuses_at;
 extern u32 finished_loading_statuses_at;
-
-extern u32 started_loading_users_at;
 extern u32 finished_loading_users_at;
 
 extern bool custom_statuses_were_loaded;

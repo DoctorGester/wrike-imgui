@@ -6,7 +6,7 @@
 static Custom_Field* custom_fields = NULL;
 static u32 custom_fields_count = 0;
 
-Account account;
+Account account{};
 
 static Id_Hash_Map<Custom_Field_Id, Custom_Field*> id_to_custom_field = {};
 

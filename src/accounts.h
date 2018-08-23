@@ -3,6 +3,8 @@
 #include <jsmn.h>
 #include "id_hash_map.h"
 
+#define NO_ACCOUNT -1
+
 enum Custom_Field_Type {
     Custom_Field_Type_None,
     Custom_Field_Type_Text,
@@ -24,7 +26,7 @@ struct Custom_Field {
 };
 
 struct Account {
-    Account_Id id;
+    Account_Id id = NO_ACCOUNT;
 };
 
 extern Account account;
