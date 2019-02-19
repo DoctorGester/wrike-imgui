@@ -161,7 +161,7 @@ static int compare_folder_tasks_based_on_title(const void* ap, const void* bp) {
     Folder_Task* a = as->source_task;
     Folder_Task* b = bs->source_task;
 
-    int result = strncmp(a->title.start, b->title.start, MIN(a->title.length, b->title.length)) * sort_direction;
+    int result = strncmp(a->title.start, b->title.start, MIN(a->title.length, b->title.length));
 
     if (result == 0) {
         return (int) (as->source_task->id - bs->source_task->id);
@@ -191,7 +191,7 @@ static int compare_folder_tasks_based_on_assignees(const void* ap, const void* b
     String a_name = full_user_name_to_temporary_string(a_assignee);
     String b_name = full_user_name_to_temporary_string(b_assignee);
 
-    s32 result = strncmp(a_name.start, b_name.start, MIN(a_name.length, b_name.length)) * sort_direction;
+    s32 result = strncmp(a_name.start, b_name.start, MIN(a_name.length, b_name.length));
 
     temporary_storage_reset();
 
@@ -214,7 +214,7 @@ static int compare_folder_tasks_based_on_status(const void* ap, const void* bp) 
     s32 result = a_status->natural_index - b_status->natural_index;
 
     if (!result) {
-        result = (a_status->id - b_status->id) * sort_direction;
+        result = a_status->id - b_status->id;
     }
 
     if (!result) {
@@ -232,7 +232,7 @@ static int compare_folder_tasks_based_on_custom_field(const void* ap, const void
     Folder_Task* b = bs->source_task;
 
     // TODO inline that?
-    s32 result = compare_tasks_custom_fields(a, b, sort_custom_field->type) * sort_direction;
+    s32 result = compare_tasks_custom_fields(a, b, sort_custom_field->type);
 
     if (!result) {
         return (int) (as->source_task->id - bs->source_task->id);
@@ -244,19 +244,27 @@ static int compare_folder_tasks_based_on_custom_field(const void* ap, const void
 static inline Comparator* get_comparator_by_current_sort_type() {
     switch (sort_field) {
         case Task_List_Sort_Field_Title: {
-            return compare_folder_tasks_based_on_title;
+            return [](const void* a, const void* b) {
+                return compare_folder_tasks_based_on_title(a, b) * sort_direction;
+            };
         }
 
         case Task_List_Sort_Field_Assignee: {
-            return compare_folder_tasks_based_on_assignees;
+            return [](const void* a, const void* b) {
+                return compare_folder_tasks_based_on_assignees(a, b) * sort_direction;
+            };
         }
 
         case Task_List_Sort_Field_Status: {
-            return compare_folder_tasks_based_on_status;
+            return [](const void* a, const void* b) {
+                return compare_folder_tasks_based_on_status(a, b) * sort_direction;
+            };
         }
 
         case Task_List_Sort_Field_Custom_Field: {
-            return compare_folder_tasks_based_on_custom_field;
+            return [](const void* a, const void* b) {
+                return compare_folder_tasks_based_on_custom_field(a, b) * sort_direction;
+            };
         }
 
         default: {}
