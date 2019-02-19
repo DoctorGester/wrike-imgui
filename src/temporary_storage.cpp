@@ -1,38 +1,15 @@
 #include <cstdlib>
-#include <cassert>
-#include <cstring>
-#include <cstdio>
 #include "temporary_storage.h"
-#include "common.h"
 
-static char* pointer_initial = nullptr;
-static char* pointer_current = nullptr;
+static const u32 available_memory_bytes = 1024 * 1024 * 8;
+
+static char pointer_initial[available_memory_bytes];
+static char* pointer_current = pointer_initial;
 static char* pointer_previous = nullptr;
 static char* pointer_mark = nullptr;
 
-static const u32 available_memory_bytes = 1024 * 1024 * 16;
-
-static void** temporary_heap_pointers = NULL;
-static u32 num_temporary_heap_pointers = 0;
-
-void init_temporary_storage() {
-    pointer_initial = static_cast<char*>(MALLOC(available_memory_bytes));
-    pointer_current = pointer_initial;
-}
-
 void clear_temporary_storage() {
     pointer_current = pointer_initial;
-
-    void** head = temporary_heap_pointers;
-
-    for (void** end = head + num_temporary_heap_pointers; head < end; head++) {
-        printf("Freeing temporary allocated %p\n", *head);
-
-        FREE(*head);
-    }
-
-    temporary_heap_pointers = NULL;
-    num_temporary_heap_pointers = 0;
 }
 
 void temporary_storage_mark() {

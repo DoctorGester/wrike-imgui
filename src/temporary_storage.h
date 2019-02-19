@@ -1,7 +1,6 @@
 #include <cstddef>
 #include "common.h"
 
-void init_temporary_storage();
 void clear_temporary_storage();
 void temporary_storage_mark();
 void temporary_storage_reset();
