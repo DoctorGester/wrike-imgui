@@ -3,6 +3,8 @@
 #include <jsmn.h>
 #include "id_hash_map.h"
 
+#define NO_ACCOUNT -1
+
 enum Custom_Field_Type {
     Custom_Field_Type_None,
     Custom_Field_Type_Text,
@@ -24,11 +26,10 @@ struct Custom_Field {
 };
 
 struct Account {
-    Account_Id id;
+    Account_Id id = NO_ACCOUNT;
 };
 
-extern Account* accounts;
-extern u32 accounts_count;
+extern Account account;
 
 void process_accounts_data(char* json, u32 data_size, jsmntok_t*&token);
 Custom_Field* find_custom_field_by_id(Custom_Field_Id id, u32 id_hash = 0);

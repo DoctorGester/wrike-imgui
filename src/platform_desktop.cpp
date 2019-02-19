@@ -467,7 +467,7 @@ void platform_load_remote_image(Request_Id request_id, char* full_url) {
 void platform_api_request(Request_Id request_id, char* url, Http_Method method, void* data) {
     printf("Requested api get for %i/%s\n", request_id, url);
 
-    const char* url_prefix = "https://www.wrike.com/api/v3/";
+    const char* url_prefix = "https://www.wrike.com/api/v4/";
     const u32 buffer_length = strlen(url_prefix) + strlen(url) + 1;
     char* buffer = (char*) talloc(buffer_length);
     snprintf(buffer, buffer_length, "%s%s", url_prefix, url);

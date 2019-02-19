@@ -57,7 +57,7 @@ extern Request_Id folder_header_request;
 extern Request_Id folder_contents_request;
 extern Request_Id task_request;
 extern Request_Id contacts_request;
-extern Request_Id accounts_request;
+extern Request_Id account_request;
 extern Request_Id workflows_request;
 
 extern u32 started_showing_main_ui_at;
@@ -68,11 +68,7 @@ extern u32 finished_loading_folder_header_at;
 
 extern u32 started_loading_task_at;
 extern u32 finished_loading_task_at;
-
-extern u32 started_loading_statuses_at;
 extern u32 finished_loading_statuses_at;
-
-extern u32 started_loading_users_at;
 extern u32 finished_loading_users_at;
 
 extern bool custom_statuses_were_loaded;

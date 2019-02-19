@@ -673,7 +673,7 @@ void draw_task_list() {
 
     const bool is_folder_data_loading = folder_contents_request != NO_REQUEST || folder_header_request != NO_REQUEST;
     const bool are_users_loading = contacts_request != NO_REQUEST;
-    const bool are_custom_fields_loading = accounts_request != NO_REQUEST;
+    const bool are_custom_fields_loading = account_request != NO_REQUEST;
 
     if (!is_folder_data_loading && custom_statuses_were_loaded && !are_users_loading && !are_custom_fields_loading) {
         if (!has_been_sorted_after_loading) {
@@ -791,10 +791,7 @@ void draw_task_list() {
 
         ImGui::FadeInOverlay(alpha);
     } else {
-        u32
-                loading_start_time = MIN(started_loading_folder_contents_at, started_loading_statuses_at);
-                loading_start_time = MIN(started_loading_users_at, loading_start_time);
-                loading_start_time = MIN(started_loading_statuses_at, loading_start_time);
+        u32 loading_start_time = started_loading_folder_contents_at;
 
         draw_window_loading_indicator();
     }
