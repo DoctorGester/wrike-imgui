@@ -258,11 +258,13 @@ void api_request_success(Request_Id request_id, char* content, u32 content_lengt
     } else if (request_id == account_request) {
         bool account_was_not_saved = account.id == NO_ACCOUNT;
 
+        printf("Received accounts, current account.id %d\n", account.id);
+
         account_request = NO_REQUEST;
         process_json_content(accounts_json_content, process_accounts_data, json_with_tokens);
 
         if (account_was_not_saved) {
-            platform_local_storage_set("selected_account", tprintf("%i", account.id));
+            platform_local_storage_set("account_id", tprintf("%i", account.id));
 
             request_account_data();
         }
@@ -638,11 +640,15 @@ void load_persisted_settings() {
     char* account_id_string = platform_local_storage_get("account_id");
 
     if (account_id_string) {
+        printf("Account %s found in settings\n", account_id_string);
+
         if (string_to_int(&account.id, account_id_string, 10) == STR2INT_SUCCESS) {
             if (account.id != NO_ACCOUNT) {
                 request_account_data();
             }
         }
+    } else {
+        printf("Account id not found in settings\n");
     }
 }
 
@@ -673,8 +679,6 @@ static void imgui_free_wrapper(void* ptr, void* user_data) {
 
 EXPORT
 bool init() {
-    init_temporary_storage();
-
     api_request(Http_Get, account_request, "account?fields=['customFields']");
     api_request(Http_Get, contacts_request, "contacts");
     api_request(Http_Get, inbox_request, "internal/notifications?notificationTypes=['Assign','Mention','Status']");
