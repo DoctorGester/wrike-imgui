@@ -57,7 +57,7 @@ struct Sorted_Folder_Task {
 
     Folder_Task* source_task;
     Custom_Status* cached_status;
-    User* cached_first_assignee;
+    User_Handle cached_first_assignee;
     Sorted_Folder_Task** sub_tasks; // TODO Array<Sorted_Folder_Task*>
     u32 num_sub_tasks;
 
@@ -174,22 +174,22 @@ static int compare_folder_tasks_based_on_assignees(const void* ap, const void* b
     Sorted_Folder_Task* as = *(Sorted_Folder_Task**) ap;
     Sorted_Folder_Task* bs = *(Sorted_Folder_Task**) bp;
 
-    User* a_assignee = as->cached_first_assignee;
+    User_Handle a_assignee = as->cached_first_assignee;
 
-    if (!a_assignee) {
+    if (a_assignee == NULL_USER_HANDLE) {
         return 1;
     }
 
-    User* b_assignee = bs->cached_first_assignee;
+    User_Handle b_assignee = bs->cached_first_assignee;
 
-    if (!b_assignee) {
+    if (b_assignee == NULL_USER_HANDLE) {
         return -1;
     }
 
     temporary_storage_mark();
 
-    String a_name = full_user_name_to_temporary_string(a_assignee);
-    String b_name = full_user_name_to_temporary_string(b_assignee);
+    String a_name = full_user_name_to_temporary_string(get_user_by_handle(a_assignee));
+    String b_name = full_user_name_to_temporary_string(get_user_by_handle(b_assignee));
 
     s32 result = strncmp(a_name.start, b_name.start, MIN(a_name.length, b_name.length));
 
@@ -330,9 +330,9 @@ static void update_cached_data_for_sorted_tasks() {
         sorted_folder_task->cached_status = find_custom_status_by_id(source->custom_status_id, source->custom_status_id_hash);
 
         if (source->num_assignees) {
-            sorted_folder_task->cached_first_assignee = find_user_by_id(source->assignees[0]);
+            sorted_folder_task->cached_first_assignee = find_user_handle_by_id(source->assignees[0]);
         } else {
-            sorted_folder_task->cached_first_assignee = NULL;
+            sorted_folder_task->cached_first_assignee = NULL_USER_HANDLE;
         }
     }
 }
@@ -406,27 +406,36 @@ void draw_assignees_cell_contents(ImDrawList* draw_list, Folder_Task* task, ImVe
     for (u32 assignee_index = 0; assignee_index < task->num_assignees; assignee_index++) {
         User_Id user_id = task->assignees[assignee_index];
         User* user = find_user_by_id(user_id);
-
-        if (!user) {
-            continue;
-        }
-
-        bool is_not_last = assignee_index < task->num_assignees - 1;
-        const char* name_pattern = "%.*s %.*s";
-
-        if (is_not_last) {
-            name_pattern = "%.*s %.*s, ";
-        }
+        u32 color = color_black_text_on_white;
 
         char* start, *end;
+        bool is_not_last = assignee_index < task->num_assignees - 1;
 
-        tprintf(name_pattern, &start, &end,
-                user->first_name.length, user->first_name.start,
-                user->last_name.length, user->last_name.start);
+        if (user) {
+            const char* name_pattern = "%.*s %.*s";
+
+            if (is_not_last) {
+                name_pattern = "%.*s %.*s, ";
+            }
+
+            tprintf(name_pattern, &start, &end,
+                    user->first_name.length, user->first_name.start,
+                    user->last_name.length, user->last_name.start);
+
+            color = lerp_color_alpha(color, user->loaded_at, tick, 8);
+        } else {
+            if (is_not_last) {
+                tprintf("..., ", &start, &end);
+            } else {
+                tprintf("...", &start, &end);
+            }
+
+            try_queue_user_info_request(user_id);
+        }
 
         float text_width = ImGui::CalcTextSize(start, end).x;
 
-        draw_list->AddText(text_position, color_black_text_on_white, start, end);
+        draw_list->AddText(text_position, color, start, end);
 
         text_position.x += text_width;
     }
@@ -607,6 +616,17 @@ void draw_folder_header(Table_Paint_Context& context, float content_width) {
     ImVec2 toolbar_bottom_right = toolbar_top_left + ImVec2(content_width, toolbar_height);
 
     context.draw_list->AddRectFilled(toolbar_top_left, toolbar_bottom_right, toolbar_background);
+
+    if (folder_tasks.length > 0) {
+        ImVec2 toolbar_text_padding = ImVec2(8.0f * context.scale, toolbar_height / 2.0f - ImGui::GetFontSize() / 2.0f);
+
+        char* toolbar_text_start;
+        char* toolbar_text_end;
+
+        tprintf("Total: %d", &toolbar_text_start, &toolbar_text_end, folder_tasks.length);
+
+        context.draw_list->AddText(toolbar_top_left + toolbar_text_padding, color_black_text_on_white, toolbar_text_start, toolbar_text_end);
+    }
 }
 
 void draw_table_header(Table_Paint_Context& context, ImVec2 window_top_left) {
@@ -680,10 +700,9 @@ void draw_task_list() {
     ImGui::BeginChildFrame(task_list_id, ImVec2(-1, -1));
 
     const bool is_folder_data_loading = folder_contents_request != NO_REQUEST || folder_header_request != NO_REQUEST;
-    const bool are_users_loading = contacts_request != NO_REQUEST;
     const bool are_custom_fields_loading = account_request != NO_REQUEST;
 
-    if (!is_folder_data_loading && custom_statuses_were_loaded && !are_users_loading && !are_custom_fields_loading) {
+    if (!is_folder_data_loading && custom_statuses_were_loaded && !are_custom_fields_loading) {
         if (!has_been_sorted_after_loading) {
             sort_by_field(Task_List_Sort_Field_Title);
             has_been_sorted_after_loading = true;
@@ -791,8 +810,7 @@ void draw_task_list() {
         u32
                 loading_end_time = MAX(finished_loading_folder_contents_at, finished_loading_statuses_at);
                 loading_end_time = MAX(finished_loading_folder_header_at, loading_end_time);
-                loading_end_time = MAX(finished_loading_users_at, loading_end_time);
-                loading_end_time = MAX(finished_loading_statuses_at, loading_end_time);
+                loading_end_time = MAX(finished_loading_account_at, loading_end_time);
                 loading_end_time = MAX(started_showing_main_ui_at, loading_end_time);
 
         float alpha = lerp(loading_end_time, tick, 1.0f, 8);

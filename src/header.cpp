@@ -209,7 +209,7 @@ static void draw_profile_widget(User* user, float header_height) {
                              ImVec2(padding_right, 0) +
                              ImVec2(0, header_height / 2.0f - avatar_side_px / 2.0f);
 
-    draw_circular_user_avatar(draw_list, this_user, avatar_top_left, avatar_side_px);
+    draw_circular_user_avatar(draw_list, user, avatar_top_left, avatar_side_px);
 }
 
 bool draw_header(bool draw_side_menu_this_frame, bool& draw_side_menu, float folder_tree_column_width) {
@@ -269,8 +269,8 @@ bool draw_header(bool draw_side_menu_this_frame, bool& draw_side_menu, float fol
 
     ImGui::PopFont();
 
-    if (this_user) {
-        draw_profile_widget(this_user, header_height);
+    if (this_user != NULL_USER_HANDLE) {
+        draw_profile_widget(get_user_by_handle(this_user), header_height);
     }
 
     ImGui::Dummy(ImVec2(0, header_height));

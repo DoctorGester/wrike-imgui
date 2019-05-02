@@ -108,10 +108,8 @@ static bool process_sdl_events(SDL_Event* event) {
     ImGuiIO &io = ImGui::GetIO();
     switch (event->type) {
         case SDL_MOUSEWHEEL: {
-            if (event->wheel.x > 0) io.MouseWheelH += 1;
-            if (event->wheel.x < 0) io.MouseWheelH -= 1;
-            if (event->wheel.y > 0) io.MouseWheel += 1;
-            if (event->wheel.y < 0) io.MouseWheel -= 1;
+            io.MouseWheelH = event->wheel.x;
+            io.MouseWheel = event->wheel.y;
             return true;
         }
         case SDL_MOUSEBUTTONDOWN: {
@@ -439,18 +437,22 @@ static void push_request(Running_Request* request) {
     SDL_UnlockMutex(requests_process_mutex);
 }
 
-void platform_load_remote_image(Request_Id request_id, char* full_url) {
-    printf("Requested image load for %i/%s\n", request_id, full_url);
+void platform_early_init() {
+    curl_global_init(CURL_GLOBAL_DEFAULT);
+}
 
-    u32 url_length = strlen(full_url);
+void platform_load_remote_image(Request_Id request_id, String full_url) {
+    printf("Requested image load for %i/%.*s\n", request_id, full_url.length, full_url.start);
 
     Running_Request* new_request = (Running_Request*) CALLOC(1, sizeof(Running_Request));
     new_request->request_type = Request_Type_Load_Image;
     new_request->status_code_or_zero = 0;
     new_request->request_id = request_id;
-    new_request->debug_url = (char*) MALLOC(url_length + 1);
+    new_request->debug_url = (char*) MALLOC(full_url.length + 1);
     new_request->started_at = SDL_GetPerformanceCounter();
-    strcpy(new_request->debug_url, full_url);
+
+    memcpy(new_request->debug_url, full_url.start, full_url.length);
+    new_request->debug_url[full_url.length] = 0;
 
     CURL* curl_easy = curl_easy_init();
     curl_easy_setopt(curl_easy, CURLOPT_URL, new_request->debug_url);
@@ -464,13 +466,10 @@ void platform_load_remote_image(Request_Id request_id, char* full_url) {
     SDL_CreateThread(curl_thread_request, "CURLThread", curl_easy);
 }
 
-void platform_api_request(Request_Id request_id, char* url, Http_Method method, void* data) {
-    printf("Requested api get for %i/%s\n", request_id, url);
+void platform_api_request(Request_Id request_id, String url, Http_Method method, void* data) {
+    printf("Requested api get for %i/%.*s\n", request_id, url.length, url.start);
 
-    const char* url_prefix = "https://www.wrike.com/api/v4/";
-    const u32 buffer_length = strlen(url_prefix) + strlen(url) + 1;
-    char* buffer = (char*) talloc(buffer_length);
-    snprintf(buffer, buffer_length, "%s%s", url_prefix, url);
+    String full_url = tprintf("%s%.*s", "https://www.wrike.com/api/v4/", url.length, url.start);
 
     // TODO cleanup those
     curl_slist* header_chunk = NULL;
@@ -482,10 +481,12 @@ void platform_api_request(Request_Id request_id, char* url, Http_Method method, 
     new_request->request_type = Request_Type_API;
     new_request->status_code_or_zero = 0;
     new_request->request_id = request_id;
-    new_request->debug_url = (char*) MALLOC(buffer_length);
+    new_request->debug_url = (char*) MALLOC(full_url.length + 1);
     new_request->started_at = SDL_GetPerformanceCounter();
     new_request->data = data;
-    memcpy(new_request->debug_url, buffer, buffer_length);
+
+    memcpy(new_request->debug_url, full_url.start, full_url.length);
+    new_request->debug_url[full_url.length] = 0;
 
     CURL* curl_easy = curl_easy_init();
     curl_easy_setopt(curl_easy, CURLOPT_URL, new_request->debug_url);
@@ -521,8 +522,22 @@ char* platform_local_storage_get(const char* key) {
     return file_to_string(key);
 }
 
+// TODO OSX only, taken from
+// TODO https://bitbucket.org/rude/love/src/b2e868ac8ed36efacb47b107a6ff0706bd7a6512/src/modules/system/System.cpp?at=minor&fileviewer=file-view-default#System.cpp-78
+#include <CoreServices/CoreServices.h>
+
 void platform_open_url(String &permalink) {
-    // TODO
+    CFURLRef cfurl = CFURLCreateWithBytes(nullptr,
+                                          (const UInt8 *) permalink.start,
+                                          permalink.length,
+                                          kCFStringEncodingUTF8,
+                                          nullptr);
+
+    bool success = LSOpenCFURLRef(cfurl, nullptr) == noErr;
+
+    CFRelease(cfurl);
+
+    printf("Open url: %s\n", success ? "ok" : "error");
 }
 
 float platform_get_pixel_ratio() {

@@ -33,7 +33,7 @@ struct HSL {
 };
 
 static Memory_Image checkmark{};
-static Array<User*> filtered_users{};
+static Array<User_Handle> filtered_users{};
 static Lazy_Array<Rich_Text_String, 64> comment_strings{};
 static Lazy_Array<char, 512> comment_chars{};
 
@@ -147,7 +147,7 @@ static void update_user_search(char* query) {
     u64 start_time = platform_get_app_time_precise();
 
     if (!filtered_users.data) {
-        filtered_users.data = (User**) MALLOC(sizeof(User*) * users.length);
+        filtered_users.data = (User_Handle*) MALLOC(sizeof(User_Handle) * users.length);
     }
 
     filtered_users.length = 0;
@@ -167,8 +167,10 @@ static void update_user_search(char* query) {
     }
 
     for (User* it = users.data; it != users.data + users.length; it++) {
+        User_Handle handle = User_Handle(it - users.data);
+
         if (add_all) {
-            filtered_users[filtered_users.length++] = it;
+            filtered_users[filtered_users.length++] = handle;
 
             continue;
         }
@@ -177,7 +179,7 @@ static void update_user_search(char* query) {
         char* last_name_contains_query = string_contains_substring_ignore_case(it->last_name, query_lowercase);
 
         if (first_name_contains_query || last_name_contains_query) {
-            filtered_users[filtered_users.length++] = it;
+            filtered_users[filtered_users.length++] = handle;
         }
     }
 
@@ -722,10 +724,11 @@ static void draw_add_assignee_button_and_contact_picker(Horizontal_Layout& layou
         float spacing = ImGui::GetStyle().FramePadding.x;
 
         if (strlen(search_buffer) == 0) {
-            for (User* it = suggested_users.data; it != suggested_users.data + suggested_users.length; it++) {
-                if (draw_contact_picker_assignee_selection_button(draw_list, it, {button_width, button_side_px}, spacing)) {
-                    add_item_to_array(current_task.assignees, it->id);
-                    add_assignee_to_task(current_task.id, it->id);
+            for (User_Handle* it = suggested_users.data; it != suggested_users.data + suggested_users.length; it++) {
+                User* user = get_user_by_handle(*it);
+                if (draw_contact_picker_assignee_selection_button(draw_list, user, {button_width, button_side_px}, spacing)) {
+                    add_item_to_array(current_task.assignees, user->id);
+                    add_assignee_to_task(current_task.id, user->id);
 
                     ImGui::CloseCurrentPopup();
                 }
@@ -735,10 +738,16 @@ static void draw_add_assignee_button_and_contact_picker(Horizontal_Layout& layou
         ImGuiListClipper clipper(filtered_users.length);
 
         while (clipper.Step()) {
-            for (User** it = filtered_users.data + clipper.DisplayStart; it != filtered_users.data + clipper.DisplayEnd; it++) {
-                if (draw_contact_picker_assignee_selection_button(draw_list, *it, { button_width, button_side_px }, spacing)) {
-                    add_item_to_array(current_task.assignees, (*it)->id);
-                    add_assignee_to_task(current_task.id, (*it)->id);
+            for (User_Handle* it = filtered_users.data + clipper.DisplayStart; it != filtered_users.data + clipper.DisplayEnd; it++) {
+                User* user = get_user_by_handle(*it);
+
+                if (!user) {
+                    continue;
+                }
+
+                if (draw_contact_picker_assignee_selection_button(draw_list, user, { button_width, button_side_px }, spacing)) {
+                    add_item_to_array(current_task.assignees, user->id);
+                    add_assignee_to_task(current_task.id, user->id);
 
                     ImGui::CloseCurrentPopup();
                 }
@@ -752,6 +761,7 @@ static void draw_add_assignee_button_and_contact_picker(Horizontal_Layout& layou
 }
 
 struct Assignee {
+    User_Id user_id;
     User* user;
     String name;
     float name_width;
@@ -781,7 +791,7 @@ static bool draw_unassign_button(ImVec2 top_left, float button_side) {
 }
 
 static bool draw_assignee(ImVec2 top_left, Assignee* assignee, float avatar_side_px) {
-    ImGui::PushID(assignee->user);
+    ImGui::PushID(assignee->user_id);
 
     button("assign_user", top_left, { avatar_side_px, avatar_side_px });
     bool is_hovered = ImGui::IsItemHovered(ImGuiHoveredFlags_RectOnly);
@@ -812,7 +822,7 @@ static bool draw_assignee(ImVec2 top_left, Assignee* assignee, float avatar_side
 static bool draw_assignee_with_name(ImVec2 top_left, Assignee* assignee, float avatar_side_px, float margin_left, float& out_width) {
     float total_width = avatar_side_px + margin_left + assignee->name_width;
 
-    ImGui::PushID(assignee->user);
+    ImGui::PushID(assignee->user_id);
 
     button("assignee", top_left, { total_width, avatar_side_px });
     bool is_hovered = ImGui::IsItemHovered(ImGuiHoveredFlags_RectOnly);
@@ -846,9 +856,15 @@ static bool draw_assignee_with_name(ImVec2 top_left, Assignee* assignee, float a
         draw_list->PathFillConvex(0x11000000);
     }
 
+    u32 name_color = color_black_text_on_white;
+
+    if (assignee->user) {
+        name_color = lerp_color_alpha(name_color, assignee->user->loaded_at, tick, 8);
+    }
+
     draw_circular_user_avatar(draw_list, assignee->user, top_left, avatar_side_px);
 
-    draw_list->AddText(text_top_left, color_black_text_on_white, assignee->name.start, assignee->name.start + assignee->name.length);
+    draw_list->AddText(text_top_left, name_color, assignee->name.start, assignee->name.start + assignee->name.length);
 
     bool is_unassign_clicked = false;
 
@@ -941,18 +957,19 @@ static void draw_assignees(Horizontal_Layout& layout, float wrap_pos) {
 
     for (u32 index = 0; index < current_task.assignees.length; index++) {
         User_Id user_id = current_task.assignees[index];
-        User* user = find_user_by_id(user_id, hash_id(user_id)); // TODO hash cache
-
-        if (!user) {
-            continue;
-        }
+        User* user = find_user_by_id(user_id); // TODO hash cache
 
         Assignee new_assignee;
+        new_assignee.user_id = user_id;
         new_assignee.user = user;
-        new_assignee.name.length = user->first_name.length + 1 + 1 + 1; // Space, one letter, dot
-        new_assignee.name.start = (char*) talloc(new_assignee.name.length);
 
-        sprintf(new_assignee.name.start, "%.*s %.1s.", user->first_name.length, user->first_name.start, user->last_name.start);
+        if (user) {
+            new_assignee.name = tprintf("%.*s %.1s.", user->first_name.length, user->first_name.start, user->last_name.start);
+        } else {
+            new_assignee.name = tprintf("...");
+
+            try_queue_user_info_request(user_id);
+        }
 
         new_assignee.name_width = ImGui::CalcTextSize(new_assignee.name.start, new_assignee.name.start + new_assignee.name.length, false).x + name_margin_left;
 
@@ -993,16 +1010,16 @@ static void draw_assignees(Horizontal_Layout& layout, float wrap_pos) {
 
             if (!is_last) {
                 if (draw_assignee(assignee_element_top_left, assignee, avatar_side_px)) {
-                    assignee_to_remove_next_frame = assignee->user->id;
-                    remove_assignee_from_task(current_task.id, assignee->user->id);
+                    assignee_to_remove_next_frame = assignee->user_id;
+                    remove_assignee_from_task(current_task.id, assignee->user_id);
                 }
             } else {
                 u32 remaining_after_avatars = assignees.length - fits_avatars;
 
                 if (!remaining_after_avatars) {
                     if (draw_assignee(assignee_element_top_left, assignee, avatar_side_px)) {
-                        assignee_to_remove_next_frame = assignee->user->id;
-                        remove_assignee_from_task(current_task.id, assignee->user->id);
+                        assignee_to_remove_next_frame = assignee->user_id;
+                        remove_assignee_from_task(current_task.id, assignee->user_id);
                     }
                 } else {
                     draw_more_assignees_button(assignee_element_top_left, remaining_after_avatars + 1, avatar_side_px);
@@ -1021,8 +1038,8 @@ static void draw_assignees(Horizontal_Layout& layout, float wrap_pos) {
             ImVec2 assignee_element_top_left = layout_center_vertically(layout, avatar_side_px);
 
             if (draw_assignee_with_name(assignee_element_top_left, assignee, avatar_side_px, name_margin_left, assignee_with_name_width)) {
-                assignee_to_remove_next_frame = assignee->user->id;
-                remove_assignee_from_task(current_task.id, assignee->user->id);
+                assignee_to_remove_next_frame = assignee->user_id;
+                remove_assignee_from_task(current_task.id, assignee->user_id);
             }
 
             layout_advance(layout, assignee_with_name_width);
@@ -1044,18 +1061,20 @@ static float draw_authors_and_task_id_and_return_new_wrap_width(Horizontal_Layou
     User_Id author_id = current_task.authors[0]; // TODO currently only using the first
     User* author = find_user_by_id(author_id);
 
-    if (!author) {
-        return wrap_width;
-    }
-
     static const u32 color_id_and_author = argb_to_agbr(0xff8c8c8c);
 
     char* start = NULL, *end = NULL;
 
-    tprintf("#%i by %.*s %.1s", &start, &end,
-            current_task.id,
-            author->first_name.length, author->first_name.start,
-            author->last_name.start);
+    if (author) {
+        tprintf("#%i by %.*s %.1s", &start, &end,
+                current_task.id,
+                author->first_name.length, author->first_name.start,
+                author->last_name.start);
+    } else {
+        tprintf("#%i by ...", &start, &end, current_task.id);
+
+        try_queue_user_info_request(author_id);
+    }
 
     ImVec2 text_size = ImGui::CalcTextSize(start, end, false);
 
@@ -1401,6 +1420,8 @@ static void draw_task_comments() {
 
     const u32 comment_background = 0xfff4f4f4;
 
+    u32 name_color = color_black_text_on_white;
+
     layout.cursor += ImVec2(content_padding, 0);
 
     float visible_top = ImGui::GetCurrentWindow()->ContentsRegionRect.Min.y + ImGui::GetScrollY();
@@ -1409,12 +1430,16 @@ static void draw_task_comments() {
     for (Task_Comment* it = comments.data; it != comments.data + comments.length; it++) {
         User* user = find_user_by_id(it->author);
 
-        if (!user) {
-            // TODO @DataIntegrity should work
-            continue;
-        }
+        String user_name;
 
-        String user_name = full_user_name_to_temporary_string(user);
+        if (user) {
+            user_name = full_user_name_to_temporary_string(user);
+            name_color = lerp_color_alpha(name_color, user->loaded_at, tick, 8);
+        } else {
+            user_name = tprintf("...");
+
+            try_queue_user_info_request(it->author);
+        }
 
         ImVec2 comment_box_top_left = layout.cursor
                                       + ImVec2(avatar_side, 0)
@@ -1458,7 +1483,7 @@ static void draw_task_comments() {
             draw_circular_user_avatar(draw_list, user, layout.cursor, assignee_avatar_side * layout.scale);
 
             draw_list->AddRectFilled(comment_box_top_left, comment_box_top_left + comment_box_size, comment_background, 4.0f);
-            draw_list->AddText(name_top_left, color_black_text_on_white, user_name.start, user_name.start + user_name.length);
+            draw_list->AddText(name_top_left, name_color, user_name.start, user_name.start + user_name.length);
             draw_rich_text(draw_list, text_top_left, it->text, comment_wrap_width, false);
         }
 
@@ -1545,7 +1570,7 @@ void draw_task_contents() {
 
     ImGui::EndChild();
 
-    float alpha = lerp(MAX(finished_loading_task_at, finished_loading_users_at), tick, 1.0f, 8);
+    float alpha = lerp(finished_loading_task_at, tick, 1.0f, 8);
     ImGui::FadeInOverlay(alpha);
 
     ImGui::EndChildFrame();

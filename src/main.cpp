@@ -30,14 +30,15 @@
 const Request_Id NO_REQUEST = -1;
 const Request_Id FOLDER_TREE_CHILDREN_REQUEST = -2; // TODO BIG HAQ
 const Request_Id NOTIFICATION_MARK_AS_READ_REQUEST = -3;
+const Request_Id LOAD_USERS_REQUEST = -4;
 
+Request_Id me_request = NO_REQUEST;
 Request_Id folder_header_request = NO_REQUEST;
 Request_Id folder_contents_request = NO_REQUEST;
 Request_Id folders_request = NO_REQUEST;
 Request_Id task_request = NO_REQUEST;
 Request_Id task_comments_request = NO_REQUEST;
 Request_Id inbox_request = NO_REQUEST;
-Request_Id contacts_request = NO_REQUEST;
 Request_Id account_request = NO_REQUEST;
 Request_Id workflows_request = NO_REQUEST;
 Request_Id modify_task_request = NO_REQUEST;
@@ -65,7 +66,6 @@ Task_Id selected_folder_task_id = 0;
 Task current_task{};
 
 static char* task_json_content = NULL;
-static char* users_json_content = NULL;
 static char* accounts_json_content = NULL;
 static char* folder_tasks_json_content = NULL;
 static char* workflows_json_content = NULL;
@@ -87,8 +87,9 @@ u32 started_loading_task_at = 0;
 u32 finished_loading_task_at = 0;
 u32 finished_loading_task_comments_at = 0;
 
+u32 finished_loading_me_at = 0;
 u32 finished_loading_statuses_at = 0;
-u32 finished_loading_users_at = 0;
+u32 finished_loading_account_at = 0;
 
 u32 task_view_opened_at = 0;
 
@@ -98,35 +99,29 @@ static double frame_times[60];
 static u32 last_frame_vtx_count = 0;
 
 PRINTLIKE(3, 4) void api_request(Http_Method method, Request_Id& request_id, const char* format, ...) {
-    // TODO use temporary storage there
-    static char temporary_request_buffer[512];
-
     va_list args;
     va_start(args, format);
 
-    vsprintf(temporary_request_buffer, format, args);
+    String url = tprintf(format, args);
 
     va_end(args);
 
     request_id = request_id_counter++;
 
-    platform_api_request(request_id, temporary_request_buffer, method);
+    platform_api_request(request_id, url, method);
 }
 
 PRINTLIKE(2, 3) void image_request(Request_Id& request_id, const char* format, ...) {
-    // TODO use temporary storage there
-    static char temporary_request_buffer[512];
-
     va_list args;
     va_start(args, format);
 
-    vsprintf(temporary_request_buffer, format, args);
+    String url = tprintf(format, args);
 
     va_end(args);
 
     request_id = request_id_counter++;
 
-    platform_load_remote_image(request_id, temporary_request_buffer);
+    platform_load_remote_image(request_id, url);
 }
 
 struct Json_With_Tokens {
@@ -152,7 +147,7 @@ void request_folder_children_for_folder_tree(Folder_Id folder_id) {
 
     String url = tprintf("folders/%.16s/folders?descendants=false&fields=['color']", output_folder_and_account_id);
 
-    platform_api_request(FOLDER_TREE_CHILDREN_REQUEST, url.start, Http_Get, (void*) (intptr_t) folder_id);
+    platform_api_request(FOLDER_TREE_CHILDREN_REQUEST, url, Http_Get, (void*) (intptr_t) folder_id);
 }
 
 void request_multiple_folders(Array<Folder_Id> folders) {
@@ -177,6 +172,32 @@ void request_multiple_folders(Array<Folder_Id> folders) {
     url = tprintf("%.*s%s", url.length, url.start, "?fields=['color']");
 
     api_request(Http_Get, folders_request, "%s", url.start);
+}
+
+void request_multiple_users(Array<User_Id> users) {
+    assert(users.length > 0);
+
+    String url = tprintf("contacts/");
+
+    for (User_Id * it = users.data; it != users.data + users.length; it++) {
+        User_Id user_id = *it;
+
+        if (!is_user_requested(user_id)) {
+            mark_user_as_requested(user_id);
+
+            u8 output_user_id[8];
+
+            fill_id8('U', user_id, output_user_id);
+
+            if (it == users.data) {
+                url = tprintf("%.*s%.8s", url.length, url.start, output_user_id);
+            } else {
+                url = tprintf("%.*s,%.8s", url.length, url.start, output_user_id);
+            }
+        }
+    }
+
+    platform_api_request(LOAD_USERS_REQUEST, url, Http_Get, NULL);
 }
 
 static void request_last_selected_folder_if_present() {
@@ -220,6 +241,13 @@ void api_request_success(Request_Id request_id, char* content, u32 content_lengt
     } else if (request_id == NOTIFICATION_MARK_AS_READ_REQUEST) {
         // TODO @Leak content is leaked
         process_json_data_segment(content, json_with_tokens.tokens, json_with_tokens.num_tokens, process_inbox_data);
+    } else if (request_id == LOAD_USERS_REQUEST) {
+        // TODO @Leak content is leaked
+        process_json_data_segment(content, json_with_tokens.tokens, json_with_tokens.num_tokens, process_users_data);
+    } else if (request_id == me_request) {
+        me_request = NO_REQUEST;
+        process_json_data_segment(content, json_with_tokens.tokens, json_with_tokens.num_tokens, process_users_data);
+        finished_loading_me_at = tick;
     } else if (request_id == starred_folders_request) {
         starred_folders_request = NO_REQUEST;
 
@@ -251,10 +279,6 @@ void api_request_success(Request_Id request_id, char* content, u32 content_lengt
         finished_loading_task_comments_at = tick;
 
         FREE(json_with_tokens.json);
-    } else if (request_id == contacts_request) {
-        contacts_request = NO_REQUEST;
-        process_json_content(users_json_content, process_users_data, json_with_tokens);
-        finished_loading_users_at = tick;
     } else if (request_id == account_request) {
         bool account_was_not_saved = account.id == NO_ACCOUNT;
 
@@ -268,6 +292,8 @@ void api_request_success(Request_Id request_id, char* content, u32 content_lengt
 
             request_account_data();
         }
+
+        finished_loading_account_at = tick;
     } else if (request_id == workflows_request) {
         workflows_request = NO_REQUEST;
         process_json_content(workflows_json_content, process_workflows_data, json_with_tokens);
@@ -406,10 +432,10 @@ void mark_notification_as_read(Inbox_Notification_Id notification_id) {
 
     String url = tprintf("internal/notifications/%.16s?unread=false", output_account_and_notification_id);
 
-    platform_api_request(NOTIFICATION_MARK_AS_READ_REQUEST, url.start, Http_Put);
+    platform_api_request(NOTIFICATION_MARK_AS_READ_REQUEST, url, Http_Put);
 }
 
-void ImGui::FadeInOverlay(float alpha) {
+void ImGui::FadeInOverlay(float alpha, u32 color) {
     if (alpha >= 0.99f) {
         return;
     }
@@ -419,7 +445,7 @@ void ImGui::FadeInOverlay(float alpha) {
     ImVec2 top_left = ImGui::GetWindowPos();
     ImVec2 size = ImGui::GetWindowSize();
 
-    u32 overlay_color = IM_COL32(255, 255, 255, 255 - (u32) (alpha * 255.0f));
+    u32 overlay_color = (color & 0x00FFFFFF) | ((255 - (u32) (alpha * 255.0f)) << 24);
 
     ImGui::GetOverlayDrawList()->AddRectFilled(top_left, top_left + size, overlay_color, rounding);
 }
@@ -481,7 +507,7 @@ static void draw_task_view_popup_if_necessary() {
         ImGui::GetWindowDrawList()->AddRectFilled({}, display_size, backdrop_color);
         ImGui::PopClipRect();
 
-        bool task_is_loading = task_request != NO_REQUEST || contacts_request != NO_REQUEST;
+        bool task_is_loading = task_request != NO_REQUEST;
 
         if (selected_folder_task_id && !task_is_loading) {
             draw_task_contents();
@@ -530,16 +556,21 @@ static void draw_ui() {
         return;
     }
 
-    // TODO we don't need to load ALL contacts to show the main view, only the "me" contact, make a separate request for that!
-    bool loading_contacts = contacts_request != NO_REQUEST;
+    bool loading_me = me_request != NO_REQUEST;
     bool loading_workflows = !custom_statuses_were_loaded;
 
-    if (loading_contacts || loading_workflows) {
+    if (loading_me || loading_workflows) {
         draw_loading_screen();
 
         return;
     } else if (started_showing_main_ui_at == 0) {
         started_showing_main_ui_at = tick;
+    }
+
+    if (tick - started_showing_main_ui_at < 24) {
+        float alpha = lerp(started_showing_main_ui_at, tick, 1.0f, 24);
+
+        ImGui::FadeInOverlay(alpha, color_background_dark);
     }
 
     bool draw_side_menu_this_frame = draw_side_menu;
@@ -565,6 +596,13 @@ static void draw_ui() {
     }
 
     draw_task_view_popup_if_necessary();
+
+    Array<User_Id> user_request_queue = get_and_clear_user_request_queue();
+
+    // May want to control how often this happens
+    if (user_request_queue.length > 0) {
+        request_multiple_users(user_request_queue);
+    }
 }
 
 extern "C"
@@ -679,8 +717,12 @@ static void imgui_free_wrapper(void* ptr, void* user_data) {
 
 EXPORT
 bool init() {
+    platform_early_init();
+
+    init_user_storage();
+
+    api_request(Http_Get, me_request, "contacts?me=true");
     api_request(Http_Get, account_request, "account?fields=['customFields']");
-    api_request(Http_Get, contacts_request, "contacts");
     api_request(Http_Get, inbox_request, "internal/notifications?notificationTypes=['Assign','Mention','Status']");
     api_request(Http_Get, workflows_request, "workflows");
     api_request(Http_Get, starred_folders_request, "folders?starred&fields=['color']");

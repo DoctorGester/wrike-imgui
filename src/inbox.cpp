@@ -251,8 +251,7 @@ void draw_inbox() {
         User* author = find_user_by_id(it->author);
 
         if (!author) {
-            // TODO @DataIntegrity should work
-            continue;
+            try_queue_user_info_request(it->author);
         }
 
         if (draw_inbox_entry(draw_list, layout.cursor, { content_width, element_height }, it, author, it > notifications.data)) {

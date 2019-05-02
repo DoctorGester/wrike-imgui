@@ -84,6 +84,40 @@ struct Array {
     }
 };
 
+
+template<typename T>
+struct Temporary_List {
+    T* values = NULL;
+    u32 length = 0;
+    u32 watermark = 0;
+};
+
+template <typename T>
+void list_try_resize(Temporary_List<T>* array) {
+    void* trealloc(void*, u32, u32);
+
+    if (array->watermark == array->length) {
+        u32 previous_watermark = array->watermark;
+
+        if (array->watermark == 0) {
+            array->watermark = 2;
+        } else {
+            array->watermark *= 2;
+        }
+
+        array->values = (T*) trealloc(array->values, sizeof(T) * previous_watermark, sizeof(T) * array->watermark);
+    }
+}
+
+template<typename T>
+u32 list_add(Temporary_List<T>* array, T value) {
+    list_try_resize(array);
+
+    array->values[array->length] = value;
+
+    return array->length++;
+}
+
 inline float lerp(float time_from, float time_to, float scale_to, float max) {
     float delta = (time_to - time_from);
 
@@ -92,6 +126,11 @@ inline float lerp(float time_from, float time_to, float scale_to, float max) {
     }
 
     return ((scale_to / max) * delta);
+}
+
+inline u32 lerp_color_alpha(u32 color, u32 tick_from, u32 tick_to, u32 over_ticks) {
+    u32 alpha = (u32) lerp(tick_from, tick_to, 255.0f, over_ticks);
+    return (color & 0x00ffffff) | (alpha << 24);
 }
 
 void load_image_into_gpu_memory(Memory_Image& image, void* pixels);
@@ -157,6 +196,7 @@ inline void fill_id16(const u8 type1, s32 id1, const u8 type2, s32 id2, u8* outp
     base32_encode(input, ARRAY_SIZE(input), output);
 }
 
+PRINTLIKE(1, 0) String tprintf(const char* format, va_list args);
 PRINTLIKE(1, 4) void tprintf(const char* format, char** start, char** end, ...);
 PRINTLIKE(1, 2) String tprintf(const char* format, ...);
 

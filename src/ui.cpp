@@ -90,7 +90,7 @@ void draw_loading_spinner(ImDrawList* draw_list, ImVec2 top_left, float radius, 
 }
 
 void draw_circular_user_avatar(ImDrawList* draw_list, User* user, ImVec2 top_left, float avatar_side_px) {
-    if (check_and_request_user_avatar_if_necessary(user)) {
+    if (user && check_and_request_user_avatar_if_necessary(user)) {
         float half_avatar_side = avatar_side_px / 2.0f;
         ImTextureID avatar_texture_id = (ImTextureID)(intptr_t) user->avatar.texture_id;
 

@@ -56,7 +56,6 @@ extern Request_Id folder_tree_request;
 extern Request_Id folder_header_request;
 extern Request_Id folder_contents_request;
 extern Request_Id task_request;
-extern Request_Id contacts_request;
 extern Request_Id account_request;
 extern Request_Id workflows_request;
 
@@ -67,9 +66,10 @@ extern u32 finished_loading_folder_contents_at;
 extern u32 finished_loading_folder_header_at;
 
 extern u32 started_loading_task_at;
+extern u32 finished_loading_me_at;
 extern u32 finished_loading_task_at;
 extern u32 finished_loading_statuses_at;
-extern u32 finished_loading_users_at;
+extern u32 finished_loading_account_at;
 
 extern bool custom_statuses_were_loaded;
 
@@ -88,6 +88,7 @@ void set_task_status(Task_Id task_id, Custom_Status_Id status_id);
 void select_and_request_folder_by_id(Folder_Id id);
 void request_folder_children_for_folder_tree(Folder_Id folder_id);
 void request_multiple_folders(Array<Folder_Id> folders);
+void request_multiple_users(Array<User_Id> users);
 void mark_notification_as_read(Inbox_Notification_Id notification_id);
 
 // TODO those probably leak both on desktop and web
@@ -98,5 +99,5 @@ PRINTLIKE(2, 3) void image_request(Request_Id& request_id, const char* format, .
 
 // TODO move this into imgui extension file?
 namespace ImGui {
-    void FadeInOverlay(float alpha);
+    void FadeInOverlay(float alpha, u32 rgb = 0xffffffff);
 }

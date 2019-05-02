@@ -2,22 +2,35 @@
 #include "json.h"
 #include "id_hash_map.h"
 
-Array<User> users{};
-Array<User> suggested_users{};
+Lazy_Array<User, 32> users{};
+Array<User_Handle> suggested_users{};
 
-User* this_user = NULL;
+Lazy_Array<User_Id, 16> user_request_queue{};
 
-static Id_Hash_Map<User_Id, User*> id_to_user_map{};
+User_Handle this_user = NULL_USER_HANDLE;
 
-static User* process_users_data_object(Array<User>& target_users, char* json, jsmntok_t*&token) {
+// <User_Id, User_Handle, NULL_USER_HANDLE>
+static Id_Hash_Map<User_Id, s32, -1> id_to_user_map{};
+
+// TODO an interesting thought:
+// TODO instead of storing this, create an unloaded user
+// TODO + a bool indicating that this user is loaded
+// TODO whenever that user is requested
+// TODO we could have a general facility which requests lists of users
+// TODO to be loaded at the end of a frame
+static Id_Hash_Map<User_Id, bool, false> id_to_is_user_requested{};
+
+static User_Handle process_users_data_object(char* json, jsmntok_t*&token) {
     jsmntok_t* object_token = token++;
 
     assert(object_token->type == JSMN_OBJECT);
 
-    User* user = &target_users[target_users.length++];
+    User_Handle user_handle = User_Handle(users.length);
+    User* user = &users[users.length++];
 
     user->avatar_request_id = NO_REQUEST;
     user->avatar = {};
+    user->loaded_at = tick;
 
     for (u32 propety_index = 0; propety_index < object_token->size; propety_index++, token++) {
         jsmntok_t* property_token = token++;
@@ -35,12 +48,8 @@ static User* process_users_data_object(Array<User>& target_users, char* json, js
         } else if (json_string_equals(json, property_token, "avatarUrl")) {
             json_token_to_string(json, next_token, user->avatar_url);
         } else if (json_string_equals(json, property_token, "me")) {
-            // TODO This can and will happen twice because this user can occur
-            // TODO     both in the suggested list and in the contacts list
-            // TODO     a good solution is using a centralized 'truth' source
-            // TODO     for all users
-            if (!this_user && *(json + next_token->start) == 't') {
-                this_user = user;
+            if (this_user == NULL_USER_HANDLE && *(json + next_token->start) == 't') {
+                this_user = user_handle;
             }
         } else {
             eat_json(token);
@@ -48,38 +57,35 @@ static User* process_users_data_object(Array<User>& target_users, char* json, js
         }
     }
 
-    return user;
+    id_hash_map_put(&id_to_user_map, (s32) user_handle, user->id, hash_id(user->id));
+
+    return user_handle;
+}
+
+void init_user_storage() {
+    id_hash_map_init(&id_to_is_user_requested);
+    id_hash_map_init(&id_to_user_map);
 }
 
 void process_users_data(char* json, u32 data_size, jsmntok_t*&token) {
-    if (users.length < data_size) {
-        users.data = (User*) REALLOC(users.data, sizeof(User) * data_size);
-    }
-
-    if (id_to_user_map.table) {
-        id_hash_map_destroy(&id_to_user_map);
-    }
-
-    id_hash_map_init(&id_to_user_map);
-
-    users.length = 0;
+    lazy_array_reserve_n_values(users, data_size);
 
     for (u32 array_index = 0; array_index < data_size; array_index++) {
-        User* user = process_users_data_object(users, json, token);
-
-        id_hash_map_put(&id_to_user_map, user, user->id, hash_id(user->id));;
+        process_users_data_object(json, token);
     }
 }
 
 void process_suggested_users_data(char* json, u32 data_size, jsmntok_t*&token) {
     if (suggested_users.length < data_size) {
-        suggested_users.data = (User*) REALLOC(suggested_users.data, sizeof(User) * data_size);
+        suggested_users.data = (User_Handle*) REALLOC(suggested_users.data, sizeof(User_Handle) * data_size);
     }
 
     suggested_users.length = 0;
 
+    lazy_array_reserve_n_values(users, data_size);
+
     for (u32 array_index = 0; array_index < data_size; array_index++) {
-        process_users_data_object(suggested_users, json, token);
+        suggested_users[suggested_users.length++] = process_users_data_object(json, token);
     }
 }
 
@@ -97,12 +103,6 @@ bool check_and_request_user_avatar_if_necessary(User* user) {
 
 // Naive and slow, don't use too often
 User* find_user_by_avatar_request_id(Request_Id avatar_request_id) {
-    for (User* it = suggested_users.data; it != suggested_users.data + suggested_users.length; it++) {
-        if (it->avatar_request_id == avatar_request_id) {
-            return it;
-        }
-    }
-
     for (User* it = users.data; it != users.data + users.length; it++) {
         if (it->avatar_request_id == avatar_request_id) {
             return it;
@@ -117,5 +117,55 @@ User* find_user_by_id(User_Id id, u32 id_hash) {
         id_hash = hash_id(id);
     }
 
-    return id_hash_map_get(&id_to_user_map, id, id_hash);
+    User_Handle handle = (User_Handle) id_hash_map_get(&id_to_user_map, id, id_hash);
+
+    if (handle != NULL_USER_HANDLE) {
+        return get_user_by_handle(handle);
+    }
+
+    return NULL;
+}
+
+User_Handle find_user_handle_by_id(User_Id id, u32 id_hash) {
+    if (!id_hash) {
+        id_hash = hash_id(id);
+    }
+
+    return (User_Handle) id_hash_map_get(&id_to_user_map, id, id_hash);
+}
+
+bool is_user_requested(User_Id id, u32 id_hash) {
+    if (!id_hash) {
+        id_hash = hash_id(id);
+    }
+
+    return id_hash_map_get(&id_to_is_user_requested, id, id_hash);
+}
+
+void mark_user_as_requested(User_Id id, u32 id_hash) {
+    if (!id_hash) {
+        id_hash = hash_id(id);
+    }
+
+    id_hash_map_put(&id_to_is_user_requested, true, id, id_hash);
+}
+
+User* get_user_by_handle(User_Handle handle) {
+    return users.data + handle.value;
+}
+
+void try_queue_user_info_request(User_Id id) {
+    if (!is_user_requested(id)) {
+        *lazy_array_reserve_n_values(user_request_queue, 1) = id;
+    }
+}
+
+Array<User_Id> get_and_clear_user_request_queue() {
+    Array<User_Id> result;
+    result.data = user_request_queue.data;
+    result.length = user_request_queue.length;
+
+    lazy_array_soft_reset(user_request_queue);
+
+    return result;
 }

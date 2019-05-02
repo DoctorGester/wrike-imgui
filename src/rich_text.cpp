@@ -23,37 +23,6 @@ struct Rich_Text_Token {
     bool singular_attribute = true;
 };
 
-template<typename T>
-struct List {
-    T* values = NULL;
-    u32 length = 0;
-    u32 watermark = 0;
-};
-
-template <typename T>
-void list_try_resize(List<T>* array) {
-    if (array->watermark == array->length) {
-        u32 previous_watermark = array->watermark;
-
-        if (array->watermark == 0) {
-            array->watermark = 2;
-        } else {
-            array->watermark *= 2;
-        }
-
-        array->values = (T*) trealloc(array->values, previous_watermark, sizeof(T) * array->watermark);
-    }
-}
-
-template<typename T>
-u32 list_add(List<T>* array, T value) {
-    list_try_resize(array);
-
-    array->values[array->length] = value;
-
-    return array->length++;
-}
-
 #define foreach(variable, array) \
     for(auto (variable) = (array).values, end = (array).values + (array).length; (variable) < end; (variable)++)
 
@@ -68,7 +37,7 @@ static Rich_Text_Token make_token(Rich_Text_Token_Type token_type, u32 start) {
 }
 
 // TODO it's terrible, a rewrite in something like re2c is absolutely required!
-static void parse_text_into_tokens(String& text, List<Rich_Text_Token>& tokens) {
+static void parse_text_into_tokens(String& text, Temporary_List<Rich_Text_Token>& tokens) {
     Rich_Text_Token current_token{};
     current_token.start = 0;
     current_token.type = Rich_Text_Token_Type_Text;
@@ -201,7 +170,7 @@ bool token_eq(String text, Rich_Text_Token* token, const char* compare_with) {
     return strncmp(text.start + token->start, compare_with, length) == 0;
 }
 
-void parse_text_into_rich_string_recursively(String text, List<Rich_Text_Token>& tokens, Rich_Text_Style style, u32& index, List<Rich_Text_String>* output) {
+void parse_text_into_rich_string_recursively(String text, Temporary_List<Rich_Text_Token>& tokens, Rich_Text_Style style, u32& index, Temporary_List<Rich_Text_String>* output) {
     for (; index < tokens.length; index++) {
         Rich_Text_Token& token = tokens.values[index];
 
@@ -399,7 +368,7 @@ void destructively_replace_escaped_quotes_with_just_quotes(String& text) {
 }
 
 static Array<Rich_Text_String> parse_string_into_rich_text_string_array(String text) {
-    List<Rich_Text_Token> tokens{};
+    Temporary_List<Rich_Text_Token> tokens{};
     parse_text_into_tokens(text, tokens);
 
     u32 text_tokens = 0;
@@ -418,7 +387,7 @@ static Array<Rich_Text_String> parse_string_into_rich_text_string_array(String t
         }
     }
 
-    List<Rich_Text_String> result_strings{};
+    Temporary_List<Rich_Text_String> result_strings{};
     result_strings.values = (Rich_Text_String*) talloc(sizeof(Rich_Text_String) * text_tokens);
     result_strings.watermark = text_tokens;
 

@@ -237,6 +237,8 @@ static void setup_io() {
     io.ClipboardUserData = NULL;
 }
 
+void platform_early_init(){}
+
 bool platform_init() {
 //    TODO This code breaks the whole app, why?
 //    if (!create_webgl_context()) {
@@ -287,11 +289,11 @@ void platform_end_frame() {
 
 }
 
-void platform_load_remote_image(Request_Id request_id, char* full_url) {
-    EM_ASM({ load_image(Pointer_stringify($0), $1) }, &full_url[0], request_id);
+void platform_load_remote_image(Request_Id request_id, String full_url) {
+    EM_ASM({ load_image(Pointer_stringify($0, $1), $2) }, full_url.start, full_url.length, request_id);
 }
 
-void platform_api_request(Request_Id request_id, char* url, Http_Method method, void* data) {
+void platform_api_request(Request_Id request_id, String url, Http_Method method, void* data) {
     const s8* method_as_string;
     switch (method) {
         case Http_Put: {
@@ -309,7 +311,7 @@ void platform_api_request(Request_Id request_id, char* url, Http_Method method, 
         }
     }
 
-    EM_ASM({ api_get(Pointer_stringify($0), $1, Pointer_stringify($2), $3) }, &url[0], request_id, method_as_string, data);
+    EM_ASM({ api_get(Pointer_stringify($0, $1), $2, Pointer_stringify($3), $4) }, url.start, url.length, request_id, method_as_string, data);
 }
 
 void platform_local_storage_set(const char* key, String value) {
