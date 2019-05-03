@@ -69,19 +69,24 @@ struct Flattened_Folder_Node {
     Folder_Handle source; // TODO could be a pointer since we are rebuilding flattened_tree on changes anyway?
 };
 
+struct Folder_Tree {
+    Folder_Handle root;
+    Lazy_Array<Flattened_Folder_Node, 64> flattened;
+};
+
 const Folder_Handle NULL_FOLDER_HANDLE(-1);
 
-static Lazy_Array<Flattened_Folder_Node, 64> flattened_folder_tree{};
+static Folder_Tree shared_folders_tree;
+static Folder_Tree starred_folders_tree;
+
 static Lazy_Array<Parent_Child_Pair, 64> parent_child_pairs{};
 // We can't use Id_Hash_Map<Folder_Id, Folder_Handle, NULL_FOLDER_HANDLE> because C++ reasons
 static Id_Hash_Map<Folder_Id, s32, -1> folder_id_to_handle_map{};
 
 static char search_buffer[128];
 
-Folder_Handle root_node = NULL_FOLDER_HANDLE;
 Array<Folder_Tree_Node> all_nodes{};
 
-Array<Folder> starred_folders{};
 Array<Folder> suggested_folders{};
 Array<Folder_Tree_Node*> folder_tree_search_result{};
 
@@ -169,13 +174,13 @@ static Parent_Child_Pair* find_top_parent_child_pair_by_parent_handle(Folder_Han
     return NULL;
 }
 
-static void rebuild_flattened_folder_tree_recursively(Folder_Handle parent_handle, u32 nesting) {
+static void rebuild_flattened_folder_tree_recursively(Folder_Tree& tree, Folder_Handle parent_handle, u32 nesting) {
     Folder_Tree_Node* parent_node = get_folder_node_by_handle(parent_handle);
     Parent_Child_Pair* top_pair = find_top_parent_child_pair_by_parent_handle(parent_handle, parent_node->num_children);
 
     for (u32 pair_index = 0; pair_index < parent_node->num_children; pair_index++) {
         Parent_Child_Pair* pair = top_pair + pair_index;
-        Flattened_Folder_Node* flattened_node = lazy_array_reserve_n_values(flattened_folder_tree, 1);
+        Flattened_Folder_Node* flattened_node = lazy_array_reserve_n_values(tree.flattened, 1);
 
         flattened_node->nesting = nesting;
         flattened_node->source = pair->child;
@@ -186,9 +191,9 @@ static void rebuild_flattened_folder_tree_recursively(Folder_Handle parent_handl
             Folder_Tree_Node* child_node = get_folder_node_by_handle(pair->child);
 
             if (child_node->children_loaded) {
-                rebuild_flattened_folder_tree_recursively(pair->child, nesting + 1);
+                rebuild_flattened_folder_tree_recursively(tree, pair->child, nesting + 1);
             } else {
-                Flattened_Folder_Node* skeletons = lazy_array_reserve_n_values(flattened_folder_tree, child_node->num_children);
+                Flattened_Folder_Node* skeletons = lazy_array_reserve_n_values(tree.flattened, child_node->num_children);
 
                 for (Flattened_Folder_Node* it = skeletons; it != skeletons + child_node->num_children; it++) {
                     it->nesting = nesting + 1;
@@ -199,12 +204,17 @@ static void rebuild_flattened_folder_tree_recursively(Folder_Handle parent_handl
     }
 }
 
-static void rebuild_flattened_folder_tree() {
+static void rebuild_flattened_folder_tree(Folder_Tree& tree) {
     qsort(parent_child_pairs.data, parent_child_pairs.length, sizeof(Parent_Child_Pair), compare_parent_child_pairs);
 
-    lazy_array_soft_reset(flattened_folder_tree);
+    lazy_array_soft_reset(tree.flattened);
 
-    rebuild_flattened_folder_tree_recursively(root_node, 0);
+    rebuild_flattened_folder_tree_recursively(tree, tree.root, 0);
+}
+
+static void rebuild_flattened_folder_trees() {
+    rebuild_flattened_folder_tree(starred_folders_tree);
+    rebuild_flattened_folder_tree(shared_folders_tree);
 }
 
 static bool draw_folder_tree_folder_element(ImDrawList* draw_list, ImVec2 element_top_left, ImVec2 element_size, float text_offset, u32 alpha, Folder* folder) {
@@ -279,7 +289,7 @@ static void folder_tree_node_skeleton(ImDrawList* draw_list, Vertical_Layout& la
     draw_list->AddRectFilled(skeleton_top_left, skeleton_bottom_right, 0x80ffffff, 2.0f * layout.scale);
 }
 
-static void draw_flattened_folder_tree(Vertical_Layout& layout) {
+static void draw_flattened_folder_tree(Folder_Tree& tree, Vertical_Layout& layout) {
     ImDrawList* draw_list = ImGui::GetWindowDrawList();
     ImVec2 element_size{ ImGui::GetContentRegionAvailWidth(), 30.0f * layout.scale };
 
@@ -289,13 +299,13 @@ static void draw_flattened_folder_tree(Vertical_Layout& layout) {
     float content_height = ImGui::GetWindowHeight();
     float offset_scroll_position = ImGui::GetScrollY() - frame_offset;
 
-    u32 first_visible_item = (u32) MAX(0, (s32) floorf(offset_scroll_position / element_size.y));
-    u32 last_visible_item = (u32) MIN(flattened_folder_tree.length, (s32) ceilf((offset_scroll_position + content_height) / element_size.y));
-    u32 items_out_of_sight_at_the_bottom = flattened_folder_tree.length - last_visible_item;
+    u32 first_visible_item = (u32) MIN(tree.flattened.length, MAX(0, (s32) floorf(offset_scroll_position / element_size.y)));
+    u32 last_visible_item = (u32) MIN(tree.flattened.length, (s32) ceilf((offset_scroll_position + content_height) / element_size.y));
+    u32 items_out_of_sight_at_the_bottom = tree.flattened.length - last_visible_item;
 
     layout_advance(layout, first_visible_item * element_size.y);
 
-    for (Flattened_Folder_Node* it = flattened_folder_tree.data + first_visible_item; it != flattened_folder_tree.data + last_visible_item; it++) {
+    for (Flattened_Folder_Node* it = tree.flattened.data + first_visible_item; it != tree.flattened.data + last_visible_item; it++) {
         ImVec2 element_top_left = layout.cursor;
 
         ImGui::PushID(it);
@@ -319,7 +329,7 @@ static void draw_flattened_folder_tree(Vertical_Layout& layout) {
     layout_advance(layout, items_out_of_sight_at_the_bottom * element_size.y);
 
     if (should_rebuild_flattened_tree) {
-        rebuild_flattened_folder_tree();
+        rebuild_flattened_folder_tree(tree);
     }
 }
 
@@ -470,44 +480,22 @@ static void draw_folder_collection_header(ImDrawList* draw_list, ImVec2 top_left
     ImGui::PopFont();
 }
 
-static void draw_starred_folders(Vertical_Layout& layout) {
+static void draw_folder_collection_separator(ImVec2 element_size, Vertical_Layout& layout) {
     float scale = platform_get_pixel_ratio();
-
     ImDrawList* draw_list = ImGui::GetWindowDrawList();
 
-    ImVec2 element_size{ ImGui::GetContentRegionAvailWidth(), 30.0f * scale };
+    layout_advance(layout, 6.0f * scale);
 
-    draw_star_icon_filled(draw_list, layout.cursor + ImVec2(23.0f, 16.0f) * scale, scale * 10.0f);
-    draw_folder_collection_header(draw_list, layout.cursor, element_size, "Starred");
+    const u32 separator_color = argb_to_agbr(0xff344b5d);
 
-    layout_advance(layout, element_size.y);
+    float separator_x_offset = 26.0f * scale;
 
-    for (Folder* it = starred_folders.data; it != starred_folders.data + starred_folders.length; it++) {
-        ImGui::PushID(it);
+    ImVec2 separator_left = ImVec2(layout.cursor.x + separator_x_offset, layout.cursor.y);
+    ImVec2 separator_right = separator_left + ImVec2(element_size.x - separator_x_offset, 0);
 
-        if (draw_folder_tree_folder_element(draw_list, layout.cursor, element_size, 0, 0xff, it)) {
-            select_and_request_folder_by_id(it->id);
-        }
+    draw_list->AddLine(separator_left, separator_right, separator_color);
 
-        ImGui::PopID();
-
-        layout_advance(layout, element_size.y);
-    }
-
-    {
-        layout_advance(layout, 6.0f * scale);
-
-        const u32 separator_color = argb_to_agbr(0xff344b5d);
-
-        float separator_x_offset = 26.0f * scale;
-
-        ImVec2 separator_left = ImVec2(layout.cursor.x + separator_x_offset, layout.cursor.y);
-        ImVec2 separator_right = separator_left + ImVec2(element_size.x - separator_x_offset, 0);
-
-        draw_list->AddLine(separator_left, separator_right, separator_color);
-
-        layout_advance(layout, 6.0f * scale);
-    }
+    layout_advance(layout, 6.0f * scale);
 }
 
 void draw_folder_tree(float column_width) {
@@ -524,6 +512,7 @@ void draw_folder_tree(float column_width) {
     ImGui::ListBoxHeader("##folder_tree_content", ImVec2(-1, -1));
 
     Vertical_Layout layout = vertical_layout(ImGui::GetCursorScreenPos());
+    ImDrawList* draw_list = ImGui::GetWindowDrawList();
 
     u32 buffer_length = strlen(search_buffer);
     if (buffer_length > 0 && folder_tree_search_result.data) {
@@ -538,31 +527,33 @@ void draw_folder_tree(float column_width) {
             ImGui::PopID();
         }
     } else {
-        if (starred_folders.length > 0) {
-            draw_starred_folders(layout);
+        ImVec2 element_size{ImGui::GetContentRegionAvailWidth(), 30.0f * layout.scale};
+
+        if (!get_folder_node_by_handle(starred_folders_tree.root)->children_loaded) {
+            draw_window_loading_indicator();
         }
 
-        if (root_node != NULL_FOLDER_HANDLE) {
-            if (!get_folder_node_by_handle(root_node)->children_loaded) {
-                draw_window_loading_indicator();
-            }
+        draw_star_icon_filled(draw_list, layout.cursor + ImVec2(23.0f, 16.0f) * layout.scale, layout.scale * 10.0f);
+        draw_folder_collection_header(draw_list, layout.cursor, element_size, "Starred");
+        layout_advance(layout, element_size.y);
+        draw_flattened_folder_tree(starred_folders_tree, layout);
 
-            ImVec2 element_size{ ImGui::GetContentRegionAvailWidth(), 30.0f * layout.scale };
+        draw_folder_collection_separator(element_size, layout);
 
-            ImGui::GetWindowDrawList()->AddCircleFilled(layout.cursor + ImVec2(23.0f, 16.0f) * layout.scale, 3.0f * layout.scale, IM_COL32_WHITE, 24);
-
-            draw_folder_collection_header(ImGui::GetWindowDrawList(), layout.cursor, element_size, "Shared with me");
-
-            layout_advance(layout, element_size.y);
-
-            draw_flattened_folder_tree(layout);
-
-            layout_push_item_size(layout);
+        if (!get_folder_node_by_handle(shared_folders_tree.root)->children_loaded) {
+            draw_window_loading_indicator();
         }
+
+        draw_list->AddCircleFilled(layout.cursor + ImVec2(23.0f, 16.0f) * layout.scale, 3.0f * layout.scale, IM_COL32_WHITE, 24);
+        draw_folder_collection_header(draw_list, layout.cursor, element_size, "Shared with me");
+        layout_advance(layout, element_size.y);
+        draw_flattened_folder_tree(shared_folders_tree, layout);
+
+        layout_push_item_size(layout);
     }
 
     if (ImGui::GetScrollY() > 0.01f) {
-        draw_scroll_shadow(ImGui::GetWindowDrawList(), layout.top_left, column_width, layout.scale);
+        draw_scroll_shadow(draw_list, layout.top_left, column_width, layout.scale);
     }
 
     ImGui::ListBoxFooter();
@@ -574,19 +565,34 @@ void draw_folder_tree(float column_width) {
     ImGui::PopStyleColor();
 }
 
-void folder_tree_init(Folder_Id root_node_id) {
+Folder_Handle push_artificial_folder_node(const char *name, Folder_Id id) {
+    static Folder_Color color(0, 0xff555555, 0);
+
+    Folder_Handle result = get_or_push_folder_node(id, hash_id(id));
+
+    Folder_Tree_Node* root = get_folder_node_by_handle(result);
+    root->color = &color;
+    root->name.start = (char*) name;
+    root->name.length = strlen(root->name.start);
+
+    return result;
+}
+
+Folder_Tree make_folder_tree(const char *name, Folder_Id root_id) {
+    Folder_Tree tree;
+    tree.flattened = {};
+    tree.root = push_artificial_folder_node(name, root_id);
+
+    return tree;
+}
+
+void folder_tree_init() {
     id_hash_map_init(&folder_id_to_handle_map);
 
-    all_nodes.data = (Folder_Tree_Node*) REALLOC(all_nodes.data, sizeof(Folder_Tree_Node));
+    all_nodes.data = (Folder_Tree_Node*) REALLOC(all_nodes.data, sizeof(Folder_Tree_Node) * 2);
 
-    static Folder_Color root_node_color(0, 0xff555555, 0);
-
-    root_node = get_or_push_folder_node(root_node_id, hash_id(root_node_id));
-
-    Folder_Tree_Node* root = get_folder_node_by_handle(root_node);
-    root->color = &root_node_color;
-    root->name.start = (char*) "Root"; // TODO use the string storage
-    root->name.length = strlen(root->name.start);
+    shared_folders_tree = make_folder_tree("Root", -1);
+    starred_folders_tree = make_folder_tree("Suggested", -2);
 }
 
 Folder_Tree_Node* find_folder_tree_node_by_id(Folder_Id id, u32 id_hash) {
@@ -619,7 +625,7 @@ static void try_add_parent_child_pair(Folder_Handle parent, Folder_Handle child)
 
 Folder_Color* string_to_folder_color(String string);
 
-static void process_folder_tree_child_object(Folder_Handle parent_handle, char* json, jsmntok_t*& token) {
+static Folder_Handle process_folder_tree_child_object(Folder_Handle parent_handle, char* json, jsmntok_t*& token) {
     jsmntok_t* object_token = token++;
 
     assert(object_token->type == JSMN_OBJECT);
@@ -671,6 +677,8 @@ static void process_folder_tree_child_object(Folder_Handle parent_handle, char* 
     if (parent_handle != NULL_FOLDER_HANDLE) {
         try_add_parent_child_pair(parent_handle, new_handle);
     }
+
+    return new_handle;
 }
 
 void folder_tree_search(const char* query, Array<Folder_Tree_Node*>* result) {
@@ -753,7 +761,9 @@ void process_folder_tree_children_request(Folder_Id parent_id, char* json, jsmnt
         }
     }
 
-    rebuild_flattened_folder_tree();
+    // TODO I think we can figure out to which tree it belongs somehow?
+    // TODO or maybe pass the root node data in the request
+    rebuild_flattened_folder_trees();
 }
 
 void process_suggested_folders_data(char* json, u32 data_size, jsmntok_t*& token) {
@@ -771,17 +781,25 @@ void process_suggested_folders_data(char* json, u32 data_size, jsmntok_t*& token
 }
 
 void process_starred_folders_data(char* json, u32 data_size, jsmntok_t*& token) {
-    if (starred_folders.length < data_size) {
-        starred_folders.data = (Folder*) REALLOC(starred_folders.data, sizeof(Folder) * data_size);
+    u32 new_size = all_nodes.length + data_size;
+
+    if (all_nodes.length < new_size) {
+        all_nodes.data = (Folder_Tree_Node*) REALLOC(all_nodes.data, sizeof(Folder_Tree_Node) * new_size);
     }
 
-    starred_folders.length = 0;
+    Folder_Tree_Node* root = get_folder_node_by_handle(starred_folders_tree.root);
+
+    assert(root);
 
     for (u32 array_index = 0; array_index < data_size; array_index++) {
-        Folder* starred_folder = &starred_folders[starred_folders.length++];
-
-        process_plain_folder_data_object(starred_folder, json, token);
+        process_folder_tree_child_object(starred_folders_tree.root, json, token);
     }
+
+    root->finished_loading_children_at = tick;
+    root->num_children = data_size;
+    root->children_loaded = true;
+
+    rebuild_flattened_folder_tree(starred_folders_tree);
 }
 
 Folder_Color* string_to_folder_color(String string) {

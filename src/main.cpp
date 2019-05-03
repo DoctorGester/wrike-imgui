@@ -221,8 +221,6 @@ static void request_last_selected_folder_if_present() {
 }
 
 static void request_account_data() {
-    folder_tree_init(ROOT_FOLDER);
-
     request_folder_children_for_folder_tree(ROOT_FOLDER);
     request_last_selected_folder_if_present();
 }
@@ -720,6 +718,7 @@ bool init() {
     platform_early_init();
 
     init_user_storage();
+    folder_tree_init();
 
     api_request(Http_Get, me_request, "contacts?me=true");
     api_request(Http_Get, account_request, "account?fields=['customFields']");
