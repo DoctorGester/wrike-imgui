@@ -38,6 +38,7 @@ static s32 attribute_uv;
 ImFont* font_regular;
 ImFont* font_28px;
 ImFont* font_19px;
+ImFont* font_19px_bold;
 ImFont* font_bold;
 ImFont* font_italic;
 ImFont* font_bold_italic;
@@ -161,6 +162,7 @@ static void renderer_init_font() {
 
     font_28px = LOAD_SANS(28.0f);
     font_19px = LOAD_SANS(19.0f);
+    font_19px_bold = LOAD_FONT("resources/OpenSans-Bold.ttf", 19.0f);
     font_bold = LOAD_FONT("resources/OpenSans-Bold.ttf", default_font_size);
     font_italic = LOAD_FONT("resources/OpenSans-Italic.ttf", default_font_size);
     font_bold_italic = LOAD_FONT("resources/OpenSans-BoldItalic.ttf", default_font_size);

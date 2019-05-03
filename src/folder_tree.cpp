@@ -416,7 +416,7 @@ static void draw_folder_tree_search_input() {
 
     if (strlen(search_buffer) == 0) {
         ImGui::SetCursorPos(placeholder_text_position);
-        ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(non_active_color), "Search folders & projects");
+        ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(non_active_color), "Filter");
     }
 
     ImVec2& frame_padding = ImGui::GetStyle().FramePadding;
@@ -459,7 +459,7 @@ static void draw_folder_tree_search_input() {
 }
 
 static void draw_folder_collection_header(ImDrawList* draw_list, ImVec2 top_left, ImVec2 element_size, const char* text) {
-    ImGui::PushFont(font_bold);
+    ImGui::PushFont(font_19px_bold);
 
     float font_height = ImGui::GetFontSize();
 
@@ -478,7 +478,7 @@ static void draw_starred_folders(Vertical_Layout& layout) {
     ImVec2 element_size{ ImGui::GetContentRegionAvailWidth(), 30.0f * scale };
 
     draw_star_icon_filled(draw_list, layout.cursor + ImVec2(23.0f, 16.0f) * scale, scale * 10.0f);
-    draw_folder_collection_header(draw_list, layout.cursor, element_size, "STARRED");
+    draw_folder_collection_header(draw_list, layout.cursor, element_size, "Starred");
 
     layout_advance(layout, element_size.y);
 
@@ -520,6 +520,7 @@ void draw_folder_tree(float column_width) {
 
     ImGui::PushStyleColor(ImGuiCol_Text, 0xFFFFFFFF);
     ImGui::PushStyleColor(ImGuiCol_ScrollbarBg, color_background_dark);
+    ImGui::PushFont(font_19px);
     ImGui::ListBoxHeader("##folder_tree_content", ImVec2(-1, -1));
 
     Vertical_Layout layout = vertical_layout(ImGui::GetCursorScreenPos());
@@ -550,8 +551,7 @@ void draw_folder_tree(float column_width) {
 
             ImGui::GetWindowDrawList()->AddCircleFilled(layout.cursor + ImVec2(23.0f, 16.0f) * layout.scale, 3.0f * layout.scale, IM_COL32_WHITE, 24);
 
-            // TODO hardcoded account name
-            draw_folder_collection_header(ImGui::GetWindowDrawList(), layout.cursor, element_size, "WRIKE");
+            draw_folder_collection_header(ImGui::GetWindowDrawList(), layout.cursor, element_size, "Shared with me");
 
             layout_advance(layout, element_size.y);
 
@@ -561,7 +561,12 @@ void draw_folder_tree(float column_width) {
         }
     }
 
+    if (ImGui::GetScrollY() > 0.01f) {
+        draw_scroll_shadow(ImGui::GetWindowDrawList(), layout.top_left, column_width, layout.scale);
+    }
+
     ImGui::ListBoxFooter();
+    ImGui::PopFont();
     ImGui::PopStyleColor();
     ImGui::PopStyleColor();
 
