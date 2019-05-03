@@ -13,7 +13,7 @@ enum Request_Type {
 };
 
 struct Running_Request {
-    u32 status_code_or_zero;
+    std::atomic<u32> status_code_or_zero;
     Request_Type request_type;
     Request_Id request_id;
     char* debug_url = NULL;
@@ -28,7 +28,6 @@ static SDL_GLContext gl_context;
 
 static Running_Request** running_requests = NULL;
 static u32 num_running_requests = 0;
-static SDL_mutex* requests_process_mutex = NULL;
 
 static Uint64 application_time = 0;
 static bool mouse_pressed[3] = { false, false, false };
@@ -224,13 +223,15 @@ static void process_completed_image_request(Running_Request* request) {
 }
 
 static void process_completed_requests() {
-    SDL_LockMutex(requests_process_mutex);
-
     for (s32 index = 0; index < num_running_requests; index++) {
         Running_Request* request = running_requests[index];
+        u32 status = request->status_code_or_zero;
 
-        if (request->status_code_or_zero) {
-            if (request->status_code_or_zero == 200) {
+        if (status) {
+            // Memory logging is not thread-safe
+            LOG_MEMORY(request->data_read, request->data_length);
+
+            if (status == 200) {
                 u64 start_process_request = SDL_GetPerformanceCounter();
 
                 switch (request->request_type) {
@@ -251,10 +252,12 @@ static void process_completed_requests() {
 
                 printf("Request #%i processed in %.3fms\n", request->request_id, delta * 1000.0 / SDL_GetPerformanceFrequency());
             } else {
+                FREE(request->data_read);
+
                 printf("%.*s\n", request->data_length, request->data_read);
             }
 
-            // data_read is managed by receiver
+            // data_read is managed by receiver in case of 200
             FREE(request->debug_url);
             FREE(request);
 
@@ -266,8 +269,6 @@ static void process_completed_requests() {
             index--;
         }
     }
-
-    SDL_UnlockMutex(requests_process_mutex);
 }
 
 bool platform_init() {
@@ -280,8 +281,6 @@ bool platform_init() {
     create_open_gl_context();
 
     setup_io();
-
-    requests_process_mutex = SDL_CreateMutex();
 
     // TODO bad API, we shouldn't be making external calls in platform impl, move those out
     renderer_init(vertex_shader_source, fragment_shader_source);
@@ -368,8 +367,9 @@ static size_t handle_curl_write(char *ptr, size_t size, size_t nmemb, void *user
 
     u32 received_data_length = size * nmemb;
 
+    // Memory logging is not thread safe, so we don't use the macro here and rather LOG_MEMORY later
     // TODO very inefficient
-    request->data_read = (char*) REALLOC(request->data_read, request->data_length + received_data_length);
+    request->data_read = (char*) realloc(request->data_read, request->data_length + received_data_length);
     memcpy(request->data_read + request->data_length, ptr, received_data_length);
     request->data_length += received_data_length;
 
@@ -379,8 +379,6 @@ static size_t handle_curl_write(char *ptr, size_t size, size_t nmemb, void *user
 int curl_thread_request(void* data) {
     CURL* curl = data;
     CURLcode result = curl_easy_perform(curl);
-
-    SDL_LockMutex(requests_process_mutex);
 
     if (result != CURLE_OK) {
         printf("curl_easy_perform() failed: %s\n", curl_easy_strerror(result));
@@ -414,27 +412,19 @@ int curl_thread_request(void* data) {
 //        printf("CURL TIME: pre %f\n", pre);
 //        printf("CURL TIME: start %f\n", start);
 
-        // TODO I have a feeling this could just be an atomic write and we could get rid of a mutex altogether
         request->status_code_or_zero = http_status_code;
     }
 
     curl_easy_cleanup(curl);
 
-    SDL_UnlockMutex(requests_process_mutex);
-
     return 0;
 }
 
+// Only called from the main thread
 static void push_request(Running_Request* request) {
-    SDL_LockMutex(requests_process_mutex);
-
-    // TODO I have a feeling this could just be an atomic write and we could get rid of a mutex altogether
     u32 new_request_index = num_running_requests++;
     running_requests = (Running_Request**) REALLOC(running_requests, num_running_requests * sizeof(Running_Request*));
-
     running_requests[new_request_index] = request;
-
-    SDL_UnlockMutex(requests_process_mutex);
 }
 
 void platform_early_init() {

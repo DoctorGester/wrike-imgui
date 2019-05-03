@@ -100,6 +100,12 @@ static void record_memory(void* pointer, const char* file, u32 line, size_t size
     total_recorded++;
 }*/
 
+void log_memory(const char* file, const char* function, u32 line, void* pointer, size_t size) {
+    total_allocated_memory += size;
+
+    record_memory(pointer, file, function, line, size);
+}
+
 void* malloc_and_log(const char* file, const char* function, u32 line, size_t size) {
     void* pointer = malloc(size);
 

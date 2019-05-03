@@ -9,6 +9,7 @@
 #define CALLOC(x, y) calloc_and_log(__FILE__, __FUNCTION__, __LINE__, x, y)
 #define REALLOC(x, y) realloc_and_log(__FILE__, __FUNCTION__, __LINE__, x, y)
 #define FREE(x) free_and_log(__FILE__, __FUNCTION__, __LINE__, x)
+#define LOG_MEMORY(x, y) log_memory(__FILE__, __FUNCTION__, __LINE__, x, y)
 
 #define PRINTLIKE(string_index, first_to_check) __attribute__((__format__ (__printf__, string_index, first_to_check)))
 
@@ -46,6 +47,7 @@ static const u32 hash_seed = 3637;
 
 u32 argb_to_agbr(u32 argb);
 
+void log_memory(const char* file, const char* function, u32 line, void* pointer, size_t size);
 void* calloc_and_log(const char* file, const char* function, u32 line, size_t num, size_t size);
 void* malloc_and_log(const char* file, const char* function, u32 line, size_t size);
 void* realloc_and_log(const char* file, const char* function, u32 line, void* realloc_what, size_t new_size);
@@ -128,8 +130,8 @@ inline float lerp(float time_from, float time_to, float scale_to, float max) {
     return ((scale_to / max) * delta);
 }
 
-inline u32 lerp_color_alpha(u32 color, u32 tick_from, u32 tick_to, u32 over_ticks) {
-    u32 alpha = (u32) lerp(tick_from, tick_to, 255.0f, over_ticks);
+inline u32 lerp_color_alpha(u32 color, u32 tick_from, u32 tick_to, u32 over_ticks, u32 towards_alpha = 255) {
+    u32 alpha = (u32) lerp(tick_from, tick_to, towards_alpha, over_ticks);
     return (color & 0x00ffffff) | (alpha << 24);
 }
 
