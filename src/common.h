@@ -130,7 +130,8 @@ inline float lerp(float time_from, float time_to, float scale_to, float max) {
     return ((scale_to / max) * delta);
 }
 
-inline u32 lerp_color_alpha(u32 color, u32 tick_from, u32 tick_to, u32 over_ticks, u32 towards_alpha = 255) {
+inline u32 lerp_color_alpha(u32 color, u32 tick_from, u32 tick_to, u32 over_ticks) {
+    u32 towards_alpha = (color & 0xff000000) >> 24;
     u32 alpha = (u32) lerp(tick_from, tick_to, towards_alpha, over_ticks);
     return (color & 0x00ffffff) | (alpha << 24);
 }

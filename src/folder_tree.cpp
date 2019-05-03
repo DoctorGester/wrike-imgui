@@ -661,6 +661,7 @@ static void process_folder_tree_child_object(Folder_Handle parent_handle, char* 
     new_node->name = folder_data.name;
     new_node->color = folder_data.color;
     new_node->num_children = num_children;
+    new_node->finished_loading_children_at = tick;
 
     if (parent_handle != NULL_FOLDER_HANDLE) {
         try_add_parent_child_pair(parent_handle, new_handle);
