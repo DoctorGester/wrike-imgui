@@ -52,7 +52,6 @@ struct Task {
 extern const Request_Id NO_REQUEST;
 
 // TODO we could actually have a struct which encompasses Request_Id, started_at and finished_at
-extern Request_Id folder_tree_request;
 extern Request_Id folder_header_request;
 extern Request_Id folder_contents_request;
 extern Request_Id task_request;
@@ -88,6 +87,7 @@ void set_task_status(Task_Id task_id, Custom_Status_Id status_id);
 void select_and_request_folder_by_id(Folder_Id id);
 void request_folder_children_for_folder_tree(Folder_Id folder_id);
 void request_multiple_folders(Array<Folder_Id> folders);
+void request_multiple_folders_for_spaces(Array<Folder_Id> folders);
 void request_multiple_users(Array<User_Id> users);
 void mark_notification_as_read(Inbox_Notification_Id notification_id);
 

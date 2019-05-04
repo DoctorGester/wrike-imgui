@@ -26,6 +26,7 @@ struct Folder {
 struct Folder_Tree_Node : Folder {
     u32 id_hash;
     u32 finished_loading_children_at;
+    u32 loaded_at;
     u32 num_children;
     bool children_loaded;
 };
@@ -36,6 +37,8 @@ void process_folder_tree_children_request(Folder_Id parent_id, char* json, jsmnt
 void process_suggested_folders_data(char* json, u32 data_size, jsmntok_t*&token);
 void process_starred_folders_data(char* json, u32 data_size, jsmntok_t*& token);
 void process_multiple_folders_data(char* json, u32 data_size, jsmntok_t*& token);
+void process_spaces_data(char* json, u32 data_size, jsmntok_t*& token);
+void process_spaces_folders_data(char* json, u32 data_size, jsmntok_t*& token);
 
 void folder_tree_search(const char* query, Array<Folder_Tree_Node*>* result);
 

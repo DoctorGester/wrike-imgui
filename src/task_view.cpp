@@ -398,9 +398,9 @@ static bool draw_parent_folder_ticker(Wrapping_Horizontal_Layout& layout, Folder
         border_color = (border_color & clear_alpha) | half_alpha_mask;
     }
 
-    background_color = lerp_color_alpha(background_color, folder_tree_node->finished_loading_children_at, tick, 8);
-    border_color = lerp_color_alpha(border_color, folder_tree_node->finished_loading_children_at, tick, 8);
-    text_color = lerp_color_alpha(text_color, folder_tree_node->finished_loading_children_at, tick, 8);
+    background_color = lerp_color_alpha(background_color, folder_tree_node->loaded_at, tick, 8);
+    border_color = lerp_color_alpha(border_color, folder_tree_node->loaded_at, tick, 8);
+    text_color = lerp_color_alpha(text_color, folder_tree_node->loaded_at, tick, 8);
 
     draw_list->AddRectFilled(start, start + size, background_color, rounding);
     draw_list->AddRect(start, start + size, border_color, rounding);

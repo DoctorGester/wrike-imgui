@@ -45,6 +45,8 @@ Request_Id modify_task_request = NO_REQUEST;
 Request_Id suggested_folders_request = NO_REQUEST;
 Request_Id suggested_contacts_request = NO_REQUEST;
 Request_Id starred_folders_request = NO_REQUEST;
+Request_Id spaces_request = NO_REQUEST;
+Request_Id spaces_folders_request = NO_REQUEST;
 
 const Folder_Id ROOT_FOLDER = -1;
 
@@ -73,6 +75,8 @@ static char* folder_header_json_content = NULL;
 static char* suggested_folders_json_content = NULL; // TODO looks like a lot of waste
 static char* suggested_users_json_content = NULL; // TODO also there
 static char* starred_folders_json_content = NULL;
+static char* spaces_json_content = NULL;
+static char* spaces_folders_json_content = NULL;
 static char* inbox_json_content = NULL;
 
 u32 tick = 0;
@@ -150,9 +154,7 @@ void request_folder_children_for_folder_tree(Folder_Id folder_id) {
     platform_api_request(FOLDER_TREE_CHILDREN_REQUEST, url, Http_Get, (void*) (intptr_t) folder_id);
 }
 
-void request_multiple_folders(Array<Folder_Id> folders) {
-    assert(folders.length > 0);
-
+static String build_folder_request_url(Array<Folder_Id> folders) {
     String url = tprintf("folders/");
 
     for (Folder_Id* it = folders.data; it != folders.data + folders.length; it++) {
@@ -168,6 +170,22 @@ void request_multiple_folders(Array<Folder_Id> folders) {
             url = tprintf("%.*s,%.16s", url.length, url.start, output_folder_and_account_id);
         }
     }
+
+    return url;
+}
+
+void request_multiple_folders_for_spaces(Array<Folder_Id> folders) {
+    assert(folders.length > 0);
+
+    String url = build_folder_request_url(folders);
+
+    api_request(Http_Get, spaces_folders_request, "%s", url.start);
+}
+
+void request_multiple_folders(Array<Folder_Id> folders) {
+    assert(folders.length > 0);
+
+    String url = build_folder_request_url(folders);
 
     url = tprintf("%.*s%s", url.length, url.start, "?fields=['color']");
 
@@ -250,6 +268,14 @@ void api_request_success(Request_Id request_id, char* content, u32 content_lengt
         starred_folders_request = NO_REQUEST;
 
         process_json_content(starred_folders_json_content, process_starred_folders_data, json_with_tokens);
+    } else if (request_id == spaces_request) {
+        spaces_request = NO_REQUEST;
+
+        process_json_content(spaces_json_content, process_spaces_data, json_with_tokens);
+    } else if (request_id == spaces_folders_request) {
+        spaces_folders_request = NO_REQUEST;
+
+        process_json_content(spaces_folders_json_content, process_spaces_folders_data, json_with_tokens);
     } else if (request_id == folders_request) {
         folders_request = NO_REQUEST;
 
@@ -555,9 +581,8 @@ static void draw_ui() {
     }
 
     bool loading_me = me_request != NO_REQUEST;
-    bool loading_workflows = !custom_statuses_were_loaded;
 
-    if (loading_me || loading_workflows) {
+    if (loading_me) {
         draw_loading_screen();
 
         return;
@@ -721,9 +746,11 @@ bool init() {
     folder_tree_init();
 
     api_request(Http_Get, me_request, "contacts?me=true");
+    // TODO do not request all custom fields, instead request them on demand in task_list and task_view
     api_request(Http_Get, account_request, "account?fields=['customFields']");
     api_request(Http_Get, inbox_request, "internal/notifications?notificationTypes=['Assign','Mention','Status']");
     api_request(Http_Get, workflows_request, "workflows");
+    api_request(Http_Get, spaces_request, "internal/spaces?type=User");
     api_request(Http_Get, starred_folders_request, "folders?starred&fields=['color']");
     api_request(Http_Get, suggested_folders_request, "folders?suggestedParents&fields=['color']");
     api_request(Http_Get, suggested_contacts_request, "internal/contacts?suggestType=Responsibles");

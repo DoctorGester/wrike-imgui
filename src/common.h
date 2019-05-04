@@ -120,6 +120,15 @@ u32 list_add(Temporary_List<T>* array, T value) {
     return array->length++;
 }
 
+template<typename T>
+Array<T> list_to_array(Temporary_List<T>* array) {
+    Array<T> result;
+    result.data = array->values;
+    result.length = array->length;
+
+    return result;
+}
+
 inline float lerp(float time_from, float time_to, float scale_to, float max) {
     float delta = (time_to - time_from);
 

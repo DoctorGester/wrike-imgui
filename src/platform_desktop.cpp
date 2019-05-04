@@ -252,9 +252,9 @@ static void process_completed_requests() {
 
                 printf("Request #%i processed in %.3fms\n", request->request_id, delta * 1000.0 / SDL_GetPerformanceFrequency());
             } else {
-                FREE(request->data_read);
-
                 printf("%.*s\n", request->data_length, request->data_read);
+
+                FREE(request->data_read);
             }
 
             // data_read is managed by receiver in case of 200

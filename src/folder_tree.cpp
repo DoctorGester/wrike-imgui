@@ -74,6 +74,19 @@ struct Folder_Tree {
     Lazy_Array<Flattened_Folder_Node, 64> flattened;
 };
 
+struct Space {
+    Folder_Id folder_id;
+    String name;
+    String avatar_url;
+    Request_Id avatar_request_id;
+    Memory_Image avatar{};
+    u32 avatar_loaded_at;
+
+    bool is_expanded;
+
+    Folder_Tree tree;
+};
+
 const Folder_Handle NULL_FOLDER_HANDLE(-1);
 
 static Folder_Tree shared_folders_tree;
@@ -88,6 +101,7 @@ static char search_buffer[128];
 Array<Folder_Tree_Node> all_nodes{};
 
 Array<Folder> suggested_folders{};
+Array<Space> spaces{};
 Array<Folder_Tree_Node*> folder_tree_search_result{};
 
 inline Folder_Tree_Node* get_folder_node_by_handle(Folder_Handle handle) {
@@ -174,9 +188,22 @@ static Parent_Child_Pair* find_top_parent_child_pair_by_parent_handle(Folder_Han
     return NULL;
 }
 
+static void generate_n_skeleton_nodes(Folder_Tree& tree, u32 how_many, u32 nesting) {
+    Flattened_Folder_Node* skeletons = lazy_array_reserve_n_values(tree.flattened, how_many);
+
+    for (Flattened_Folder_Node* it = skeletons; it != skeletons + how_many; it++) {
+        it->nesting = nesting;
+        it->skeleton = true;
+    }
+}
+
 static void rebuild_flattened_folder_tree_recursively(Folder_Tree& tree, Folder_Handle parent_handle, u32 nesting) {
     Folder_Tree_Node* parent_node = get_folder_node_by_handle(parent_handle);
     Parent_Child_Pair* top_pair = find_top_parent_child_pair_by_parent_handle(parent_handle, parent_node->num_children);
+
+    if (!top_pair) {
+        return;
+    }
 
     for (u32 pair_index = 0; pair_index < parent_node->num_children; pair_index++) {
         Parent_Child_Pair* pair = top_pair + pair_index;
@@ -193,12 +220,7 @@ static void rebuild_flattened_folder_tree_recursively(Folder_Tree& tree, Folder_
             if (child_node->children_loaded) {
                 rebuild_flattened_folder_tree_recursively(tree, pair->child, nesting + 1);
             } else {
-                Flattened_Folder_Node* skeletons = lazy_array_reserve_n_values(tree.flattened, child_node->num_children);
-
-                for (Flattened_Folder_Node* it = skeletons; it != skeletons + child_node->num_children; it++) {
-                    it->nesting = nesting + 1;
-                    it->skeleton = true;
-                }
+                generate_n_skeleton_nodes(tree, child_node->num_children, nesting + 1);
             }
         }
     }
@@ -212,11 +234,36 @@ static void rebuild_flattened_folder_tree(Folder_Tree& tree) {
     rebuild_flattened_folder_tree_recursively(tree, tree.root, 0);
 }
 
+static void rebuild_space_flattened_folder_tree(Space* space) {
+    Folder_Tree& tree = space->tree;
+
+    if (space->is_expanded) {
+        qsort(parent_child_pairs.data, parent_child_pairs.length, sizeof(Parent_Child_Pair), compare_parent_child_pairs);
+
+        lazy_array_soft_reset(tree.flattened);
+
+        Folder_Tree_Node* space_node = get_folder_node_by_handle(tree.root);
+
+        if (!space_node->children_loaded) {
+            generate_n_skeleton_nodes(tree, space_node->num_children, 0);
+        }
+
+        rebuild_flattened_folder_tree_recursively(tree, tree.root, 0);
+    } else {
+        lazy_array_soft_reset(tree.flattened);
+    }
+}
+
 static void rebuild_flattened_folder_trees() {
     rebuild_flattened_folder_tree(starred_folders_tree);
     rebuild_flattened_folder_tree(shared_folders_tree);
+
+    for (Space* space = spaces.data; space != spaces.data + spaces.length; space++) {
+        rebuild_space_flattened_folder_tree(space);
+    }
 }
 
+// TODO can now be merged with folder_tree_node_element
 static bool draw_folder_tree_folder_element(ImDrawList* draw_list, ImVec2 element_top_left, ImVec2 element_size, float text_offset, u32 alpha, Folder* folder) {
     const float scale = platform_get_pixel_ratio(); // TODO might be slow
     const float text_height = ImGui::GetFontSize();
@@ -299,8 +346,8 @@ static void draw_flattened_folder_tree(Folder_Tree& tree, Vertical_Layout& layou
     float content_height = ImGui::GetWindowHeight();
     float offset_scroll_position = ImGui::GetScrollY() - frame_offset;
 
-    u32 first_visible_item = (u32) MIN(tree.flattened.length, MAX(0, (s32) floorf(offset_scroll_position / element_size.y)));
-    u32 last_visible_item = (u32) MIN(tree.flattened.length, (s32) ceilf((offset_scroll_position + content_height) / element_size.y));
+    u32 first_visible_item = (u32) MIN((s32) tree.flattened.length, MAX(0, (s32) floorf(offset_scroll_position / element_size.y)));
+    u32 last_visible_item = (u32) MIN((s32) tree.flattened.length, MAX(0, (s32) ceilf((offset_scroll_position + content_height) / element_size.y)));
     u32 items_out_of_sight_at_the_bottom = tree.flattened.length - last_visible_item;
 
     layout_advance(layout, first_visible_item * element_size.y);
@@ -359,6 +406,10 @@ static void draw_star_icon_filled(ImDrawList* draw_list, ImVec2 center, float sc
     fill(tri_right);
     fill(tri_left);
     fill(tri_down);
+}
+
+static void draw_circle_icon_filled(ImDrawList* draw_list, ImVec2 center, float scale) {
+    draw_list->AddCircleFilled(center, 3.0f * scale, IM_COL32_WHITE, 24);
 }
 
 static void draw_star_icon(ImDrawList* draw_list, ImVec2 center, float scale) {
@@ -468,14 +519,14 @@ static void draw_folder_tree_search_input() {
     ImGui::Dummy({ 0, 12.0f * platform_get_pixel_ratio() });
 }
 
-static void draw_folder_collection_header(ImDrawList* draw_list, ImVec2 top_left, ImVec2 element_size, const char* text) {
+static void draw_folder_collection_header(ImDrawList* draw_list, ImVec2 top_left, ImVec2 element_size, String text) {
     ImGui::PushFont(font_19px_bold);
 
     float font_height = ImGui::GetFontSize();
 
     ImVec2 text_top_left = top_left + ImVec2(40.0f * platform_get_pixel_ratio(), element_size.y / 2.0f - font_height / 2.0f);
 
-    draw_list->AddText(text_top_left, IM_COL32_WHITE, text, text + strlen(text));
+    draw_list->AddText(text_top_left, IM_COL32_WHITE, text.start, text.start + text.length);
 
     ImGui::PopFont();
 }
@@ -528,24 +579,62 @@ void draw_folder_tree(float column_width) {
         }
     } else {
         ImVec2 element_size{ImGui::GetContentRegionAvailWidth(), 30.0f * layout.scale};
+        ImVec2 icon_offset = ImVec2(23.0f, 16.0f) * layout.scale;
+        ImVec2 arrow_offset = ImVec2(column_width - 26.0f * layout.scale , element_size.y / 2.0f);
 
-        if (!get_folder_node_by_handle(starred_folders_tree.root)->children_loaded) {
-            draw_window_loading_indicator();
-        }
-
-        draw_star_icon_filled(draw_list, layout.cursor + ImVec2(23.0f, 16.0f) * layout.scale, layout.scale * 10.0f);
-        draw_folder_collection_header(draw_list, layout.cursor, element_size, "Starred");
+        draw_star_icon_filled(draw_list, layout.cursor + icon_offset, layout.scale * 10.0f);
+        draw_folder_collection_header(draw_list, layout.cursor, element_size, tprintf("%s", "Starred"));
         layout_advance(layout, element_size.y);
         draw_flattened_folder_tree(starred_folders_tree, layout);
 
         draw_folder_collection_separator(element_size, layout);
 
-        if (!get_folder_node_by_handle(shared_folders_tree.root)->children_loaded) {
-            draw_window_loading_indicator();
+        for (Space* space = spaces.data; space != spaces.data + spaces.length; space++) {
+            if (space->tree.root == NULL_FOLDER_HANDLE) {
+                continue;
+            }
+
+            ImGui::PushID(space);
+
+            draw_circle_icon_filled(draw_list, layout.cursor + icon_offset, layout.scale);
+            draw_folder_collection_header(draw_list, layout.cursor, element_size, space->name);
+
+            bool space_needs_rebuild = false;
+
+            Folder_Tree_Node* space_node = get_folder_node_by_handle(space->tree.root);
+
+            if (space_node->num_children) {
+                if (draw_expand_arrow_button(draw_list, layout.cursor + arrow_offset, element_size.y, space->is_expanded)) {
+                    space->is_expanded = !space->is_expanded;
+
+                    if (space->is_expanded) {
+                        request_folder_children_for_folder_tree(space->folder_id);
+                    }
+
+                    space_needs_rebuild = true;
+                }
+            }
+
+            layout_advance(layout, element_size.y);
+            draw_flattened_folder_tree(space->tree, layout);
+
+            // It seems unlikely that the space would be rebuilt both in draw and here since both rely on button press
+            if (space_needs_rebuild) {
+                rebuild_space_flattened_folder_tree(space);
+            }
+
+            draw_folder_collection_separator(element_size, layout);
+
+            ImGui::PopID();
         }
 
-        draw_list->AddCircleFilled(layout.cursor + ImVec2(23.0f, 16.0f) * layout.scale, 3.0f * layout.scale, IM_COL32_WHITE, 24);
-        draw_folder_collection_header(draw_list, layout.cursor, element_size, "Shared with me");
+        // TODO loading indicator for each collection
+        /*if (!get_folder_node_by_handle(shared_folders_tree.root)->children_loaded) {
+            draw_window_loading_indicator();
+        }*/
+
+        draw_circle_icon_filled(draw_list, layout.cursor + icon_offset, layout.scale);
+        draw_folder_collection_header(draw_list, layout.cursor, element_size, tprintf("%s", "Shared with me"));
         layout_advance(layout, element_size.y);
         draw_flattened_folder_tree(shared_folders_tree, layout);
 
@@ -592,7 +681,7 @@ void folder_tree_init() {
     all_nodes.data = (Folder_Tree_Node*) REALLOC(all_nodes.data, sizeof(Folder_Tree_Node) * 2);
 
     shared_folders_tree = make_folder_tree("Root", -1);
-    starred_folders_tree = make_folder_tree("Suggested", -2);
+    starred_folders_tree = make_folder_tree("Starred", -2);
 }
 
 Folder_Tree_Node* find_folder_tree_node_by_id(Folder_Id id, u32 id_hash) {
@@ -634,6 +723,7 @@ static Folder_Handle process_folder_tree_child_object(Folder_Handle parent_handl
 
     Folder_Tree_Node folder_data;
     folder_data.name.start = NULL;
+    folder_data.color = NULL;
 
     for (u32 propety_index = 0; propety_index < object_token->size; propety_index++, token++) {
         jsmntok_t* property_token = token++;
@@ -672,7 +762,7 @@ static Folder_Handle process_folder_tree_child_object(Folder_Handle parent_handl
     new_node->name = folder_data.name;
     new_node->color = folder_data.color;
     new_node->num_children = num_children;
-    new_node->finished_loading_children_at = tick;
+    new_node->loaded_at = tick;
 
     if (parent_handle != NULL_FOLDER_HANDLE) {
         try_add_parent_child_pair(parent_handle, new_handle);
@@ -685,12 +775,16 @@ void folder_tree_search(const char* query, Array<Folder_Tree_Node*>* result) {
 
 }
 
-void process_multiple_folders_data(char* json, u32 data_size, jsmntok_t*& token) {
-    u32 new_size = all_nodes.length + data_size;
+static void try_reserve_space_for_more_folder_nodes(u32 nodes_received) {
+    u32 new_size = all_nodes.length + nodes_received;
 
     if (all_nodes.length < new_size) {
         all_nodes.data = (Folder_Tree_Node*) REALLOC(all_nodes.data, sizeof(Folder_Tree_Node) * new_size);
     }
+}
+
+void process_multiple_folders_data(char* json, u32 data_size, jsmntok_t*& token) {
+    try_reserve_space_for_more_folder_nodes(data_size);
 
     for (u32 array_index = 0; array_index < data_size; array_index++) {
         process_folder_tree_child_object(NULL_FOLDER_HANDLE, json, token);
@@ -719,6 +813,35 @@ static void process_plain_folder_data_object(Folder* folder, char* json, jsmntok
             json_token_to_string(json, next_token, color);
 
             folder->color = string_to_folder_color(color);
+        } else {
+            eat_json(token);
+            token--;
+        }
+    }
+}
+
+static void process_space_data_object(Space* space, char* json, jsmntok_t*& token) {
+    jsmntok_t* object_token = token++;
+
+    assert(object_token->type == JSMN_OBJECT);
+
+    space->tree.root = NULL_FOLDER_HANDLE;
+    space->tree.flattened = {};
+    space->is_expanded = false;
+
+    for (u32 propety_index = 0; propety_index < object_token->size; propety_index++, token++) {
+        jsmntok_t* property_token = token++;
+
+        assert(property_token->type == JSMN_STRING);
+
+        jsmntok_t* next_token = token;
+
+        if (json_string_equals(json, property_token, "title")) {
+            json_token_to_string(json, next_token, space->name);
+        } else if (json_string_equals(json, property_token, "id")) {
+            json_token_to_right_part_of_id16(json, next_token, space->folder_id);
+        } else if (json_string_equals(json, property_token, "avatarUrl")) {
+            json_token_to_string(json, next_token, space->avatar_url);
         } else {
             eat_json(token);
             token--;
@@ -780,26 +903,70 @@ void process_suggested_folders_data(char* json, u32 data_size, jsmntok_t*& token
     }
 }
 
-void process_starred_folders_data(char* json, u32 data_size, jsmntok_t*& token) {
-    u32 new_size = all_nodes.length + data_size;
+static void process_data_for_tree(Folder_Tree& tree, char* json, u32 data_size, jsmntok_t*& token) {
+    try_reserve_space_for_more_folder_nodes(data_size);
 
-    if (all_nodes.length < new_size) {
-        all_nodes.data = (Folder_Tree_Node*) REALLOC(all_nodes.data, sizeof(Folder_Tree_Node) * new_size);
-    }
-
-    Folder_Tree_Node* root = get_folder_node_by_handle(starred_folders_tree.root);
+    Folder_Tree_Node* root = get_folder_node_by_handle(tree.root);
 
     assert(root);
 
     for (u32 array_index = 0; array_index < data_size; array_index++) {
-        process_folder_tree_child_object(starred_folders_tree.root, json, token);
+        process_folder_tree_child_object(tree.root, json, token);
     }
 
     root->finished_loading_children_at = tick;
     root->num_children = data_size;
     root->children_loaded = true;
 
-    rebuild_flattened_folder_tree(starred_folders_tree);
+    rebuild_flattened_folder_tree(tree);
+}
+
+void process_starred_folders_data(char* json, u32 data_size, jsmntok_t*& token) {
+    process_data_for_tree(starred_folders_tree, json, data_size, token);
+}
+
+void process_spaces_data(char* json, u32 data_size, jsmntok_t*& token) {
+    if (spaces.length < data_size) {
+        spaces.data = (Space*) REALLOC(spaces.data, sizeof(Space) * data_size);
+    }
+
+    spaces.length = 0;
+
+    Temporary_List<Folder_Id> folders_to_request{};
+
+    for (u32 array_index = 0; array_index < data_size; array_index++) {
+        Space* space = &spaces.data[spaces.length++];
+
+        process_space_data_object(space, json, token);
+
+        list_add(&folders_to_request, space->folder_id);
+    }
+
+    if (folders_to_request.length > 0) {
+        request_multiple_folders_for_spaces(list_to_array(&folders_to_request));
+    }
+}
+
+void process_spaces_folders_data(char* json, u32 data_size, jsmntok_t*& token) {
+    try_reserve_space_for_more_folder_nodes(data_size);
+
+    for (u32 array_index = 0; array_index < data_size; array_index++) {
+        Folder_Handle space_folder = process_folder_tree_child_object(NULL_FOLDER_HANDLE, json, token);
+        Folder_Tree_Node* space_folder_node = get_folder_node_by_handle(space_folder);
+
+        for (Space* space = spaces.data; space != spaces.data + spaces.length; space++) {
+            if (space->folder_id == space_folder_node->id) {
+                space->tree.root = space_folder;
+                space->is_expanded = true;
+
+                request_folder_children_for_folder_tree(space->folder_id);
+
+                rebuild_flattened_folder_tree(space->tree);
+
+                break;
+            }
+        }
+    }
 }
 
 Folder_Color* string_to_folder_color(String string) {
