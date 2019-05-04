@@ -961,7 +961,7 @@ void process_spaces_folders_data(char* json, u32 data_size, jsmntok_t*& token) {
 
                 request_folder_children_for_folder_tree(space->folder_id);
 
-                rebuild_flattened_folder_tree(space->tree);
+                rebuild_space_flattened_folder_tree(space);
 
                 break;
             }
