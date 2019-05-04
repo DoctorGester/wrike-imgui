@@ -47,8 +47,7 @@ struct Folder_Task {
 struct Folder_Header {
     Folder_Id id;
     String name;
-    Custom_Field_Id* custom_columns;
-    u32 num_custom_columns;
+    Array<Custom_Field_Id> custom_columns;
 };
 
 struct Sorted_Folder_Task {
@@ -123,6 +122,7 @@ static inline int compare_tasks_custom_fields(Folder_Task* a, Folder_Task* b, Cu
         }
     }
 
+    // TODO if both things are NULL then this comparison is unstable because comparison order is not guaranteed, bro!
     if (!a_value) {
         return 1;
     }
@@ -374,9 +374,9 @@ static void sort_by_custom_field(Custom_Field_Id field_id) {
 }
 
 Custom_Field** map_columns_to_custom_fields() {
-    Custom_Field** column_to_custom_field = (Custom_Field**) talloc(sizeof(Custom_Field*) * current_folder.num_custom_columns);
+    Custom_Field** column_to_custom_field = (Custom_Field**) talloc(sizeof(Custom_Field*) * current_folder.custom_columns.length);
 
-    for (u32 column = 0; column < current_folder.num_custom_columns; column++) {
+    for (u32 column = 0; column < current_folder.custom_columns.length; column++) {
         Custom_Field_Id custom_field_id = current_folder.custom_columns[column];
 
         // TODO hash cache!
@@ -568,7 +568,12 @@ String get_column_title(Table_Paint_Context& context, u32 column) {
 
         default: {
             Custom_Field* custom_field = context.column_to_custom_field[column - custom_columns_start_index];
-            column_title = custom_field->title;
+
+            if (custom_field) {
+                column_title = custom_field->title;
+            } else {
+                column_title.start = (char*) "...";
+            }
         }
     }
 
@@ -659,11 +664,13 @@ void draw_table_header(Table_Paint_Context& context, ImVec2 window_top_left) {
             if (column_sort_field == Task_List_Sort_Field_Custom_Field) {
                 Custom_Field* column_custom_field = context.column_to_custom_field[column - custom_columns_start_index];
 
-                if (button_state.pressed) {
-                    sort_by_custom_field(column_custom_field->id);
-                }
+                if (column_custom_field) {
+                    if (button_state.pressed) {
+                        sort_by_custom_field(column_custom_field->id);
+                    }
 
-                sorting_by_this_column = sort_custom_field_id == column_custom_field->id;
+                    sorting_by_this_column = sort_custom_field_id == column_custom_field->id;
+                }
             } else {
                 if (button_state.pressed) {
                     sort_by_field(column_sort_field);
@@ -700,9 +707,8 @@ void draw_task_list() {
     ImGui::BeginChildFrame(task_list_id, ImVec2(-1, -1));
 
     const bool is_folder_data_loading = folder_contents_request != NO_REQUEST || folder_header_request != NO_REQUEST;
-    const bool are_custom_fields_loading = account_request != NO_REQUEST;
 
-    if (!is_folder_data_loading && custom_statuses_were_loaded && !are_custom_fields_loading) {
+    if (!is_folder_data_loading && custom_statuses_were_loaded) {
         if (!has_been_sorted_after_loading) {
             sort_by_field(Task_List_Sort_Field_Title);
             has_been_sorted_after_loading = true;
@@ -718,7 +724,7 @@ void draw_task_list() {
         paint_context.row_height = row_height;
         paint_context.text_padding_y = row_height / 2.0f - ImGui::GetFontSize() / 2.0f;
         paint_context.column_to_custom_field = map_columns_to_custom_fields();
-        paint_context.total_columns = current_folder.num_custom_columns + custom_columns_start_index;
+        paint_context.total_columns = current_folder.custom_columns.length + custom_columns_start_index;
 
         draw_folder_header(paint_context, ImGui::GetWindowWidth());
 
@@ -810,7 +816,6 @@ void draw_task_list() {
         u32
                 loading_end_time = MAX(finished_loading_folder_contents_at, finished_loading_statuses_at);
                 loading_end_time = MAX(finished_loading_folder_header_at, loading_end_time);
-                loading_end_time = MAX(finished_loading_account_at, loading_end_time);
                 loading_end_time = MAX(started_showing_main_ui_at, loading_end_time);
 
         float alpha = lerp(loading_end_time, tick, 1.0f, 8);
@@ -946,15 +951,15 @@ void process_folder_header_data(char* json, u32 data_size, jsmntok_t*& token) {
         if (json_string_equals(json, property_token, "title")) {
             json_token_to_string(json, next_token, current_folder.name);
         } else if (json_string_equals(json, property_token, "customColumnIds")) {
-            current_folder.custom_columns = (Custom_Field_Id*) REALLOC(current_folder.custom_columns, sizeof(Custom_Field_Id) * next_token->size);
-            current_folder.num_custom_columns = 0;
+            current_folder.custom_columns.data = (Custom_Field_Id*) REALLOC(current_folder.custom_columns.data, sizeof(Custom_Field_Id) * next_token->size);
+            current_folder.custom_columns.length = 0;
 
             for (u32 array_index = 0; array_index < next_token->size; array_index++) {
                 jsmntok_t* id_token = ++token;
 
                 assert(id_token->type == JSMN_STRING);
 
-                json_token_to_right_part_of_id16(json, id_token, current_folder.custom_columns[current_folder.num_custom_columns++]);
+                json_token_to_right_part_of_id16(json, id_token, current_folder.custom_columns[current_folder.custom_columns.length++]);
             }
         } else {
             eat_json(token);
@@ -1063,5 +1068,5 @@ void set_current_folder_id(Folder_Id id) {
 }
 
 void process_current_folder_as_logical() {
-    current_folder.num_custom_columns = 0;
+    current_folder.custom_columns.length = 0;
 }
