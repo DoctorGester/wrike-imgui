@@ -32,7 +32,7 @@ struct Folder_Tree_Node : Folder {
 };
 
 void draw_folder_tree(float column_width);
-void folder_tree_init();
+void init_folder_tree();
 void process_folder_tree_children_request(Folder_Id parent_id, char* json, jsmntok_t* tokens, u32 num_tokens);
 void process_suggested_folders_data(char* json, u32 data_size, jsmntok_t*&token);
 void process_starred_folders_data(char* json, u32 data_size, jsmntok_t*& token);

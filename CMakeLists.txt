@@ -101,14 +101,17 @@ set(SOURCE_FILES
 
         src/platform.h
 
-        src/accounts.cpp
-        src/accounts.h
+        src/account.cpp
+        src/account.h
 
         src/users.cpp
         src/users.h
 
         src/workflows.cpp
         src/workflows.h
+
+        src/custom_fields.cpp
+        src/custom_fields.h
 
         src/inbox.cpp
         src/inbox.h

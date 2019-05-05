@@ -251,3 +251,24 @@ s32 hackenstein(const char* a, const char* b, u32 a_length, u32 b_length);
 s32 string_atoi(String* string);
 s8* string_in_substring(const s8* big, const s8* small, size_t slen);
 string_to_int_error string_to_int(s32 *out, char *s, u32 base);
+
+template <typename T>
+struct Entity_Handle {
+    s32 value;
+
+    Entity_Handle<T>(){};
+
+    explicit Entity_Handle<T>(s32 v) : value(v) {};
+
+    explicit operator s32() const {
+        return value;
+    }
+
+    bool operator ==(const Entity_Handle<T>& handle) const {
+        return value == handle.value;
+    }
+
+    bool operator !=(const Entity_Handle<T>& handle) const {
+        return value != handle.value;
+    }
+};

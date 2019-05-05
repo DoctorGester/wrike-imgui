@@ -48,50 +48,39 @@ struct Lazy_Array {
 };
 
 template <typename T, u16 initial_watermark>
-T* lazy_array_reserve_n_values(Lazy_Array<T, initial_watermark>& array, u32 n) {
-//    printf("Reserve %lu, watermark is %lu, length is %lu\n", n, array.watermark, array.length);
+void lazy_array_reserve_n_values(Lazy_Array<T, initial_watermark>& array, u32 n) {
     u32 new_length = array.length + n;
 
     if (new_length > array.watermark) {
-//        printf("Will reallocate %p, old wm %lu, old length %lu, new length %lu\n", array.data, array.watermark, array.length, new_length);
-
         if (array.watermark == 0) {
             array.watermark = MAX(initial_watermark, new_length);
         } else {
             array.watermark = MAX(array.watermark * 2, (u32) (new_length * 1.5));
         }
 
-//        printf("New WM is %lu, new size %lu\n", array.watermark, sizeof(T) * array.watermark);
-
         array.data = (T*) REALLOC(array.data, sizeof(T) * array.watermark);
-
-//        printf("Reallocated to %p with size %lu\n", array.data, array.watermark);
     }
+}
+
+template <typename T, u16 initial_watermark>
+T* lazy_array_add_n_values(Lazy_Array<T, initial_watermark>& array, u32 n) {
+    lazy_array_reserve_n_values(array, n);
 
     T* result = &array.data[array.length];
 
-    array.length = new_length;
+    array.length += n;
 
     return result;
 }
 
 template <typename T, u16 initial_watermark>
-u32 lazy_array_reserve_n_values_and_get_offset(Lazy_Array<T, initial_watermark>& array, u32 n) {
-    u32 offset = array.length;
-
-    lazy_array_reserve_n_values(array, n);
-
-    return offset;
-};
-
-template <typename T, u16 initial_watermark>
-Relative_Pointer<T> lazy_array_reserve_n_values_relative_pointer(Lazy_Array<T, initial_watermark>& array, u32 n) {
+Relative_Pointer<T> lazy_array_add_n_values_relative_pointer(Lazy_Array<T, initial_watermark>& array, u32 n) {
     Relative_Pointer<T> pointer;
 
     pointer.base = &array.data;
     pointer.offset = array.length;
 
-    lazy_array_reserve_n_values(array, n);
+    lazy_array_add_n_values(array, n);
 
     return pointer;
 };

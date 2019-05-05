@@ -1,9 +1,4 @@
-#pragma once
-
-#include <jsmn.h>
-#include "id_hash_map.h"
-
-#define NO_ACCOUNT -1
+#include "common.h"
 
 enum Custom_Field_Type {
     Custom_Field_Type_None,
@@ -25,11 +20,10 @@ struct Custom_Field {
     Custom_Field_Type type;
 };
 
-struct Account {
-    Account_Id id = NO_ACCOUNT;
-};
-
-extern Account account;
-
-void process_accounts_data(char* json, u32 data_size, jsmntok_t*&token);
+void init_custom_field_storage();
+void process_custom_fields_data(char* json, u32 data_size, jsmntok_t*&token);
+bool is_custom_field_requested(Custom_Field_Id id, u32 id_hash = 0);
+void try_queue_custom_field_info_request(Custom_Field_Id id, u32 id_hash = 0);
+void mark_custom_field_as_requested(Custom_Field_Id id, u32 id_hash = 0);
+Temporary_List<Custom_Field_Id > get_and_clear_custom_field_request_queue();
 Custom_Field* find_custom_field_by_id(Custom_Field_Id id, u32 id_hash = 0);

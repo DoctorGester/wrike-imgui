@@ -35,25 +35,7 @@
  *      comes in.
  */
 
-struct Folder_Handle {
-    s32 value;
-
-    Folder_Handle(){};
-
-    explicit Folder_Handle(s32 v) : value(v) {};
-
-    explicit operator s32() const {
-        return value;
-    }
-
-    bool operator ==(const Folder_Handle& handle) const {
-        return value == handle.value;
-    }
-
-    bool operator !=(const Folder_Handle& handle) const {
-        return value != handle.value;
-    }
-};
+using Folder_Handle = Entity_Handle<Folder_Tree_Node>;
 
 struct Parent_Child_Pair {
     Folder_Handle parent;
@@ -189,7 +171,7 @@ static Parent_Child_Pair* find_top_parent_child_pair_by_parent_handle(Folder_Han
 }
 
 static void generate_n_skeleton_nodes(Folder_Tree& tree, u32 how_many, u32 nesting) {
-    Flattened_Folder_Node* skeletons = lazy_array_reserve_n_values(tree.flattened, how_many);
+    Flattened_Folder_Node* skeletons = lazy_array_add_n_values(tree.flattened, how_many);
 
     for (Flattened_Folder_Node* it = skeletons; it != skeletons + how_many; it++) {
         it->nesting = nesting;
@@ -207,7 +189,7 @@ static void rebuild_flattened_folder_tree_recursively(Folder_Tree& tree, Folder_
 
     for (u32 pair_index = 0; pair_index < parent_node->num_children; pair_index++) {
         Parent_Child_Pair* pair = top_pair + pair_index;
-        Flattened_Folder_Node* flattened_node = lazy_array_reserve_n_values(tree.flattened, 1);
+        Flattened_Folder_Node* flattened_node = lazy_array_add_n_values(tree.flattened, 1);
 
         flattened_node->nesting = nesting;
         flattened_node->source = pair->child;
@@ -675,7 +657,7 @@ Folder_Tree make_folder_tree(const char *name, Folder_Id root_id) {
     return tree;
 }
 
-void folder_tree_init() {
+void init_folder_tree() {
     id_hash_map_init(&folder_id_to_handle_map);
 
     all_nodes.data = (Folder_Tree_Node*) REALLOC(all_nodes.data, sizeof(Folder_Tree_Node) * 2);
@@ -706,7 +688,7 @@ static void try_add_parent_child_pair(Folder_Handle parent, Folder_Handle child)
         }
     }
 
-    Parent_Child_Pair* pair = lazy_array_reserve_n_values(parent_child_pairs, 1);
+    Parent_Child_Pair* pair = lazy_array_add_n_values(parent_child_pairs, 1);
     pair->parent = parent;
     pair->child = child;
     pair->is_child_expanded = false;

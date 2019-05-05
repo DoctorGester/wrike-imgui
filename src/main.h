@@ -88,7 +88,7 @@ void select_and_request_folder_by_id(Folder_Id id);
 void request_folder_children_for_folder_tree(Folder_Id folder_id);
 void request_multiple_folders(Array<Folder_Id> folders);
 void request_multiple_folders_for_spaces(Array<Folder_Id> folders);
-void request_multiple_users(Array<User_Id> users);
+void request_multiple_users(Array<User_Id> custom_fields);
 void mark_notification_as_read(Inbox_Notification_Id notification_id);
 
 // TODO those probably leak both on desktop and web

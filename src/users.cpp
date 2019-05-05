@@ -5,7 +5,7 @@
 Lazy_Array<User, 32> users{};
 Array<User_Handle> suggested_users{};
 
-Lazy_Array<User_Id, 16> user_request_queue{};
+Temporary_List<User_Id> user_request_queue{};
 
 User_Handle this_user = NULL_USER_HANDLE;
 
@@ -154,18 +154,16 @@ User* get_user_by_handle(User_Handle handle) {
     return users.data + handle.value;
 }
 
-void try_queue_user_info_request(User_Id id) {
-    if (!is_user_requested(id)) {
-        *lazy_array_reserve_n_values(user_request_queue, 1) = id;
+void try_queue_user_info_request(User_Id id, u32 id_hash) {
+    if (!is_user_requested(id, id_hash)) {
+        list_add(&user_request_queue, id);
     }
 }
 
-Array<User_Id> get_and_clear_user_request_queue() {
-    Array<User_Id> result;
-    result.data = user_request_queue.data;
-    result.length = user_request_queue.length;
+Temporary_List<User_Id> get_and_clear_user_request_queue() {
+    Temporary_List<User_Id> result = user_request_queue;
 
-    lazy_array_soft_reset(user_request_queue);
+    user_request_queue = {};
 
     return result;
 }

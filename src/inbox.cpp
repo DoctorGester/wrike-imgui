@@ -287,7 +287,7 @@ void process_inbox_data(char* json, u32 data_size, jsmntok_t*& token) {
         if (old_notification) {
             *old_notification = new_notification;
         } else {
-            Inbox_Notification* allocated_notification = lazy_array_reserve_n_values(notifications, 1);
+            Inbox_Notification* allocated_notification = lazy_array_add_n_values(notifications, 1);
 
             *allocated_notification = new_notification;
         }

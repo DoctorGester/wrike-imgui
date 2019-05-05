@@ -4,7 +4,6 @@
 #include "id_hash_map.h"
 #include "json.h"
 #include "temporary_storage.h"
-#include "accounts.h"
 #include "main.h"
 #include "lazy_array.h"
 #include "platform.h"
@@ -13,6 +12,7 @@
 #include "task_view.h"
 #include "renderer.h"
 #include "ui.h"
+#include "custom_fields.h"
 
 #define IMGUI_DEFINE_MATH_OPERATORS
 #include <imgui_internal.h>
@@ -45,9 +45,9 @@ struct Folder_Task {
 };
 
 struct Folder_Header {
-    Folder_Id id;
-    String name;
-    Array<Custom_Field_Id> custom_columns;
+    Folder_Id id = 0;
+    String name{};
+    Array<Custom_Field_Id> custom_columns{};
 };
 
 struct Sorted_Folder_Task {
@@ -373,14 +373,20 @@ static void sort_by_custom_field(Custom_Field_Id field_id) {
     printf("Sorting %i elements by %i took %fms\n", folder_tasks.length, field_id, platform_get_delta_time_ms(start));
 }
 
-Custom_Field** map_columns_to_custom_fields() {
+Custom_Field** map_columns_to_custom_fields_and_queue_missing() {
     Custom_Field** column_to_custom_field = (Custom_Field**) talloc(sizeof(Custom_Field*) * current_folder.custom_columns.length);
 
     for (u32 column = 0; column < current_folder.custom_columns.length; column++) {
         Custom_Field_Id custom_field_id = current_folder.custom_columns[column];
 
         // TODO hash cache!
-        Custom_Field* custom_field = find_custom_field_by_id(custom_field_id, hash_id(custom_field_id));
+        u32 hash = hash_id(custom_field_id);
+
+        Custom_Field* custom_field = find_custom_field_by_id(custom_field_id, hash);
+
+        if (!custom_field) {
+            try_queue_custom_field_info_request(custom_field_id, hash);
+        }
 
         column_to_custom_field[column] = custom_field;
     }
@@ -405,7 +411,8 @@ Custom_Field_Value* try_find_custom_field_value_in_task(Folder_Task* task, Custo
 void draw_assignees_cell_contents(ImDrawList* draw_list, Folder_Task* task, ImVec2 text_position) {
     for (u32 assignee_index = 0; assignee_index < task->num_assignees; assignee_index++) {
         User_Id user_id = task->assignees[assignee_index];
-        User* user = find_user_by_id(user_id);
+        u32 hash = hash_id(user_id);
+        User* user = find_user_by_id(user_id, hash);
         u32 color = color_black_text_on_white;
 
         char* start, *end;
@@ -430,7 +437,7 @@ void draw_assignees_cell_contents(ImDrawList* draw_list, Folder_Task* task, ImVe
                 tprintf("...", &start, &end);
             }
 
-            try_queue_user_info_request(user_id);
+            try_queue_user_info_request(user_id, hash);
         }
 
         float text_width = ImGui::CalcTextSize(start, end).x;
@@ -708,6 +715,12 @@ void draw_task_list() {
 
     const bool is_folder_data_loading = folder_contents_request != NO_REQUEST || folder_header_request != NO_REQUEST;
 
+    Custom_Field** column_to_custom_field = NULL;
+
+    if (folder_header_request == NO_REQUEST) {
+        column_to_custom_field = map_columns_to_custom_fields_and_queue_missing();
+    }
+
     if (!is_folder_data_loading && custom_statuses_were_loaded) {
         if (!has_been_sorted_after_loading) {
             sort_by_field(Task_List_Sort_Field_Title);
@@ -723,7 +736,7 @@ void draw_task_list() {
         paint_context.draw_list = ImGui::GetWindowDrawList();
         paint_context.row_height = row_height;
         paint_context.text_padding_y = row_height / 2.0f - ImGui::GetFontSize() / 2.0f;
-        paint_context.column_to_custom_field = map_columns_to_custom_fields();
+        paint_context.column_to_custom_field = column_to_custom_field;
         paint_context.total_columns = current_folder.custom_columns.length + custom_columns_start_index;
 
         draw_folder_header(paint_context, ImGui::GetWindowWidth());
@@ -869,7 +882,7 @@ static void process_folder_contents_data_object(char* json, jsmntok_t*& token) {
             token++;
 
             if (next_token->size > 0) {
-                folder_task->assignees = lazy_array_reserve_n_values_relative_pointer(assignee_ids, next_token->size);
+                folder_task->assignees = lazy_array_add_n_values_relative_pointer(assignee_ids, next_token->size);
             }
 
             for (u32 field_index = 0; field_index < next_token->size; field_index++, token++) {
@@ -883,7 +896,7 @@ static void process_folder_contents_data_object(char* json, jsmntok_t*& token) {
             token++;
 
             if (next_token->size > 0) {
-                folder_task->parent_folder_ids = lazy_array_reserve_n_values_relative_pointer(parent_task_ids, next_token->size);
+                folder_task->parent_folder_ids = lazy_array_add_n_values_relative_pointer(parent_task_ids, next_token->size);
             }
 
             for (u32 field_index = 0; field_index < next_token->size; field_index++, token++) {
@@ -897,7 +910,7 @@ static void process_folder_contents_data_object(char* json, jsmntok_t*& token) {
             token++;
 
             if (next_token->size > 0) {
-                folder_task->parent_task_ids = lazy_array_reserve_n_values_relative_pointer(parent_task_ids, next_token->size);
+                folder_task->parent_task_ids = lazy_array_add_n_values_relative_pointer(parent_task_ids, next_token->size);
             }
 
             for (u32 field_index = 0; field_index < next_token->size; field_index++, token++) {
@@ -911,7 +924,7 @@ static void process_folder_contents_data_object(char* json, jsmntok_t*& token) {
             token++;
 
             if (next_token->size > 0) {
-                folder_task->custom_field_values = lazy_array_reserve_n_values_relative_pointer(custom_field_values, next_token->size);
+                folder_task->custom_field_values = lazy_array_add_n_values_relative_pointer(custom_field_values, next_token->size);
             }
 
             for (u32 field_index = 0; field_index < next_token->size; field_index++) {
@@ -980,7 +993,7 @@ static void associate_parent_tasks_with_sub_tasks(Folder_Id top_parent_id) {
             Folder_Id parent_id = source_task->parent_folder_ids[id_index];
 
             if (parent_id == top_parent_id) {
-                Sorted_Folder_Task** pointer_to_task = lazy_array_reserve_n_values(top_level_tasks, 1);
+                Sorted_Folder_Task** pointer_to_task = lazy_array_add_n_values(top_level_tasks, 1);
                 *pointer_to_task = folder_task;
             }
         }

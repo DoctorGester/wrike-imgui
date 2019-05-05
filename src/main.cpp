@@ -10,13 +10,14 @@
 
 #include "jsmn.h"
 #include "folder_tree.h"
+#include "custom_fields.h"
 #include "common.h"
 #include "json.h"
 #include "temporary_storage.h"
 #include "rich_text.h"
 #include "render_rich_text.h"
 #include "task_list.h"
-#include "accounts.h"
+#include "account.h"
 #include "task_view.h"
 #include "platform.h"
 #include "base32.h"
@@ -31,6 +32,7 @@ const Request_Id NO_REQUEST = -1;
 const Request_Id FOLDER_TREE_CHILDREN_REQUEST = -2; // TODO BIG HAQ
 const Request_Id NOTIFICATION_MARK_AS_READ_REQUEST = -3;
 const Request_Id LOAD_USERS_REQUEST = -4;
+const Request_Id LOAD_CUSTOM_FIELDS_REQUEST = -5;
 
 Request_Id me_request = NO_REQUEST;
 Request_Id folder_header_request = NO_REQUEST;
@@ -68,7 +70,7 @@ Task_Id selected_folder_task_id = 0;
 Task current_task{};
 
 static char* task_json_content = NULL;
-static char* accounts_json_content = NULL;
+static char* account_json_content = NULL;
 static char* folder_tasks_json_content = NULL;
 static char* workflows_json_content = NULL;
 static char* folder_header_json_content = NULL;
@@ -218,6 +220,34 @@ void request_multiple_users(Array<User_Id> users) {
     platform_api_request(LOAD_USERS_REQUEST, url, Http_Get, NULL);
 }
 
+static void request_multiple_custom_fields(Array<Custom_Field_Id> custom_fields) {
+    assert(custom_fields.length > 0);
+
+    String url = tprintf("customfields/");
+
+    for (Custom_Field_Id * it = custom_fields.data; it != custom_fields.data + custom_fields.length; it++) {
+        Custom_Field_Id custom_field_id = *it;
+
+        u32 hash = hash_id(custom_field_id);
+
+        if (!is_custom_field_requested(custom_field_id, hash)) {
+            mark_custom_field_as_requested(custom_field_id, hash);
+
+            u8 output_custom_field_and_account_id[16];
+
+            fill_id16('A', account.id, 'M', custom_field_id, output_custom_field_and_account_id);
+
+            if (it == custom_fields.data) {
+                url = tprintf("%.*s%.16s", url.length, url.start, output_custom_field_and_account_id);
+            } else {
+                url = tprintf("%.*s,%.16s", url.length, url.start, output_custom_field_and_account_id);
+            }
+        }
+    }
+
+    platform_api_request(LOAD_CUSTOM_FIELDS_REQUEST, url, Http_Get, NULL);
+}
+
 static void request_last_selected_folder_if_present() {
     char* last_selected_folder = platform_local_storage_get("last_selected_folder");
 
@@ -260,6 +290,9 @@ void api_request_success(Request_Id request_id, char* content, u32 content_lengt
     } else if (request_id == LOAD_USERS_REQUEST) {
         // TODO @Leak content is leaked
         process_json_data_segment(content, json_with_tokens.tokens, json_with_tokens.num_tokens, process_users_data);
+    } else if (request_id == LOAD_CUSTOM_FIELDS_REQUEST) {
+        // TODO @Leak content is leaked
+        process_json_data_segment(content, json_with_tokens.tokens, json_with_tokens.num_tokens, process_custom_fields_data);
     } else if (request_id == me_request) {
         me_request = NO_REQUEST;
         process_json_data_segment(content, json_with_tokens.tokens, json_with_tokens.num_tokens, process_users_data);
@@ -304,18 +337,15 @@ void api_request_success(Request_Id request_id, char* content, u32 content_lengt
 
         FREE(json_with_tokens.json);
     } else if (request_id == account_request) {
-        bool account_was_not_saved = account.id == NO_ACCOUNT;
-
-        printf("Received accounts, current account.id %d\n", account.id);
-
         account_request = NO_REQUEST;
-        process_json_content(accounts_json_content, process_accounts_data, json_with_tokens);
 
-        if (account_was_not_saved) {
-            platform_local_storage_set("account_id", tprintf("%i", account.id));
+        process_json_content(account_json_content, process_account_data, json_with_tokens);
 
-            request_account_data();
-        }
+        printf("Received account, account.id %d\n", account.id);
+
+        platform_local_storage_set("account_id", tprintf("%i", account.id));
+
+        request_account_data();
 
         finished_loading_account_at = tick;
     } else if (request_id == workflows_request) {
@@ -620,11 +650,18 @@ static void draw_ui() {
 
     draw_task_view_popup_if_necessary();
 
-    Array<User_Id> user_request_queue = get_and_clear_user_request_queue();
-
     // May want to control how often this happens
+
+    Temporary_List<User_Id> user_request_queue = get_and_clear_user_request_queue();
+
     if (user_request_queue.length > 0) {
-        request_multiple_users(user_request_queue);
+        request_multiple_users(list_to_array(&user_request_queue));
+    }
+
+    Temporary_List<Custom_Field_Id> custom_field_request_queue = get_and_clear_custom_field_request_queue();
+
+    if (custom_field_request_queue.length > 0) {
+        request_multiple_custom_fields(list_to_array(&custom_field_request_queue));
     }
 }
 
@@ -709,6 +746,8 @@ void load_persisted_settings() {
             }
         }
     } else {
+        api_request(Http_Get, account_request, "account");
+
         printf("Account id not found in settings\n");
     }
 }
@@ -743,11 +782,10 @@ bool init() {
     platform_early_init();
 
     init_user_storage();
-    folder_tree_init();
+    init_custom_field_storage();
+    init_folder_tree();
 
     api_request(Http_Get, me_request, "contacts?me=true");
-    // TODO do not request all custom fields, instead request them on demand in task_list and task_view
-    api_request(Http_Get, account_request, "account?fields=['customFields']");
     api_request(Http_Get, inbox_request, "internal/notifications?notificationTypes=['Assign','Mention','Status']");
     api_request(Http_Get, workflows_request, "workflows");
     api_request(Http_Get, spaces_request, "internal/spaces?type=User");

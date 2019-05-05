@@ -18,25 +18,7 @@ struct User {
     u32 avatar_loaded_at;
 };
 
-struct User_Handle {
-    s32 value;
-
-    User_Handle(){};
-
-    explicit User_Handle(s32 v) : value(v) {};
-
-    explicit operator s32() const {
-        return value;
-    }
-
-    bool operator ==(const User_Handle& handle) const {
-        return value == handle.value;
-    }
-
-    bool operator !=(const User_Handle& handle) const {
-        return value != handle.value;
-    }
-};
+using User_Handle = Entity_Handle<User>;
 
 extern Lazy_Array<User, 32> users;
 extern Array<User_Handle> suggested_users;
@@ -59,8 +41,8 @@ void mark_user_as_requested(User_Id id, u32 id_hash = 0);
 
 bool check_and_request_user_avatar_if_necessary(User* user);
 
-void try_queue_user_info_request(User_Id id);
-Array<User_Id> get_and_clear_user_request_queue();
+void try_queue_user_info_request(User_Id id, u32 id_hash = 0);
+Temporary_List<User_Id> get_and_clear_user_request_queue();
 
 inline String full_user_name_to_temporary_string(User* user) {
     // This function used tprintf("%.*s %.*s", ...) earlier, but turns out snprintf is ridiculously slow

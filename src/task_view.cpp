@@ -7,8 +7,8 @@
 #include "platform.h"
 #include "users.h"
 #include "workflows.h"
-#include "accounts.h"
 #include "ui.h"
+#include "custom_fields.h"
 
 #include <imgui.h>
 #include <cstdlib>
@@ -1148,9 +1148,12 @@ static float draw_custom_fields(ImVec2 top_left, float wrap_width) {
 
     for (u32 field_index = 0; field_index < current_task.inherited_custom_fields.length; field_index++) {
         Custom_Field_Id custom_field_id = current_task.inherited_custom_fields[field_index];
-        Custom_Field* custom_field = find_custom_field_by_id(custom_field_id);
+
+        u32 field_hash = hash_id(custom_field_id);
+        Custom_Field* custom_field = find_custom_field_by_id(custom_field_id, field_hash);
 
         if (!custom_field) {
+            try_queue_custom_field_info_request(custom_field_id, field_hash);
             continue;
         }
 
@@ -1698,8 +1701,8 @@ void process_task_comments_data(char* json, u32 data_size, jsmntok_t*& token) {
                 temporary_storage_mark();
 
                 Rich_Text temporary_text = parse_string_into_temporary_rich_text(comment_text);
-                Rich_Text_String* persisted_strings = lazy_array_reserve_n_values(comment_strings, temporary_text.rich.length);
-                char* persisted_chars = lazy_array_reserve_n_values(comment_chars, temporary_text.raw.length);
+                Rich_Text_String* persisted_strings = lazy_array_add_n_values(comment_strings, temporary_text.rich.length);
+                char* persisted_chars = lazy_array_add_n_values(comment_chars, temporary_text.raw.length);
 
                 // We'll fix up the data pointers later
                 memcpy(persisted_chars, temporary_text.raw.start, temporary_text.raw.length);
