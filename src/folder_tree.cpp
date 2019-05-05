@@ -578,7 +578,11 @@ void draw_folder_tree(float column_width) {
 
             ImGui::PushID(space);
 
-            draw_circle_icon_filled(draw_list, layout.cursor + icon_offset, layout.scale);
+            if (space->avatar.texture_id) {
+                ImVec2 avatar_offset = ImVec2(10, 4) * layout.scale;
+                draw_circular_image(draw_list, space->avatar, layout.cursor + avatar_offset, 24.0f * layout.scale, space->avatar_loaded_at);
+            }
+
             draw_folder_collection_header(draw_list, layout.cursor, element_size, space->name);
 
             bool space_needs_rebuild = false;
@@ -678,6 +682,16 @@ Folder_Tree_Node* find_folder_tree_node_by_id(Folder_Id id, u32 id_hash) {
     }
 
     return &all_nodes[(s32) handle];
+}
+
+Space *find_space_by_avatar_request_id(Request_Id request_id) {
+    for (Space* it = spaces.data; it != spaces.data + spaces.length; it++) {
+        if (it->avatar_request_id == request_id) {
+            return it;
+        }
+    }
+
+    return NULL;
 }
 
 static void try_add_parent_child_pair(Folder_Handle parent, Folder_Handle child) {
@@ -810,6 +824,7 @@ static void process_space_data_object(Space* space, char* json, jsmntok_t*& toke
     space->tree.root = NULL_FOLDER_HANDLE;
     space->tree.flattened = {};
     space->is_expanded = false;
+    space->avatar = {};
 
     for (u32 propety_index = 0; propety_index < object_token->size; propety_index++, token++) {
         jsmntok_t* property_token = token++;
@@ -829,6 +844,8 @@ static void process_space_data_object(Space* space, char* json, jsmntok_t*& toke
             token--;
         }
     }
+
+    image_request(space->avatar_request_id, "%.*s", space->avatar_url.length, space->avatar_url.start);
 }
 
 void process_folder_tree_children_request(Folder_Id parent_id, char* json, jsmntok_t* tokens, u32 num_tokens) {
@@ -949,6 +966,12 @@ void process_spaces_folders_data(char* json, u32 data_size, jsmntok_t*& token) {
             }
         }
     }
+}
+
+void set_space_avatar_image(Space* space, Memory_Image image) {
+    space->avatar = image;
+    space->avatar_loaded_at = tick;
+    space->avatar_request_id = NO_REQUEST;
 }
 
 Folder_Color* string_to_folder_color(String string) {

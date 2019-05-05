@@ -89,18 +89,22 @@ void draw_loading_spinner(ImDrawList* draw_list, ImVec2 top_left, float radius, 
     draw_list->PathStroke(color, false, thickness);
 }
 
+void draw_circular_image(ImDrawList* draw_list, Memory_Image image, ImVec2 top_left, float avatar_side_px, u32 loaded_at) {
+    float half_avatar_side = avatar_side_px / 2.0f;
+    ImTextureID avatar_texture_id = (ImTextureID)(intptr_t) image.texture_id;
+
+    u32 avatar_color = 0x00FFFFFF;
+    u32 alpha = (u32) roundf(lerp(loaded_at, tick, 255, 14));
+    u32 avatar_color_with_alpha = avatar_color | (alpha << 24);
+
+    draw_list->PushTextureID(avatar_texture_id);
+    fill_antialiased_textured_circle(draw_list, top_left + ImVec2(half_avatar_side, half_avatar_side), half_avatar_side, avatar_color_with_alpha, 32);
+    draw_list->PopTextureID();
+}
+
 void draw_circular_user_avatar(ImDrawList* draw_list, User* user, ImVec2 top_left, float avatar_side_px) {
     if (user && check_and_request_user_avatar_if_necessary(user)) {
-        float half_avatar_side = avatar_side_px / 2.0f;
-        ImTextureID avatar_texture_id = (ImTextureID)(intptr_t) user->avatar.texture_id;
-
-        u32 avatar_color = 0x00FFFFFF;
-        u32 alpha = (u32) roundf(lerp(user->avatar_loaded_at, tick, 255, 14));
-        u32 avatar_color_with_alpha = avatar_color | (alpha << 24);
-
-        draw_list->PushTextureID(avatar_texture_id);
-        fill_antialiased_textured_circle(draw_list, top_left + ImVec2(half_avatar_side, half_avatar_side), half_avatar_side, avatar_color_with_alpha, 32);
-        draw_list->PopTextureID();
+        draw_circular_image(draw_list, user->avatar, top_left, avatar_side_px, user->avatar_loaded_at);
     } else {
         static const u32 spinner_color = color_link;
 

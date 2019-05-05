@@ -385,9 +385,21 @@ void image_load_success(Request_Id request_id, u8* pixel_data, u32 width, u32 he
         load_image_into_gpu_memory(avatar, pixel_data);
 
         user_or_null->avatar_loaded_at = tick;
-
-        free(pixel_data);
     }
+
+    Space* space_or_null = find_space_by_avatar_request_id(request_id);
+
+    if (space_or_null) {
+        Memory_Image avatar{};
+        avatar.width = width;
+        avatar.height = height;
+
+        load_image_into_gpu_memory(avatar, pixel_data);
+
+        set_space_avatar_image(space_or_null, avatar);
+    }
+
+    free(pixel_data);
 }
 
 void select_and_request_folder_by_id(Folder_Id id) {

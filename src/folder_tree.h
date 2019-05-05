@@ -31,6 +31,8 @@ struct Folder_Tree_Node : Folder {
     bool children_loaded;
 };
 
+struct Space;
+
 void draw_folder_tree(float column_width);
 void init_folder_tree();
 void process_folder_tree_children_request(Folder_Id parent_id, char* json, jsmntok_t* tokens, u32 num_tokens);
@@ -43,6 +45,8 @@ void process_spaces_folders_data(char* json, u32 data_size, jsmntok_t*& token);
 void folder_tree_search(const char* query, Array<Folder_Tree_Node*>* result);
 
 Folder_Tree_Node* find_folder_tree_node_by_id(Folder_Id id, u32 id_hash = 0);
+Space* find_space_by_avatar_request_id(Request_Id request_id);
+void set_space_avatar_image(Space* space, Memory_Image image);
 
 extern Array<Folder_Tree_Node> all_nodes;
 

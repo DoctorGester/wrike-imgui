@@ -33,6 +33,7 @@ Button_State button(const void* pointer_id, ImVec2 top_left, ImVec2 size);
 
 void draw_circular_user_avatar(ImDrawList* draw_list, User* user, ImVec2 top_left, float avatar_side_px);
 void draw_loading_indicator(ImVec2 center, u32 started_showing_at, ImVec2 offset = { 0, 0 });
+void draw_circular_image(ImDrawList* draw_list, Memory_Image image, ImVec2 top_left, float avatar_side_px, u32 loaded_at);
 void draw_window_loading_indicator();
 void draw_loading_spinner(ImDrawList* draw_list, ImVec2 top_left, float radius, int thickness, u32 color);
 bool draw_expand_arrow_button(ImDrawList* draw_list, ImVec2 arrow_point, float height, bool is_expanded);
