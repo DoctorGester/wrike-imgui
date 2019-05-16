@@ -32,3 +32,4 @@ extern Array<Workflow> workflows;
 
 void process_workflows_data(char* json, u32 data_size, jsmntok_t*&token);
 Custom_Status* find_custom_status_by_id(Custom_Status_Id id, u32 id_hash = 0);
+Status_Group status_group_name_to_status_group(String& name);

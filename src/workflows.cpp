@@ -58,7 +58,7 @@ static u32 color_name_to_color_argb(String &color_name) {
     return 0xFF000000;
 }
 
-static Status_Group status_group_name_to_status_group(String& name) {
+Status_Group status_group_name_to_status_group(String& name) {
     if (name.length < 2) {
         return Status_Group_Invalid;
     }

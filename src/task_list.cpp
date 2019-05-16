@@ -30,6 +30,8 @@ struct Folder_Task {
     Custom_Status_Id custom_status_id;
     u32 custom_status_id_hash;
 
+    Status_Group status_group;
+
     String title;
     Relative_Pointer<Custom_Field_Value> custom_field_values;
     u32 num_custom_field_values;
@@ -276,7 +278,7 @@ static inline Comparator* get_comparator_by_current_sort_type() {
 }
 
 static u32 rebuild_flattened_task_tree_hierarchically(Sorted_Folder_Task* task, bool is_parent_expanded, u32 level, Flattened_Folder_Task** current_task) {
-    if (show_only_active_tasks && task->cached_status->group != Status_Group_Active) {
+    if (show_only_active_tasks && task->source_task->status_group != Status_Group_Active) {
         return 0;
     }
 
@@ -872,6 +874,11 @@ static void process_folder_contents_data_object(char* json, jsmntok_t*& token) {
             json_token_to_string(json, next_token, folder_task->title);
         } else if (json_string_equals(json, property_token, "id")) {
             json_token_to_right_part_of_id16(json, next_token, folder_task->id);
+        } else if (json_string_equals(json, property_token, "status")) {
+            String group_name;
+            json_token_to_string(json, next_token, group_name);
+
+            folder_task->status_group = status_group_name_to_status_group(group_name);
         } else if (json_string_equals(json, property_token, "customStatusId")) {
             json_token_to_right_part_of_id16(json, next_token, folder_task->custom_status_id);
 
