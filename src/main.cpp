@@ -385,6 +385,10 @@ void image_load_success(Request_Id request_id, u8* pixel_data, u32 width, u32 he
         load_image_into_gpu_memory(avatar, pixel_data);
 
         user_or_null->avatar_loaded_at = tick;
+
+        free(pixel_data);
+
+        return;
     }
 
     Space* space_or_null = find_space_by_avatar_request_id(request_id);
@@ -400,6 +404,21 @@ void image_load_success(Request_Id request_id, u8* pixel_data, u32 width, u32 he
     }
 
     free(pixel_data);
+}
+
+extern "C"
+EXPORT
+void disk_image_load_success(Image_Load_Callback callback, u8* pixel_data, u32 width, u32 height) {
+    Memory_Image image;
+
+    image.width = width;
+    image.height = height;
+
+    load_image_into_gpu_memory(image, pixel_data);
+
+    free(pixel_data);
+
+    callback(image);
 }
 
 void select_and_request_folder_by_id(Folder_Id id) {
@@ -798,7 +817,7 @@ bool init() {
     init_folder_tree();
 
     api_request(Http_Get, me_request, "contacts?me=true");
-    api_request(Http_Get, inbox_request, "internal/notifications?notificationTypes=['Assign','Mention','Status']");
+    api_request(Http_Get, inbox_request, "internal/notifications?notificationTypes=['Assign','Mention']");
     api_request(Http_Get, workflows_request, "workflows");
     api_request(Http_Get, spaces_request, "internal/spaces?type=User");
     api_request(Http_Get, starred_folders_request, "folders?starred&fields=['color']");
@@ -817,8 +836,13 @@ bool init() {
 
     printf("Platform init: %s\n", result ? "true" : "false");
 
-    load_png_from_disk("resources/wrike_logo.png", logo);
-    set_header_logo(logo);
+    load_task_view_resources();
+
+    load_png_from_disk_async("resources/wrike_logo.png", [](Memory_Image image) {
+        logo = image;
+
+        set_header_logo(logo);
+    });
 
     return result;
 }

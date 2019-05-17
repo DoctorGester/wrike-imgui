@@ -1501,11 +1501,6 @@ static void draw_task_comments() {
 }
 
 void draw_task_contents() {
-    // TODO temporary code, resource loading should be moved out somewhere
-    if (!checkmark.width) {
-        load_png_from_disk("resources/checkmark_task_complete.png", checkmark);
-    }
-
     float header_wrap_width = ImGui::GetContentRegionAvailWidth() - 50.0f * platform_get_pixel_ratio(); // Accommodate for scroll bar
 
     ImGuiID task_content_id = ImGui::GetID("task_content");
@@ -1831,4 +1826,10 @@ void process_task_data(char* json, u32 data_size, jsmntok_t*& token) {
 
     parse_and_update_task_description(description);
     find_and_request_missing_folders_if_necessary();
+}
+
+void load_task_view_resources() {
+    load_png_from_disk_async("resources/checkmark_task_complete.png", [](Memory_Image image) {
+        checkmark = image;
+    });
 }

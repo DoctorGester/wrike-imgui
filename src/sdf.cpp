@@ -2,7 +2,6 @@
 
 #include <GLES2/gl2.h>
 #include <GLES2/gl2ext.h>
-#include <lodepng.h>
 #include <emscripten.h>
 #include <cmath>
 #include "sdf.h"

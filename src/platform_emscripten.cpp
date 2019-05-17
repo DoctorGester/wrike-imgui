@@ -331,6 +331,10 @@ void platform_open_url(String &permalink) {
            permalink.start, permalink.length);
 }
 
+void platform_load_png_async(Array<u8> in, Image_Load_Callback callback) {
+    EM_ASM({ decode_png($0, $1, $2); }, in.data, in.length, callback);
+}
+
 float platform_get_pixel_ratio() {
     return frame_pixel_ratio;
 }

@@ -27,3 +27,5 @@ void platform_api_request(Request_Id request_id, String url, Http_Method method,
 void platform_load_remote_image(Request_Id request_id, String full_url);
 void platform_local_storage_set(const char* key, String value); // TODO bad definition...
 char* platform_local_storage_get(const char* key); // You own the memory!
+
+void platform_load_png_async(Array<u8> in, Image_Load_Callback callback);

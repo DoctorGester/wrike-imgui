@@ -63,6 +63,8 @@ struct Memory_Image {
     unsigned height = 0;
 };
 
+typedef void (*Image_Load_Callback)(Memory_Image memory_image);
+
 struct String {
     char* start = NULL;
     u32 length = 0;
@@ -146,7 +148,7 @@ inline u32 lerp_color_alpha(u32 color, u32 tick_from, u32 tick_to, u32 over_tick
 }
 
 void load_image_into_gpu_memory(Memory_Image& image, void* pixels);
-bool load_png_from_disk(const char* path, Memory_Image& out);
+void load_png_from_disk_async(const char* path, Image_Load_Callback callback);
 
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 #define MAX(a, b) ((a) > (b) ? (a) : (b))

@@ -551,3 +551,15 @@ float platform_get_delta_time_ms(u64 delta_to) {
 
     return (float) ((now - delta_to) * 1000.0 / frequency);
 }
+
+void platform_load_png_async(Array<u8> in, Image_Load_Callback callback) {
+    u8* data;
+    u32 width, height;
+    u32 error = lodepng_decode32(&data, &width, &height, (const u8*) in.data, in.length);
+
+    if (error) {
+        return;
+    }
+
+    disk_image_load_success(callback, data, width, height);
+}

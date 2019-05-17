@@ -87,7 +87,7 @@ void renderer_draw_lists(ImDrawData* drawData) {
 
             if (draw_command->UserCallback) {
                 draw_command->UserCallback(cmd_list, draw_command);
-            } else {
+            } else if (draw_command->TextureId) {
                 glBindTexture(
                         GL_TEXTURE_2D,
                         (GLuint) (intptr_t) draw_command->TextureId

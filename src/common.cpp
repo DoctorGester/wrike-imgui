@@ -1,5 +1,4 @@
 #include <cstdio>
-#include <lodepng.h>
 #if EMSCRIPTEN
 #include <GLES2/gl2.h>
 #else
@@ -10,6 +9,8 @@
 #include "tracing.h"
 #include "platform.h"
 #include <string.h>
+#include <ctype.h>
+#include <limits.h>
 #include <cerrno>
 
 u32 argb_to_agbr(u32 argb) {
@@ -39,7 +40,7 @@ s32 string_atoi(String* string) {
     return n * sign;
 }
 
-char* read_file(const char* file_name) {
+char* read_file(const char* file_name, u32* out_length) {
     char* buffer = 0;
     long length;
     FILE* file_handle = fopen(file_name, "r");
@@ -54,15 +55,15 @@ char* read_file(const char* file_name) {
         fseek(file_handle, 0, SEEK_END);
         length = ftell(file_handle);
         fseek(file_handle, 0, SEEK_SET);
-        buffer = (char*) talloc(length + 1); // TODO this won't work with big files
+        buffer = (char*) talloc(length); // TODO this won't work with big files
 
         if (buffer) {
             fread(buffer, 1, length, file_handle);
         }
 
-        *(buffer + length) = '\0';
-
         fclose(file_handle);
+
+        *out_length = length;
     }
 
     return buffer;
@@ -89,21 +90,15 @@ void load_image_into_gpu_memory(Memory_Image& image, void* pixels) {
     image.texture_id = texture_id;
 }
 
-bool load_png_from_disk(const char* path, Memory_Image& out) {
-    unsigned char *data;
-    unsigned error = lodepng_decode32_file(&data, &out.width, &out.height, path);
+void load_png_from_disk_async(const char* path, Image_Load_Callback callback) {
+    Array<u8> image_data;
+    char* file_data = read_file(path, &image_data.length);
 
-    if (error) {
-        return false;
+    if (file_data) {
+        image_data.data = (u8*) file_data;
+
+        platform_load_png_async(image_data, callback);
     }
-
-    load_image_into_gpu_memory(out, data);
-
-    // TODO Not using a FREE macro because memory is coming from an outside library
-    // TODO     but honestly we should just record that memory too
-    free(data);
-
-    return true;
 }
 
 s32 _min(s32 d0, s32 d1, s32 d2, s32 bx, s32 ay)

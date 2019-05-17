@@ -14,6 +14,9 @@ void api_request_success(Request_Id request_id, char* content, u32 content_lengt
 extern "C"
 void image_load_success(Request_Id request_id, u8* pixel_data, u32 width, u32 height);
 
+extern "C"
+void disk_image_load_success(Image_Load_Callback callback, u8* pixel_data, u32 width, u32 height);
+
 enum View {
     View_Task_List,
     View_Inbox

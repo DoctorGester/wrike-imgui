@@ -29,7 +29,9 @@ set(CMAKE_CXX_STANDARD 11)
 include_directories(libc)
 include_directories(external)
 
-add_library(external
+
+
+set(EXTERNAL_SOURCES
         external/imgui.cpp
         external/imgui_demo.cpp
         external/imgui_draw.cpp
@@ -43,9 +45,6 @@ add_library(external
 
         external/xxhash.c
         external/xxhash.h
-
-        external/lodepng.c
-        external/lodepng.h
 
         external/html_entities.c
         external/html_entities.h
@@ -128,7 +127,14 @@ else()
     add_definitions(-DEMSCRIPTEN=0)
 
     set(SOURCE_FILES ${SOURCE_FILES} src/platform_desktop.cpp)
+
+    set(EXTERNAL_SOURCES ${EXTERNAL_SOURCES}
+            external/lodepng.c
+            external/lodepng.h
+    )
 endif()
+
+add_library(external ${EXTERNAL_SOURCES})
 
 add_definitions(-DIMGUI_DISABLE_OBSOLETE_FUNCTIONS)
 add_definitions(-DEMSCRIPTEN_HAS_UNBOUND_TYPE_NAMES=0)
@@ -150,7 +156,7 @@ add_custom_command(
 set(LINK_LIBRARIES external)
 
 if (${EMSCRIPTEN})
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -s WASM=1 -s FORCE_FILESYSTEM=1 -s TOTAL_MEMORY=128MB -s ASSERTIONS=1" )
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -s WASM=1 -s FORCE_FILESYSTEM=1 -s TOTAL_MEMORY=64MB -s ASSERTIONS=1" )
 
     if (${DEBUG})
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g4 -s ASSERTIONS=1")
