@@ -10,7 +10,7 @@
   "license": "ISC",
   "dependencies": {
     "body-parser": "^1.18.3",
-    "express": "^4.16.3",
+    "express": "4.17.0",
     "express-session": "^1.15.6",
     "hi-base32": "^0.5.0",
     "memorystore": "^1.6.0",
