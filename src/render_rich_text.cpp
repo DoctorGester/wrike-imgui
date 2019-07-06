@@ -3,7 +3,6 @@
 #include <imgui_internal.h>
 #include "render_rich_text.h"
 #include "rich_text.h"
-#include "renderer.h"
 #include "ui.h"
 #include "platform.h"
 

@@ -81,6 +81,14 @@ extern View current_view;
 extern Task current_task;
 extern Task_Id selected_folder_task_id;
 
+extern ImFont* font_regular;
+extern ImFont* font_28px;
+extern ImFont* font_19px;
+extern ImFont* font_19px_bold;
+extern ImFont* font_bold;
+extern ImFont* font_italic;
+extern ImFont* font_bold_italic;
+
 void request_task_by_task_id(Task_Id task_id);
 void add_assignee_to_task(Task_Id task_id, User_Id user_id);
 void add_parent_folder(Task_Id task_id, Folder_Id folder_id);

@@ -1,12 +1,18 @@
+#define GL_GLEXT_PROTOTYPES
+
 #include <stdio.h>
 #include <GLES2/gl2.h>
 #include <GLES2/gl2ext.h>
 #include <emscripten/emscripten.h>
 #include <emscripten/html5.h>
 #include <imgui_user.h>
-#include "renderer.h"
 #include "platform.h"
 #include "main.h"
+
+#define glBindVertexArray(x) glBindVertexArrayOES(x)
+#define glGenVertexArrays(x, y) glGenVertexArraysOES(x, y)
+#define GL_VERTEX_ARRAY_BINDING GL_VERTEX_ARRAY_BINDING_OES
+#include "opengl.cpp"
 
 static const char* vertex_shader_source =
         "uniform mat4 ProjMtx;                                  \n"
@@ -34,6 +40,35 @@ static const char* fragment_shader_source =
 
 static float frame_pixel_ratio = 1.0f;
 
+static Gl_Data gl_data{};
+
+static void begin_frame() {
+    ImGuiIO &io = ImGui::GetIO();
+
+    int width = 0;
+    int height = 0;
+
+    emscripten_get_canvas_element_size("canvas", &width, &height);
+
+    frame_pixel_ratio = (float) emscripten_get_device_pixel_ratio();
+
+    io.DisplaySize = ImVec2((float) width, (float) height);
+    io.DisplayFramebufferScale = ImVec2(frame_pixel_ratio, frame_pixel_ratio);
+
+    static u64 last = 0;
+
+    io.DeltaTime = platform_get_delta_time_ms(last) / 1000.0f;
+    last = platform_get_app_time_precise();
+
+    glClearColor(0.1f, 0.1f, 0.1f, 1);
+    glClear(GL_COLOR_BUFFER_BIT);
+}
+
+static void do_one_frame() {
+    begin_frame();
+    loop();
+}
+
 static int emscripten_mouse_callback(int eventType, const EmscriptenMouseEvent* mouseEvent, void* /*userData*/) {
     float scale = platform_get_pixel_ratio();
     ImGuiIO& io = ImGui::GetIO();
@@ -44,7 +79,7 @@ static int emscripten_mouse_callback(int eventType, const EmscriptenMouseEvent* 
 
     if (eventType == EMSCRIPTEN_EVENT_MOUSEUP) {
         // This allows us to respond to user clicks with stuff like opening urls, which otherwise get popup blocked
-        loop();
+        do_one_frame();
     }
 
     return true;
@@ -252,7 +287,7 @@ bool platform_init() {
 
     frame_pixel_ratio = (float) emscripten_get_device_pixel_ratio();
 
-    renderer_init(vertex_shader_source, fragment_shader_source);
+    opengl_program_init(gl_data, vertex_shader_source, fragment_shader_source);
 
     register_input_callbacks();
 
@@ -260,33 +295,11 @@ bool platform_init() {
 }
 
 void platform_loop() {
-    emscripten_set_main_loop(loop, 0, 1);
+    emscripten_set_main_loop(do_one_frame, 0, 1);
 }
 
-void platform_begin_frame() {
-    ImGuiIO &io = ImGui::GetIO();
-
-    int width = 0;
-    int height = 0;
-
-    emscripten_get_canvas_element_size("canvas", &width, &height);
-
-    frame_pixel_ratio = (float) emscripten_get_device_pixel_ratio();
-
-    io.DisplaySize = ImVec2((float) width, (float) height);
-    io.DisplayFramebufferScale = ImVec2(frame_pixel_ratio, frame_pixel_ratio);
-
-    static u64 last = 0;
-
-    io.DeltaTime = platform_get_delta_time_ms(last) / 1000.0f;
-    last = platform_get_app_time_precise();
-
-    glClearColor(0.1f, 0.1f, 0.1f, 1);
-    glClear(GL_COLOR_BUFFER_BIT);
-}
-
-void platform_end_frame() {
-
+void platform_render_frame() {
+    opengl_render_frame(ImGui::GetDrawData(), gl_data);
 }
 
 void platform_load_remote_image(Request_Id request_id, String full_url) {
@@ -333,6 +346,10 @@ void platform_open_url(String &permalink) {
 
 void platform_load_png_async(Array<u8> in, Image_Load_Callback callback) {
     EM_ASM({ decode_png($0, $1, $2); }, in.data, in.length, callback);
+}
+
+u32 platform_make_texture(u32 width, u32 height, u8 *pixels) {
+    return opengl_make_texture(width, height, pixels);
 }
 
 float platform_get_pixel_ratio() {

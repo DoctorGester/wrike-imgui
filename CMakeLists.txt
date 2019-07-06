@@ -1,13 +1,24 @@
 cmake_minimum_required(VERSION 3.9)
 
-if (${EMSCRIPTEN})
+if (${TARGET_EMSCRIPTEN})
     set(CMAKE_TOOLCHAIN_FILE ${EMSCRIPTEN_PATH}/cmake/Modules/Platform/Emscripten.cmake)
 endif()
 
 project(wrike-imgui)
 
-if (${EMSCRIPTEN})
+if (${TARGET_EMSCRIPTEN})
+elseif(${TARGET_OSX})
+elseif(${TARGET_SDL})
 else()
+    message(FATAL_ERROR "No target specified")
+endif()
+
+if (${TARGET_EMSCRIPTEN})
+elseif(${TARGET_OSX})
+    set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${PROJECT_SOURCE_DIR}/cmake")
+
+    include_directories("/usr/include")
+elseif(${TARGET_SDL})
     set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${PROJECT_SOURCE_DIR}/cmake")
     set(CURL_LIBRARY "-lcurl")
 
@@ -51,9 +62,6 @@ set(EXTERNAL_SOURCES
 )
 
 set(SOURCE_FILES
-        src/renderer.cpp
-        src/renderer.h
-
         src/json.cpp
         src/json.h
 
@@ -119,14 +127,16 @@ set(SOURCE_FILES
         src/main.h
 )
 
-if (${EMSCRIPTEN})
+if (${TARGET_EMSCRIPTEN})
     add_definitions(-DEMSCRIPTEN=1)
 
     set(SOURCE_FILES ${SOURCE_FILES} src/platform_emscripten.cpp)
-else()
+elseif(${TARGET_OSX})
+    set(SOURCE_FILES ${SOURCE_FILES} src/platform_osx.mm)
+elseif(${TARGET_SDL})
     add_definitions(-DEMSCRIPTEN=0)
 
-    set(SOURCE_FILES ${SOURCE_FILES} src/platform_desktop.cpp)
+    set(SOURCE_FILES ${SOURCE_FILES} src/platform_sdl.cpp)
 
     set(EXTERNAL_SOURCES ${EXTERNAL_SOURCES}
             external/lodepng.c
@@ -155,7 +165,7 @@ add_custom_command(
 
 set(LINK_LIBRARIES external)
 
-if (${EMSCRIPTEN})
+if (${TARGET_EMSCRIPTEN})
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -s WASM=1 -s FORCE_FILESYSTEM=1 -s TOTAL_MEMORY=64MB -s ASSERTIONS=1" )
 
     if (${DEBUG})
@@ -168,7 +178,13 @@ if (${EMSCRIPTEN})
 
     set(CMAKE_EXE_LINKER_FLAGS  "${CMAKE_EXE_LINKER_FLAGS} ${CMAKE_CXX_FLAGS} --bind --pre-js ${CMAKE_CURRENT_SOURCE_DIR}/out/resources.js" )
     add_definitions("-DEXPORT=__attribute__((used))")
-else()
+elseif(${TARGET_OSX})
+    if (${ENABLE_SANITIZER})
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g -fsanitize=address -fno-omit-frame-pointer")
+    endif()
+
+    add_definitions(-DEXPORT= )
+elseif(${TARGET_SDL})
     if (${ENABLE_SANITIZER})
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g -fsanitize=address -fno-omit-frame-pointer")
     endif()

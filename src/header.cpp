@@ -3,7 +3,6 @@
 #include <imgui_internal.h>
 #include <cstdint>
 #include "platform.h"
-#include "renderer.h"
 #include "users.h"
 #include "ui.h"
 #include "inbox.h"

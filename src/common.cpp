@@ -1,9 +1,4 @@
 #include <cstdio>
-#if EMSCRIPTEN
-#include <GLES2/gl2.h>
-#else
-#include <SDL2/SDL_opengl.h>
-#endif
 #include "common.h"
 #include "temporary_storage.h"
 #include "tracing.h"
@@ -73,21 +68,8 @@ static inline bool is_power_of_two(unsigned n) {
     return (n & (n - 1)) == 0;
 }
 
-void load_image_into_gpu_memory(Memory_Image& image, void* pixels) {
-    GLuint texture_id = 0;
-
-    glGenTextures(1, &texture_id);
-    glBindTexture(GL_TEXTURE_2D, texture_id);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, image.width, image.height, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
-
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-
-    //glGenerateMipmap(GL_TEXTURE_2D);
-
-    image.texture_id = texture_id;
+void load_image_into_gpu_memory(Memory_Image& image, u8* pixels) {
+    image.texture_id = platform_make_texture(image.width, image.height, pixels);
 }
 
 void load_png_from_disk_async(const char* path, Image_Load_Callback callback) {

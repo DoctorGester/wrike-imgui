@@ -1,11 +1,14 @@
+#define GL_GLEXT_PROTOTYPES
+
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_opengl.h>
 #include <curl/curl.h>
 #include <lodepng.h>
 #include "common.h"
 #include "platform.h"
-#include "renderer.h"
 #include "main.h"
+
+#include "opengl.cpp"
 
 enum Request_Type {
     Request_Type_API,
@@ -22,6 +25,8 @@ struct Running_Request {
     u64 started_at = 0;
     void* data = NULL;
 };
+
+static Gl_Data gl_data{};
 
 static SDL_Window* application_window = NULL;
 static SDL_GLContext gl_context;
@@ -282,45 +287,12 @@ bool platform_init() {
 
     setup_io();
 
-    // TODO bad API, we shouldn't be making external calls in platform impl, move those out
-    renderer_init(vertex_shader_source, fragment_shader_source);
+    opengl_program_init(gl_data, vertex_shader_source, fragment_shader_source);
 
     return true;
 }
 
-void platform_loop() {
-    // Even though we have vsync enabled by default the app will burn
-    // cpu cycles if it's not on screen
-    static u32 frame_start_time = 0;
-
-    while (true) {
-        frame_start_time = SDL_GetTicks();
-
-        if (poll_events_and_check_exit_event()) {
-            break;
-        }
-
-        process_completed_requests();
-
-        loop();
-
-        // TODO SDL_GetTicks() is not accurate
-        // TODO SDL_Delay() is not accurate
-        // TODO limited to 60fps, bad
-        u32 delta = SDL_GetTicks() - frame_start_time;
-        if (delta < 16) {
-            SDL_Delay(16 - delta);
-        }
-    }
-
-    SDL_GL_DeleteContext(gl_context);
-    SDL_DestroyWindow(application_window);
-    SDL_Quit();
-
-    exit(0);
-}
-
-void platform_begin_frame() {
+static void begin_frame() {
     ImGuiIO& io = ImGui::GetIO();
 
     // Setup display size (every frame to accommodate for window resizing)
@@ -348,7 +320,7 @@ void platform_begin_frame() {
     mouse_pressed[0] = mouse_pressed[1] = mouse_pressed[2] = false;
 
     if ((SDL_GetWindowFlags(application_window) & SDL_WINDOW_INPUT_FOCUS) != 0)
-    io.MousePos = ImVec2((float)mx * scale, (float)my * scale);
+        io.MousePos = ImVec2((float)mx * scale, (float)my * scale);
 
     SDL_GL_MakeCurrent(application_window, gl_context);
 
@@ -356,8 +328,44 @@ void platform_begin_frame() {
     glClear(GL_COLOR_BUFFER_BIT);
 }
 
-void platform_end_frame() {
-    SDL_GL_SwapWindow(application_window);
+void platform_loop() {
+    // Even though we have vsync enabled by default the app will burn
+    // cpu cycles if it's not on screen
+    static u32 frame_start_time = 0;
+
+    while (true) {
+        frame_start_time = SDL_GetTicks();
+
+        if (poll_events_and_check_exit_event()) {
+            break;
+        }
+
+        process_completed_requests();
+
+        begin_frame();
+
+        loop();
+
+        SDL_GL_SwapWindow(application_window);
+
+        // TODO SDL_GetTicks() is not accurate
+        // TODO SDL_Delay() is not accurate
+        // TODO limited to 60fps, bad
+        u32 delta = SDL_GetTicks() - frame_start_time;
+        if (delta < 16) {
+            SDL_Delay(16 - delta);
+        }
+    }
+
+    SDL_GL_DeleteContext(gl_context);
+    SDL_DestroyWindow(application_window);
+    SDL_Quit();
+
+    exit(0);
+}
+
+void platform_render_frame() {
+    opengl_render_frame(ImGui::GetDrawData(), gl_data);
 }
 
 static size_t handle_curl_write(char *ptr, size_t size, size_t nmemb, void *userdata) {
@@ -562,4 +570,8 @@ void platform_load_png_async(Array<u8> in, Image_Load_Callback callback) {
     }
 
     disk_image_load_success(callback, data, width, height);
+}
+
+u32 platform_make_texture(u32 width, u32 height, u8 *pixels) {
+    return opengl_make_texture(width, height, pixels);
 }

@@ -6,7 +6,6 @@
 #include "main.h"
 #include "platform.h"
 #include "ui.h"
-#include "renderer.h"
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>

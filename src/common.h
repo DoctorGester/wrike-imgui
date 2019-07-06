@@ -147,20 +147,13 @@ inline u32 lerp_color_alpha(u32 color, u32 tick_from, u32 tick_to, u32 over_tick
     return (color & 0x00ffffff) | (alpha << 24);
 }
 
-void load_image_into_gpu_memory(Memory_Image& image, void* pixels);
+void load_image_into_gpu_memory(Memory_Image& image, u8* pixels);
 void load_png_from_disk_async(const char* path, Image_Load_Callback callback);
 
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
 #define ARRAY_SIZE(array) (sizeof(array) / sizeof(array[0]))
 #define ARRAY_LAST(array) (array.length ? array[array.length - 1] : array[0])
-
-#define GL_CHECKED(command)\
-    command;\
-    for(int error = glGetError(); (error=glGetError()); error != GL_NO_ERROR)\
-    {\
-        printf("glerror: %d\n", error);\
-    }
 
 inline bool are_strings_equal(String& a, String& b) {
     return a.length == b.length && strncmp(a.start, b.start, a.length) == 0;

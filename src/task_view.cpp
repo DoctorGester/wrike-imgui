@@ -1,7 +1,6 @@
 #include "task_view.h"
 #include "common.h"
 #include "main.h"
-#include "renderer.h"
 #include "rich_text.h"
 #include "render_rich_text.h"
 #include "platform.h"

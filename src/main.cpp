@@ -1,5 +1,4 @@
 #include "main.h"
-#include "renderer.h"
 #include <imgui.h>
 #include <cmath>
 #include <string.h>
@@ -80,6 +79,14 @@ static char* starred_folders_json_content = NULL;
 static char* spaces_json_content = NULL;
 static char* spaces_folders_json_content = NULL;
 static char* inbox_json_content = NULL;
+
+ImFont* font_regular;
+ImFont* font_28px;
+ImFont* font_19px;
+ImFont* font_19px_bold;
+ImFont* font_bold;
+ImFont* font_italic;
+ImFont* font_bold_italic;
 
 u32 tick = 0;
 
@@ -737,7 +744,6 @@ void loop() {
 
     tick++;
 
-    platform_begin_frame();
     ImGui::NewFrame();
 
     ImGuiWindowFlags flags =
@@ -757,12 +763,10 @@ void loop() {
     ImGui::End();
 
     ImGui::Render();
-    renderer_draw_lists(ImGui::GetDrawData());
+    platform_render_frame();
 
     last_frame_vtx_count = (u32) ImGui::GetDrawData()->TotalVtxCount;
     frame_times[tick % (ARRAY_SIZE(frame_times))] = platform_get_delta_time_ms(frame_start_time); // Before assumed swapBuffers
-
-    platform_end_frame();
 }
 
 void load_persisted_settings() {
@@ -783,7 +787,29 @@ void load_persisted_settings() {
     }
 }
 
+static const char* default_font = "resources/OpenSans-Regular.ttf";
+
+static ImFont* load_font(const char* path, float size) {
+    float pixel_ratio = platform_get_pixel_ratio();
+
+    ImGuiIO &io = ImGui::GetIO();
+
+    ImFontConfig font_config{};
+    font_config.OversampleH = 3;
+    font_config.OversampleV = 1;
+
+    if (strcmp(path, default_font) == 0) {
+        static size_t file_size = 0;
+        static void* sans_regular = ImFileLoadToMemory("resources/OpenSans-Regular.ttf", "r", &file_size);
+
+        return io.Fonts->AddFontFromMemoryTTF(sans_regular, file_size, (size) * pixel_ratio, &font_config, io.Fonts->GetGlyphRangesCyrillic());
+    } else {
+        return io.Fonts->AddFontFromFileTTF(path, (size) * pixel_ratio, &font_config, io.Fonts->GetGlyphRangesCyrillic());
+    }
+}
+
 static void setup_ui() {
+    ImGuiIO& io = ImGui::GetIO();
     ImGuiStyle* style = &ImGui::GetStyle();
     ImGui::StyleColorsLight(style);
 
@@ -795,7 +821,27 @@ static void setup_ui() {
     style->PopupBorderSize = 0;
     style->ScaleAllSizes(platform_get_pixel_ratio());
 
-    ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+
+    const float default_font_size = 16.0f;
+
+    // font_regular should be loaded first, so it becomes a default font
+    font_regular = load_font(default_font, default_font_size);
+
+    font_28px = load_font(default_font, 28.0f);
+    font_19px = load_font(default_font, 19.0f);
+    font_19px_bold = load_font("resources/OpenSans-Bold.ttf", 19.0f);
+    font_bold = load_font("resources/OpenSans-Bold.ttf", default_font_size);
+    font_italic = load_font("resources/OpenSans-Italic.ttf", default_font_size);
+    font_bold_italic = load_font("resources/OpenSans-BoldItalic.ttf", default_font_size);
+
+    u8* pixels = NULL;
+    s32 width = 0;
+    s32 height = 0;
+
+    io.Fonts->GetTexDataAsRGBA32(&pixels, &width, &height);
+    io.Fonts->TexID = (void*) (intptr_t) platform_make_texture(width, height, pixels);
+    io.Fonts->ClearTexData();
 }
 
 static void* imgui_malloc_wrapper(size_t size, void* user_data) {

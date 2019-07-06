@@ -11,10 +11,7 @@ enum Http_Method {
 void platform_early_init();
 bool platform_init();
 void platform_loop();
-
-// TODO investigate if those 2 are superfluous and could be handled in platform_loop
-void platform_begin_frame();
-void platform_end_frame();
+void platform_render_frame();
 
 float platform_get_pixel_ratio();
 
@@ -29,3 +26,5 @@ void platform_local_storage_set(const char* key, String value); // TODO bad defi
 char* platform_local_storage_get(const char* key); // You own the memory!
 
 void platform_load_png_async(Array<u8> in, Image_Load_Callback callback);
+
+u32 platform_make_texture(u32 width, u32 height, u8* pixels);
