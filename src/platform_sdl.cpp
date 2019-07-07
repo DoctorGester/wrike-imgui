@@ -37,7 +37,7 @@ static u32 num_running_requests = 0;
 static Uint64 application_time = 0;
 static bool mouse_pressed[3] = { false, false, false };
 
-static char* private_token = NULL;
+static char* auth_header = NULL;
 
 static const char* vertex_shader_source =
         "#version 150\n"
@@ -141,12 +141,18 @@ static bool process_sdl_events(SDL_Event* event) {
     return false;
 }
 
-static char* get_private_token() {
-    if (!private_token) {
-        private_token = file_to_string("private.key");
+static char* get_auth_header() {
+    if (!auth_header) {
+        char* private_token = file_to_string("private.key");
+        u32 size = snprintf(NULL, 0, "Authorization: %s", private_token) + 1;
+
+        auth_header = (char*) MALLOC(size);
+        snprintf(auth_header, size, "Authorization: %s", private_token);
+
+        FREE(private_token);
     }
 
-    return private_token;
+    return auth_header;
 }
 
 static bool poll_events_and_check_exit_event() {
@@ -472,7 +478,7 @@ void platform_api_request(Request_Id request_id, String url, Http_Method method,
     // TODO cleanup those
     curl_slist* header_chunk = NULL;
     header_chunk = curl_slist_append(header_chunk, "Accept: application/json");
-    header_chunk = curl_slist_append(header_chunk, get_private_token());
+    header_chunk = curl_slist_append(header_chunk, get_auth_header());
 
     // TODO optimize
     Running_Request* new_request = (Running_Request*) CALLOC(1, sizeof(Running_Request));
@@ -520,22 +526,8 @@ char* platform_local_storage_get(const char* key) {
     return file_to_string(key);
 }
 
-// TODO OSX only, taken from
-// TODO https://bitbucket.org/rude/love/src/b2e868ac8ed36efacb47b107a6ff0706bd7a6512/src/modules/system/System.cpp?at=minor&fileviewer=file-view-default#System.cpp-78
-#include <CoreServices/CoreServices.h>
-
 void platform_open_url(String &permalink) {
-    CFURLRef cfurl = CFURLCreateWithBytes(nullptr,
-                                          (const UInt8 *) permalink.start,
-                                          permalink.length,
-                                          kCFStringEncodingUTF8,
-                                          nullptr);
-
-    bool success = LSOpenCFURLRef(cfurl, nullptr) == noErr;
-
-    CFRelease(cfurl);
-
-    printf("Open url: %s\n", success ? "ok" : "error");
+    printf("Opening urls is not implemented for this platform");
 }
 
 float platform_get_pixel_ratio() {
