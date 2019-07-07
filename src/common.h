@@ -59,8 +59,8 @@ const u32 color_black_text_on_white = 0xff191919;
 
 struct Memory_Image {
     unsigned int texture_id = 0;
-    unsigned width = 0;
-    unsigned height = 0;
+    u32 width = 0;
+    u32 height = 0;
 };
 
 typedef void (*Image_Load_Callback)(Memory_Image memory_image);

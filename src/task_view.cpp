@@ -274,7 +274,7 @@ static void draw_status_picker_dropdown_if_open(ImVec2 status_picker_position, I
     ImGui::SetNextWindowSize(status_picker_size);
 
     if (is_status_picker_open && ImGui::IsKeyDown(ImGui::GetKeyIndex(ImGuiKey_Escape))) {
-        ImGui::ClosePopup(status_picker_dropdown_id);
+        ImGui::CloseCurrentPopup();
     }
 
     if (ImGui::BeginPopupEx(status_picker_dropdown_id, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoResize)) {
@@ -451,7 +451,7 @@ static void draw_folder_picker_contents(bool set_focus) {
     }
 
     ImDrawList* draw_list = ImGui::GetWindowDrawList();
-    ImVec2 selection_button_size{ ImGui::GetContentRegionAvailWidth(), 24.0f * platform_get_pixel_ratio() };
+    ImVec2 selection_button_size{ ImGui::GetContentRegionAvail().x, 24.0f * platform_get_pixel_ratio() };
     float padding = 4.0f * platform_get_pixel_ratio();
 
     // TODO code duplication. Same occurs in folder search in folder_tree.cpp.
@@ -556,7 +556,7 @@ static void draw_folder_picker_button(Wrapping_Horizontal_Layout& layout) {
 
     if (is_folder_picker_open) {
         if (ImGui::IsKeyDown(ImGui::GetKeyIndex(ImGuiKey_Escape))) {
-            ImGui::ClosePopup(folder_picker_id);
+            ImGui::CloseCurrentPopup();
         }
     }
 
@@ -693,7 +693,7 @@ static void draw_add_assignee_button_and_contact_picker(Horizontal_Layout& layou
     ImGui::SetNextWindowSize(contact_picker_size);
 
     if (is_contact_picker_open && ImGui::IsKeyDown(ImGui::GetKeyIndex(ImGuiKey_Escape))) {
-        ImGui::ClosePopup(contact_picker_id);
+        ImGui::CloseCurrentPopup();
     }
 
     if (ImGui::BeginPopupEx(contact_picker_id, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoResize)) {
@@ -723,7 +723,7 @@ static void draw_add_assignee_button_and_contact_picker(Horizontal_Layout& layou
         }
 
         ImDrawList* draw_list = ImGui::GetWindowDrawList();
-        float button_width = ImGui::GetContentRegionAvailWidth();
+        float button_width = ImGui::GetContentRegionAvail().x;
         float spacing = ImGui::GetStyle().FramePadding.x;
 
         if (strlen(search_buffer) == 0) {
@@ -1413,7 +1413,7 @@ static void draw_task_comments() {
     float content_padding = 24.0f * layout.scale;
     float avatar_side = assignee_avatar_side * layout.scale;
     float space_between_avatar_and_entry = 8.0f * layout.scale;
-    float comment_wrap_width = ImGui::GetContentRegionAvailWidth();
+    float comment_wrap_width = ImGui::GetContentRegionAvail().x;
     float space_between_name_and_comment_text = 8.0f * layout.scale;
 
     comment_wrap_width -= content_padding;
@@ -1500,7 +1500,7 @@ static void draw_task_comments() {
 }
 
 void draw_task_contents() {
-    float header_wrap_width = ImGui::GetContentRegionAvailWidth() - 50.0f * platform_get_pixel_ratio(); // Accommodate for scroll bar
+    float header_wrap_width = ImGui::GetContentRegionAvail().x - 50.0f * platform_get_pixel_ratio(); // Accommodate for scroll bar
 
     ImGuiID task_content_id = ImGui::GetID("task_content");
     ImGui::BeginChildFrame(task_content_id, ImVec2(-1, -1), ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
@@ -1509,14 +1509,14 @@ void draw_task_contents() {
 
     ImGui::BeginChild("task_contents", ImVec2(-1, -1));
 
-    float content_wrap_width = ImGui::GetContentRegionAvailWidth();
+    float content_wrap_width = ImGui::GetContentRegionAvail().x;
 
     ImVec2 top_left = ImGui::GetCursorScreenPos();
     ImDrawList* draw_list = ImGui::GetWindowDrawList();
 
     float scale = platform_get_pixel_ratio();
     float cursor_y = top_left.y;
-    float full_width = ImGui::GetContentRegionAvailWidth();
+    float full_width = ImGui::GetContentRegionAvail().x;
     float leftmost_x = top_left.x;
 
     ImVec2 status_picker_top_left = ImVec2(leftmost_x, cursor_y);

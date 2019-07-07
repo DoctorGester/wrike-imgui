@@ -44,7 +44,7 @@ include_directories(external)
 
 set(EXTERNAL_SOURCES
         external/imgui.cpp
-        external/imgui_demo.cpp
+        external/imgui_widgets.cpp
         external/imgui_draw.cpp
 
         external/imgui.h
@@ -132,7 +132,7 @@ if (${TARGET_EMSCRIPTEN})
 
     set(SOURCE_FILES ${SOURCE_FILES} src/platform_emscripten.cpp)
 elseif(${TARGET_OSX})
-    set(SOURCE_FILES ${SOURCE_FILES} src/platform_osx.mm)
+    set(SOURCE_FILES ${SOURCE_FILES} src/platform_osx.mm src/metal.h src/metal.mm)
 elseif(${TARGET_SDL})
     add_definitions(-DEMSCRIPTEN=0)
 
@@ -184,6 +184,14 @@ elseif(${TARGET_OSX})
     endif()
 
     add_definitions(-DEXPORT= )
+
+    set(LINK_LIBRARIES ${LINK_LIBRARIES}
+            "-framework Foundation"
+            "-framework Cocoa"
+            "-framework Metal"
+            "-framework MetalKit"
+            "-framework QuartzCore"
+            objc)
 elseif(${TARGET_SDL})
     if (${ENABLE_SANITIZER})
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g -fsanitize=address -fno-omit-frame-pointer")

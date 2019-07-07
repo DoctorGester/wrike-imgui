@@ -539,7 +539,7 @@ void ImGui::FadeInOverlay(float alpha, u32 color) {
 
     u32 overlay_color = (color & 0x00FFFFFF) | ((255 - (u32) (alpha * 255.0f)) << 24);
 
-    ImGui::GetOverlayDrawList()->AddRectFilled(top_left, top_left + size, overlay_color, rounding);
+    ImGui::GetForegroundDrawList()->AddRectFilled(top_left, top_left + size, overlay_color, rounding);
 }
 
 static void draw_average_frame_time() {
@@ -556,7 +556,7 @@ static void draw_average_frame_time() {
 
     ImVec2 top_left = ImGui::GetIO().DisplaySize - ImVec2(200.0f, 20.0f) * platform_get_pixel_ratio();
 
-    ImGui::GetOverlayDrawList()->AddText(top_left, IM_COL32_BLACK, text_start, text_end);
+    ImGui::GetForegroundDrawList()->AddText(top_left, IM_COL32_BLACK, text_start, text_end);
 }
 
 static void draw_memory_debug_contents() {
@@ -589,7 +589,7 @@ static void draw_task_view_popup_if_necessary() {
 
     ImGui::PushStyleVar(ImGuiStyleVar_PopupRounding, 4.0f * platform_get_pixel_ratio());
 
-    if (ImGui::BeginPopupEx(task_view_id, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_ResizeFromAnySide)) {
+    if (ImGui::BeginPopupEx(task_view_id, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoSavedSettings)) {
         const u32 backdrop_color_no_alpha = argb_to_agbr(0x0027415a);
 
         u32 alpha = (u32) lroundf(lerp(task_view_opened_at, tick, 0xd8, 12));
@@ -822,6 +822,7 @@ static void setup_ui() {
     style->ScaleAllSizes(platform_get_pixel_ratio());
 
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+    io.ConfigWindowsResizeFromEdges = true;
 
     const float default_font_size = 16.0f;
 
@@ -872,7 +873,7 @@ bool init() {
 
     load_persisted_settings();
 
-    create_imgui_context();
+    ImGui::CreateContext();
 
     ImGui::SetAllocatorFunctions(imgui_malloc_wrapper, imgui_free_wrapper);
 

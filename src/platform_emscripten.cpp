@@ -5,7 +5,6 @@
 #include <GLES2/gl2ext.h>
 #include <emscripten/emscripten.h>
 #include <emscripten/html5.h>
-#include <imgui_user.h>
 #include "platform.h"
 #include "main.h"
 

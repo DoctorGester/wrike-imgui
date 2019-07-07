@@ -186,7 +186,7 @@ static bool draw_side_menu_toggle_button(const ImVec2 top_left, const ImVec2& bu
 
 static void draw_profile_widget(User* user, float header_height) {
     float scale = platform_get_pixel_ratio();
-    float total_width = ImGui::GetContentRegionAvailWidth();
+    float total_width = ImGui::GetContentRegionAvail().x;
     float avatar_side_px = 32.0f * scale;
     float padding_right = 8.0f * scale;
 

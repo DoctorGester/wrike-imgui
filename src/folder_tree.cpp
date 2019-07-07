@@ -304,7 +304,7 @@ static bool folder_tree_node_element(ImDrawList* draw_list, ImVec2 element_top_l
 
 // TODO signature similar to folder_tree_node_element is preferred
 static void folder_tree_node_skeleton(ImDrawList* draw_list, Vertical_Layout& layout, u32 nesting_level) {
-    float width = ImGui::GetContentRegionAvailWidth();
+    float width = ImGui::GetContentRegionAvail().x;
     float element_height = 30.0f * layout.scale; // TODO lots of math duplication
     float scale = platform_get_pixel_ratio(); // TODO lots of math duplication
     float content_offset = 18.0f * scale * nesting_level + 40.0f * scale; // TODO lots of math duplication
@@ -319,7 +319,7 @@ static void folder_tree_node_skeleton(ImDrawList* draw_list, Vertical_Layout& la
 
 static void draw_flattened_folder_tree(Folder_Tree& tree, Vertical_Layout& layout) {
     ImDrawList* draw_list = ImGui::GetWindowDrawList();
-    ImVec2 element_size{ ImGui::GetContentRegionAvailWidth(), 30.0f * layout.scale };
+    ImVec2 element_size{ ImGui::GetContentRegionAvail().x, 30.0f * layout.scale };
 
     bool should_rebuild_flattened_tree = false;
 
@@ -434,7 +434,7 @@ static void draw_folder_tree_search_input() {
 
     ImVec2 placeholder_text_position = ImGui::GetCursorPos() + ImGui::GetStyle().FramePadding;
 
-    float input_width = ImGui::GetContentRegionAvailWidth() - 24.0f * platform_get_pixel_ratio();
+    float input_width = ImGui::GetContentRegionAvail().x - 24.0f * platform_get_pixel_ratio();
 
     ImGui::PushItemWidth(input_width);
 
@@ -559,7 +559,7 @@ void draw_folder_tree(float column_width) {
             ImGui::PopID();
         }
     } else {
-        ImVec2 element_size{ImGui::GetContentRegionAvailWidth(), 30.0f * layout.scale};
+        ImVec2 element_size{ImGui::GetContentRegionAvail().x, 30.0f * layout.scale};
         ImVec2 icon_offset = ImVec2(23.0f, 16.0f) * layout.scale;
         ImVec2 arrow_offset = ImVec2(column_width - 26.0f * layout.scale , element_size.y / 2.0f);
 

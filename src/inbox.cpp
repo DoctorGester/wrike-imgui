@@ -241,7 +241,7 @@ void draw_inbox() {
 
     float vertical_padding = 8.0f * layout.scale;
     float content_height = 38.0f * layout.scale;
-    float content_width = ImGui::GetContentRegionAvailWidth();
+    float content_width = ImGui::GetContentRegionAvail().x;
     float element_height = vertical_padding + content_height + vertical_padding;
 
     ImGui::PushFont(font_19px);
