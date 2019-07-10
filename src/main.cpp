@@ -559,7 +559,11 @@ static void draw_average_frame_time() {
     ImGui::GetForegroundDrawList()->AddText(top_left, IM_COL32_BLACK, text_start, text_end);
 }
 
+#if DEBUG_MEMORY
 static void draw_memory_debug_contents() {
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2{ 16, 16 });
+    ImGui::BeginChildFrame(ImGui::GetID("memory_debug"), ImVec2(-1, -1));
+
     ImGuiIO& io = ImGui::GetIO();
 
     ImGui::Text("%f %f", io.DisplaySize.x, io.DisplaySize.y);
@@ -570,7 +574,11 @@ static void draw_memory_debug_contents() {
 
         ImGui::ListBoxFooter();
     }
+
+    ImGui::EndChildFrame();
+    ImGui::PopStyleVar();
 }
+#endif
 
 static void draw_task_view_popup_if_necessary() {
     ImVec2 display_size = ImGui::GetIO().DisplaySize;
@@ -635,19 +643,6 @@ static void draw_loading_screen() {
 }
 
 static void draw_ui() {
-    // TODO temporary code, desktop only
-    static const u32 d_key_in_sdl = 7;
-
-    if (ImGui::IsKeyPressed(d_key_in_sdl) && ImGui::GetIO().KeyCtrl) {
-        draw_memory_debug = !draw_memory_debug;
-    }
-
-    if (draw_memory_debug) {
-        draw_memory_debug_contents();
-
-        return;
-    }
-
     bool loading_me = me_request != NO_REQUEST;
 
     if (loading_me) {
@@ -684,6 +679,13 @@ static void draw_ui() {
             draw_inbox();
             break;
         }
+
+#if DEBUG_MEMORY
+        case View_Memory: {
+            draw_memory_debug_contents();
+            break;
+        }
+#endif
     }
 
     draw_task_view_popup_if_necessary();
@@ -846,13 +848,13 @@ static void setup_ui() {
 }
 
 static void* imgui_malloc_wrapper(size_t size, void* user_data) {
-    (void) user_data;
-    return malloc(size);
+    return MALLOC(size);
 }
 
 static void imgui_free_wrapper(void* ptr, void* user_data) {
-    (void) user_data;
-    free(ptr);
+    if (ptr) {
+        FREE(ptr);
+    }
 }
 
 EXPORT

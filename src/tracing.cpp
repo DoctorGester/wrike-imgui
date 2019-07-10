@@ -32,30 +32,53 @@ static void bytes_to_human_readable_size(size_t bytes, float& out_size, const ch
     out_size = (float)bytes + (float)rem / 1024.0f;
 }
 
-void log_record(Memory_Record& record) {
-    const char* last_slash = strrchr(record.file, '/');
-    const char* file = last_slash ? (last_slash + 1) : record.file;
-
-    const char* unit = "";
-    float size = 0.0f;
-
-    bytes_to_human_readable_size(record.size, size, unit);
-
-    ImGui::Text("%s:%i %s %p %.1f %s", file, record.line, record.function, record.pointer, size, unit);
-}
-
 void draw_memory_records() {
-    const char* unit = "";
-    float size = 0.0f;
+    {
+        const char *unit = "";
+        float size = 0.0f;
 
-    bytes_to_human_readable_size(total_allocated_memory, size, unit);
+        bytes_to_human_readable_size(total_allocated_memory, size, unit);
 
-    ImGui::Text("Total memory occupied: %.1f %s", size, unit);
-    ImGui::Text("Total blocks: %i", history_length);
+        ImGui::Text("Total memory occupied: %.1f %s", size, unit);
+        ImGui::Text("Total blocks: %i", history_length);
+    }
+
+    ImGui::Columns(4, "memory_table", true);
 
     for (u32 index = 0; index < history_length; index++) {
-        log_record(memory_records[index]);
+        Memory_Record* record = &memory_records[index];
+
+        const char* last_slash = strrchr(record->file, '/');
+        const char* file = last_slash ? (last_slash + 1) : record->file;
+
+        ImGui::Text("%s", file);
     }
+
+    ImGui::NextColumn();
+
+    for (u32 index = 0; index < history_length; index++) {
+        ImGui::Text("%s", (&memory_records[index])->function);
+    }
+
+    ImGui::NextColumn();
+
+    for (u32 index = 0; index < history_length; index++) {
+        ImGui::Text("%p", (&memory_records[index])->pointer);
+    }
+
+    ImGui::NextColumn();
+
+    for (u32 index = 0; index < history_length; index++) {
+        Memory_Record* record = &memory_records[index];
+
+        const char* unit = "";
+        float size = 0.0f;
+
+        bytes_to_human_readable_size(record->size, size, unit);
+
+        ImGui::Text("%.1f %s", size, unit);
+    }
+
 }
 
 static void record_memory(void* pointer, const char* file, const char* function, u32 line, size_t size) {

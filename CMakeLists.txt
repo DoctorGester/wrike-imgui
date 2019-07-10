@@ -103,9 +103,6 @@ set(SOURCE_FILES
 
         src/lazy_array.h
 
-        src/tracing.cpp
-        src/tracing.h
-
         src/platform.h
 
         src/account.cpp
@@ -126,6 +123,13 @@ set(SOURCE_FILES
         src/main.cpp
         src/main.h
 )
+
+if (${DEBUG})
+    add_definitions(-DDEBUG=1)
+    add_definitions(-DDEBUG_MEMORY=1)
+
+    set(SOURCE_FILES ${SOURCE_FILES} src/tracing.cpp src/tracing.h)
+endif()
 
 if (${TARGET_EMSCRIPTEN})
     add_definitions(-DEMSCRIPTEN=1)

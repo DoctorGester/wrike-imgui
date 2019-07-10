@@ -257,6 +257,10 @@ bool draw_header(bool draw_side_menu_this_frame, bool& draw_side_menu, float fol
 
     bool tasks = draw_header_button(layout, "Tasks", current_view == View_Task_List);
     bool inbox = draw_inbox_button(layout, "Inbox", current_view == View_Inbox);
+
+#if DEBUG_MEMORY
+    bool memory = draw_header_button(layout, "Memory", current_view == View_Memory);
+#endif
 //    bool my_work = draw_header_button(layout, "My Work", false);
 //    bool dashboards = draw_header_button(layout, "Dashboards", false);
 //    bool calendars = draw_header_button(layout, "Calendars", false);
@@ -265,6 +269,9 @@ bool draw_header(bool draw_side_menu_this_frame, bool& draw_side_menu, float fol
 
     if (tasks) current_view = View_Task_List;
     if (inbox) current_view = View_Inbox;
+#if DEBUG_MEMORY
+    if (memory) current_view = View_Memory;
+#endif
 
     ImGui::PopFont();
 

@@ -19,7 +19,10 @@ void disk_image_load_success(Image_Load_Callback callback, u8* pixel_data, u32 w
 
 enum View {
     View_Task_List,
-    View_Inbox
+    View_Inbox,
+#if DEBUG_MEMORY
+    View_Memory
+#endif
 };
 
 struct Custom_Field_Value {

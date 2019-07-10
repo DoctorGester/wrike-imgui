@@ -5,12 +5,6 @@
 
 #pragma once
 
-#define MALLOC(x) malloc_and_log(__FILE__, __FUNCTION__, __LINE__, x)
-#define CALLOC(x, y) calloc_and_log(__FILE__, __FUNCTION__, __LINE__, x, y)
-#define REALLOC(x, y) realloc_and_log(__FILE__, __FUNCTION__, __LINE__, x, y)
-#define FREE(x) free_and_log(__FILE__, __FUNCTION__, __LINE__, x)
-#define LOG_MEMORY(x, y) log_memory(__FILE__, __FUNCTION__, __LINE__, x, y)
-
 #define PRINTLIKE(string_index, first_to_check) __attribute__((__format__ (__printf__, string_index, first_to_check)))
 
 typedef unsigned long long u64;
@@ -47,11 +41,28 @@ static const u32 hash_seed = 3637;
 
 u32 argb_to_agbr(u32 argb);
 
+#if DEBUG_MEMORY
+
+#define MALLOC(x) malloc_and_log(__FILE__, __FUNCTION__, __LINE__, x)
+#define CALLOC(x, y) calloc_and_log(__FILE__, __FUNCTION__, __LINE__, x, y)
+#define REALLOC(x, y) realloc_and_log(__FILE__, __FUNCTION__, __LINE__, x, y)
+#define FREE(x) free_and_log(__FILE__, __FUNCTION__, __LINE__, x)
+#define LOG_MEMORY(x, y) log_memory(__FILE__, __FUNCTION__, __LINE__, x, y)
+
 void log_memory(const char* file, const char* function, u32 line, void* pointer, size_t size);
 void* calloc_and_log(const char* file, const char* function, u32 line, size_t num, size_t size);
 void* malloc_and_log(const char* file, const char* function, u32 line, size_t size);
 void* realloc_and_log(const char* file, const char* function, u32 line, void* realloc_what, size_t new_size);
 void free_and_log(const char* file, const char* function, u32 line, void* free_what);
+#else
+
+#define MALLOC(x) malloc(x)
+#define CALLOC(x, y) calloc(x, y)
+#define REALLOC(x, y) realloc(x, y)
+#define FREE(x) free(x)
+#define LOG_MEMORY(x, y) ((void) 0)
+
+#endif
 
 const u32 color_background_dark = argb_to_agbr(0xFF1d364c);
 const u32 color_link = argb_to_agbr(0xff4488ff);
