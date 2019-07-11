@@ -87,7 +87,7 @@ void opengl_render_frame(ImDrawData* draw_data, Gl_Data gl) {
             } else if (draw_command->TextureId) {
                 glBindTexture(
                         GL_TEXTURE_2D,
-                        (GLuint) (intptr_t) draw_command->TextureId
+                        (GLuint) (uintptr_t) draw_command->TextureId
                 );
 
                 glScissor(

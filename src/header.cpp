@@ -226,7 +226,7 @@ bool draw_header(bool draw_side_menu_this_frame, bool& draw_side_menu, float fol
         ImVec2 logo_margin = ImVec2(30.0f * scale, header_height / 2.0f - logo_size.y / 2.0f);
         ImVec2 logo_top_left = top_left + logo_margin;
 
-        draw_list->AddImage((void*) (intptr_t) logo.texture_id, logo_top_left, logo_top_left + logo_size);
+        draw_list->AddImage(logo, logo_top_left, logo_top_left + logo_size);
 
         toggle_button_offset = ImVec2(-20.0f, 0.0f) * scale;
     }

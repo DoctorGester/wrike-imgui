@@ -347,7 +347,7 @@ void platform_load_png_async(Array<u8> in, Image_Load_Callback callback) {
     EM_ASM({ decode_png($0, $1, $2); }, in.data, in.length, callback);
 }
 
-u32 platform_make_texture(u32 width, u32 height, u8 *pixels) {
+u64 platform_make_texture(u32 width, u32 height, u8 *pixels) {
     return opengl_make_texture(width, height, pixels);
 }
 
@@ -371,4 +371,8 @@ float platform_get_delta_time_ms(u64 delta_to) {
     memcpy(&double_delta_to, &delta_to, sizeof(u64));
 
     return (float) (now - double_delta_to);
+}
+
+char* platform_resolve_resource_path(const char* file_path) {
+    return (char*) file_path;
 }

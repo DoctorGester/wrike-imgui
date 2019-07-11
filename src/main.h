@@ -3,8 +3,6 @@
 #include "common.h"
 #include "rich_text.h"
 
-bool init();
-
 extern "C"
 void loop();
 
@@ -16,6 +14,8 @@ void image_load_success(Request_Id request_id, u8* pixel_data, u32 width, u32 he
 
 extern "C"
 void disk_image_load_success(Image_Load_Callback callback, u8* pixel_data, u32 width, u32 height);
+
+bool try_accept_loaded_image(Request_Id request_id, Memory_Image image);
 
 enum View {
     View_Task_List,

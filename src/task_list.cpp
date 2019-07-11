@@ -1080,6 +1080,7 @@ void process_folder_contents_data(char* json, u32 data_size, jsmntok_t*& token) 
     associate_parent_tasks_with_sub_tasks(current_folder.id);
 
     has_been_sorted_after_loading = false;
+    sort_field = Task_List_Sort_Field_None;
 }
 
 void set_current_folder_id(Folder_Id id) {

@@ -330,7 +330,7 @@ static bool draw_status_picker(ImVec2 top_left, u32 status_color, String status_
     draw_list->AddLine(start + ImVec2(size.x, 0), start + size, border_color);
 
     if (is_completed) {
-        draw_list->AddImage((void*)(intptr_t) checkmark.texture_id, checkbox_start, checkbox_start + checkbox_size);
+        draw_list->AddImage(checkmark, checkbox_start, checkbox_start + checkbox_size);
     } else {
         draw_list->AddRectFilled(checkbox_start, checkbox_start + checkbox_size, IM_COL32_WHITE);
     }
@@ -1828,7 +1828,7 @@ void process_task_data(char* json, u32 data_size, jsmntok_t*& token) {
 }
 
 void load_task_view_resources() {
-    load_png_from_disk_async("resources/checkmark_task_complete.png", [](Memory_Image image) {
+    load_png_from_disk_async(platform_resolve_resource_path("resources/checkmark_task_complete.png"), [](Memory_Image image) {
         checkmark = image;
     });
 }

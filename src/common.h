@@ -69,9 +69,13 @@ const u32 color_link = argb_to_agbr(0xff4488ff);
 const u32 color_black_text_on_white = 0xff191919;
 
 struct Memory_Image {
-    unsigned int texture_id = 0;
+    u64 texture_id = 0;
     u32 width = 0;
     u32 height = 0;
+
+    operator void*() {
+        return (void*) (uintptr_t) texture_id;
+    }
 };
 
 typedef void (*Image_Load_Callback)(Memory_Image memory_image);

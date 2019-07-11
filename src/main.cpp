@@ -53,7 +53,6 @@ const Folder_Id ROOT_FOLDER = -1;
 
 bool custom_statuses_were_loaded = false;
 
-static bool draw_memory_debug = false;
 static bool draw_side_menu = true;
 
 static bool task_view_open_requested = false;
@@ -379,35 +378,38 @@ void api_request_success(Request_Id request_id, char* content, u32 content_lengt
     FREE(json_with_tokens.tokens);
 }
 
-extern "C"
-EXPORT
-void image_load_success(Request_Id request_id, u8* pixel_data, u32 width, u32 height) {
+bool try_accept_loaded_image(Request_Id request_id, Memory_Image image) {
     User* user_or_null = find_user_by_avatar_request_id(request_id);
 
     if (user_or_null) {
-        Memory_Image& avatar = user_or_null->avatar;
-        avatar.width = width;
-        avatar.height = height;
-
-        load_image_into_gpu_memory(avatar, pixel_data);
-
+        user_or_null->avatar = image;
         user_or_null->avatar_loaded_at = tick;
 
-        free(pixel_data);
-
-        return;
+        return true;
     }
 
     Space* space_or_null = find_space_by_avatar_request_id(request_id);
 
     if (space_or_null) {
-        Memory_Image avatar{};
-        avatar.width = width;
-        avatar.height = height;
+        set_space_avatar_image(space_or_null, image);
 
-        load_image_into_gpu_memory(avatar, pixel_data);
+        return true;
+    }
 
-        set_space_avatar_image(space_or_null, avatar);
+    return false;
+}
+
+extern "C"
+EXPORT
+void image_load_success(Request_Id request_id, u8* pixel_data, u32 width, u32 height) {
+    Memory_Image image{};
+    image.width = width;
+    image.height = height;
+
+    load_image_into_gpu_memory(image, pixel_data);
+
+    if (!try_accept_loaded_image(request_id, image)) {
+        // TODO delete image from gpu memory
     }
 
     free(pixel_data);
@@ -638,7 +640,7 @@ static void draw_loading_screen() {
 
     ImDrawList* draw_list = ImGui::GetWindowDrawList();
 
-    draw_list->AddImage((void*) (uintptr_t) logo.texture_id, image_top_left, image_top_left + image_size);
+    draw_list->AddImage(logo, image_top_left, image_top_left + image_size);
     draw_loading_spinner(draw_list, spinner_top_left, spinner_side, 6, color_link);
 }
 
@@ -802,11 +804,11 @@ static ImFont* load_font(const char* path, float size) {
 
     if (strcmp(path, default_font) == 0) {
         static size_t file_size = 0;
-        static void* sans_regular = ImFileLoadToMemory("resources/OpenSans-Regular.ttf", "r", &file_size);
+        static void* sans_regular = ImFileLoadToMemory(platform_resolve_resource_path(default_font), "r", &file_size);
 
         return io.Fonts->AddFontFromMemoryTTF(sans_regular, file_size, (size) * pixel_ratio, &font_config, io.Fonts->GetGlyphRangesCyrillic());
     } else {
-        return io.Fonts->AddFontFromFileTTF(path, (size) * pixel_ratio, &font_config, io.Fonts->GetGlyphRangesCyrillic());
+        return io.Fonts->AddFontFromFileTTF(platform_resolve_resource_path(path), (size) * pixel_ratio, &font_config, io.Fonts->GetGlyphRangesCyrillic());
     }
 }
 
@@ -816,6 +818,7 @@ static void setup_ui() {
     ImGui::StyleColorsLight(style);
 
     style->Colors[ImGuiCol_WindowBg] = ImGui::ColorConvertU32ToFloat4(color_background_dark);
+    style->WindowRounding = 0;
     style->FrameRounding = 4.0f;
     style->WindowPadding = { 0, 0 };
     style->FramePadding = { 0, 0 };
@@ -823,7 +826,7 @@ static void setup_ui() {
     style->PopupBorderSize = 0;
     style->ScaleAllSizes(platform_get_pixel_ratio());
 
-    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+    // TODO io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
     io.ConfigWindowsResizeFromEdges = true;
 
     const float default_font_size = 16.0f;
@@ -843,7 +846,7 @@ static void setup_ui() {
     s32 height = 0;
 
     io.Fonts->GetTexDataAsRGBA32(&pixels, &width, &height);
-    io.Fonts->TexID = (void*) (intptr_t) platform_make_texture(width, height, pixels);
+    io.Fonts->TexID = (void*) (uintptr_t) platform_make_texture(width, height, pixels);
     io.Fonts->ClearTexData();
 }
 
@@ -857,8 +860,7 @@ static void imgui_free_wrapper(void* ptr, void* user_data) {
     }
 }
 
-EXPORT
-bool init() {
+static bool init() {
     platform_early_init();
 
     init_user_storage();
@@ -887,7 +889,7 @@ bool init() {
 
     load_task_view_resources();
 
-    load_png_from_disk_async("resources/wrike_logo.png", [](Memory_Image image) {
+    load_png_from_disk_async(platform_resolve_resource_path("resources/wrike_logo.png"), [](Memory_Image image) {
         logo = image;
 
         set_header_logo(logo);

@@ -91,7 +91,7 @@ void draw_loading_spinner(ImDrawList* draw_list, ImVec2 top_left, float radius, 
 
 void draw_circular_image(ImDrawList* draw_list, Memory_Image image, ImVec2 top_left, float avatar_side_px, u32 loaded_at) {
     float half_avatar_side = avatar_side_px / 2.0f;
-    ImTextureID avatar_texture_id = (ImTextureID)(intptr_t) image.texture_id;
+    ImTextureID avatar_texture_id = image;
 
     u32 avatar_color = 0x00FFFFFF;
     u32 alpha = (u32) roundf(lerp(loaded_at, tick, 255, 14));
@@ -190,6 +190,10 @@ static void button(ImGuiID id, ImVec2 top_left, ImVec2 size, Button_State& state
 
     state.clipped = !ImGui::ItemAdd(bounds, id);
     state.pressed = ImGui::ButtonBehavior(bounds, id, &state.hovered, &state.held);
+
+    if (state.hovered) {
+        GImGui->MouseCursor = ImGuiMouseCursor_Hand;
+    }
 }
 
 Button_State button(const void* pointer_id, ImVec2 top_left, ImVec2 size) {

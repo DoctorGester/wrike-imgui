@@ -136,7 +136,7 @@ if (${TARGET_EMSCRIPTEN})
 
     set(SOURCE_FILES ${SOURCE_FILES} src/platform_emscripten.cpp)
 elseif(${TARGET_OSX})
-    set(SOURCE_FILES ${SOURCE_FILES} src/platform_osx.mm src/metal.h src/metal.mm)
+    set(SOURCE_FILES ${SOURCE_FILES} src/platform_osx.mm)
 elseif(${TARGET_SDL})
     add_definitions(-DEMSCRIPTEN=0)
 
